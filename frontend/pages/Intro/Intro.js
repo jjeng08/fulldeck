@@ -30,7 +30,7 @@ export default function IntroPage() {
   });
 
   useEffect(() => {
-    // Navigate to blackjack when user successfully logs in
+    // Navigate to lobby when user successfully logs in
     if (isAuthenticated) {
       // Clear form data before navigation
       setShowLoginForm(false);
@@ -38,7 +38,7 @@ export default function IntroPage() {
       setFormError('');
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
-      navigation.navigate('Blackjack');
+      navigation.navigate('Lobby');
     }
   }, [isAuthenticated, navigation]);
 
@@ -53,7 +53,7 @@ export default function IntroPage() {
           balance: data.balance
         };
         setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
-        navigation.navigate('Blackjack');
+        navigation.navigate('Lobby');
       } else {
         setFormError(data.message);
       }
@@ -68,7 +68,7 @@ export default function IntroPage() {
         };
         setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
         showToast(`Registration successful! Welcome, ${data.username}!`, 'success');
-        navigation.navigate('Blackjack');
+        navigation.navigate('Lobby');
       } else {
         setFormError(data.message);
       }

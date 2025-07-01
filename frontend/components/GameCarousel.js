@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, Image, Dimensions } from 'react-native';
+import { View, Text, Image, Dimensions, Animated } from 'react-native';
+
+const { width: screenWidth } = Dimensions.get('window');
 import { useNavigation } from '@react-navigation/native';
-import Carousel from 'react-native-reanimated-carousel';
 
 import { allGames } from 'shared/gameConfig';
 import { text as t } from 'shared/text';
@@ -11,54 +12,57 @@ import Button from 'components/Button';
 export default function GameCarousel() {
   const navigation = useNavigation();
   const [activeIndex, setActiveIndex] = useState(0);
-  const carouselRef = useRef(null);
-    
+  const [isAnimating, setIsAnimating] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  
   const onPlayGame = (game) => {
     if (game.available) {
       navigation.navigate(game.route);
     }
   };
 
+  const animateSlide = (direction, callback) => {
+    if (isAnimating) return;
+    
+    setIsAnimating(true);
+    const slideDistance = 360; // 300px card width + 20% = 360px
+    
+    // Slide out current card
+    Animated.timing(slideAnim, {
+      toValue: direction === 'next' ? -slideDistance : slideDistance,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      // Update index
+      callback();
+      
+      // Reset position for slide in
+      slideAnim.setValue(direction === 'next' ? slideDistance : -slideDistance);
+      
+      // Slide in new card
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        setIsAnimating(false);
+      });
+    });
+  };
+
   const goToNext = () => {
-    carouselRef.current?.next();
+    animateSlide('next', () => {
+      setActiveIndex((prevIndex) => (prevIndex + 1) % allGames.length);
+    });
   };
 
   const goToPrevious = () => {
-    carouselRef.current?.prev();
+    animateSlide('prev', () => {
+      setActiveIndex((prevIndex) => (prevIndex - 1 + allGames.length) % allGames.length);
+    });
   };
 
-  const renderItem = ({ item, index }) => (
-    <View style={carouselStyles.cardContainer} testID="cardContainer">
-      <View 
-        style={[
-          carouselStyles.card,
-          index === activeIndex && carouselStyles.activeCard
-        ]}
-        testID="card"
-      >
-        <Image 
-          source={item.logo} 
-          style={carouselStyles.logo} 
-          testID="logo"
-          resizeMode="contain" 
-        />
-        <Text style={carouselStyles.gameName} testID="gameName">{item.name}</Text>
-        <Text style={carouselStyles.description} testID="description">
-          {item.description}
-        </Text>
-        <Button 
-          label={item.available ? 'Play' : 'Coming Soon'}
-          onPress={() => onPlayGame(item)}
-          style={[
-            carouselStyles.playButton,
-            !item.available && carouselStyles.disabledButton
-          ]}
-          disabled={!item.available}
-          testID="playButton"
-        />
-      </View>
-    </View>
-  );
+  const currentGame = allGames[activeIndex];
 
   return (
     <View style={carouselStyles.container} testID="container">
@@ -78,22 +82,38 @@ export default function GameCarousel() {
         />
       </View>
       
-      <Carousel
-        ref={carouselRef}
-        loop={true}
-        width={sc.components.carouselCardWidth}
-        height={sc.components.carouselCardHeight}
-        data={allGames}
-        scrollAnimationDuration={300}
-        onSnapToItem={(index) => setActiveIndex(index)}
-        renderItem={renderItem}
-        mode="parallax"
-        modeConfig={{
-          parallaxScrollingScale: 0.9,
-          parallaxScrollingOffset: 50,
-        }}
-        style={carouselStyles.carousel}
-      />
+      <View style={carouselStyles.cardContainer} testID="cardContainer">
+        <Animated.View 
+          style={[
+            carouselStyles.card, 
+            {
+              transform: [{ translateX: slideAnim }]
+            }
+          ]} 
+          testID="card"
+        >
+          <Image 
+            source={currentGame.logo} 
+            style={carouselStyles.logo} 
+            testID="logo"
+            resizeMode="contain" 
+          />
+          <Text style={carouselStyles.gameName} testID="gameName">{currentGame.name}</Text>
+          <Text style={carouselStyles.description} testID="description">
+            {currentGame.description}
+          </Text>
+          <Button 
+            label={currentGame.available ? 'Play' : 'Coming Soon'}
+            onPress={() => onPlayGame(currentGame)}
+            style={[
+              carouselStyles.playButton,
+              !currentGame.available && carouselStyles.disabledButton
+            ]}
+            disabled={!currentGame.available}
+            testID="playButton"
+          />
+        </Animated.View>
+      </View>
       
       <View style={carouselStyles.indicators} testID="indicators">
         {allGames.map((_, index) => (
@@ -115,16 +135,19 @@ export default function GameCarousel() {
 const carouselStyles = {
   container: {
     width: '100%',
-    height: sc.components.carouselContainerHeight,
+    height: 500,
     paddingVertical: sc.size.lg,
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   header: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: sc.size.lg,
     marginBottom: sc.size.md,
+    maxWidth: 360,
   },
   title: {
     ...sc.baseComponents.heading,
@@ -148,17 +171,23 @@ const carouselStyles = {
     justifyContent: 'center',
   },
   cardContainer: {
-    width: sc.components.carouselCardWidth,
+    width: '100%',
+    maxWidth: 360,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 20,
+    overflow: 'hidden',
   },
   card: {
-    ...sc.baseComponents.card,
-    height: sc.components.carouselCardHeight,
-    width: '100%',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ffd700',
+    height: 400,
+    width: 300,
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: sc.size.lg,
+    padding: 20,
   },
   activeCard: {
     ...sc.shadows.lg,
