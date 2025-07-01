@@ -62,7 +62,6 @@ export const text = {
   welcomeMessage: 'Welcome! Please login to start playing.',
   loginToStart: 'Connected to server. Please login to continue.',
   welcomeBack: 'Welcome back, {username}!',
-  loginFailed: 'Login failed. Please try again.',
   registrationSuccess: 'Registration successful! Welcome, {username}!',
   registrationFailed: 'Registration failed. Please try again.',
   gameStarted: 'Game started! Make your move.',

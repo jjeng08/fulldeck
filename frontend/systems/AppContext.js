@@ -104,28 +104,6 @@ export function AppProvider({ children }) {
       setGameMessage('Game started! Make your move.');
     },
     
-    loginCompleted: (data) => {
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setUser(userData);
-        setAuthToken(data.accessToken);
-        setRefreshToken(data.refreshToken);
-        setIsAuthenticated(true);
-        setGameMessage(`Welcome back, ${data.username}!`);
-        saveAuthData(data.accessToken, data.refreshToken, userData);
-        
-        // Auto-navigate to blackjack after successful login
-        if (global.navigation) {
-          global.navigation.navigate('Blackjack');
-        }
-      } else {
-        setGameMessage(data.message || 'Login failed. Please try again.');
-      }
-    },
     
     betAccepted: (data) => {
       // Update user balance
@@ -178,35 +156,6 @@ export function AppProvider({ children }) {
       setGameMessage('Ready for a new game! Place your bet.');
     },
     
-    registrationCompleted: (data) => {
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setUser(userData);
-        setAuthToken(data.accessToken);
-        setRefreshToken(data.refreshToken);
-        setIsAuthenticated(true);
-        
-        // Show success toast instead of auto-login
-        setToast({
-          visible: true,
-          message: `Registration successful! Welcome, ${data.username}!`,
-          type: 'success'
-        });
-        
-        saveAuthData(data.accessToken, data.refreshToken, userData);
-        
-        // Auto-navigate to blackjack after successful registration
-        if (global.navigation) {
-          global.navigation.navigate('Blackjack');
-        }
-      } else {
-        setGameMessage(data.message || 'Registration failed. Please try again.');
-      }
-    },
     
     tokenValidated: (data) => {
       if (!data.valid) {
@@ -359,14 +308,9 @@ export function AppProvider({ children }) {
   };
 
   useEffect(() => {
-    // Initialize WebSocket connection (no token needed for connection)
+    // Initialize WebSocket connection only - pages handle their own message listeners
     try {
       WebSocketService.connect();
-
-      // Set up all incoming message handlers (from backend to frontend)
-      Object.keys(incomingMessages).forEach(messageType => {
-        WebSocketService.onMessage(messageType, incomingMessages[messageType]);
-      });
     } catch (error) {
       console.error('Failed to initialize WebSocket:', error);
       setConnected(false);
@@ -380,7 +324,7 @@ export function AppProvider({ children }) {
         console.error('Error disconnecting WebSocket:', error);
       }
     };
-  }, []); // No dependency on authToken - connect once
+  }, []);
 
   const loadSavedToken = async () => {
     try {
@@ -535,6 +479,14 @@ export function AppProvider({ children }) {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
+  const setAuthenticatedUser = (userData, accessToken, refreshToken) => {
+    setUser(userData);
+    setAuthToken(accessToken);
+    setRefreshToken(refreshToken);
+    setIsAuthenticated(true);
+    saveAuthData(accessToken, refreshToken, userData);
+  };
+
   const value = {
     // State
     connected,
@@ -553,7 +505,8 @@ export function AppProvider({ children }) {
     sendMessage,
     setGameMessage,
     showToast,
-    hideToast
+    hideToast,
+    setAuthenticatedUser
   };
 
   return (

@@ -16,6 +16,7 @@ class WebSocketService {
       const config = getConfig()
       url = config.websocketUrl
     }
+    console.log('Connecting to WebSocket URL:', url);
     try {
       // Store the URL for reconnections
       this.currentUrl = url
@@ -69,7 +70,9 @@ class WebSocketService {
   sendMessage(type, data = {}) {
     if (this.connected && this.ws) {
       const message = { type, data }
-      this.ws.send(JSON.stringify(message))
+      const jsonMessage = JSON.stringify(message)
+      console.log('About to send message:', jsonMessage)
+      this.ws.send(jsonMessage)
       console.log('Sent message:', type, data)
     } else {
       console.error('WebSocket not connected')

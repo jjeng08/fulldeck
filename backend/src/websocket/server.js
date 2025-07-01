@@ -20,6 +20,7 @@ class WebSocketServer {
       
       // No token authentication at connection level - will validate per message
       console.log(`New WebSocket connection: ${connectionId}`)
+      console.log(`Total connections: ${this.connections.size + 1}`)
       
       this.connections.set(connectionId, {
         ws,
@@ -30,9 +31,12 @@ class WebSocketServer {
       })
 
       ws.on('message', (message) => {
+        console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
         if (connection) {
           handleMessage(ws, message.toString(), connection.userId)
+        } else {
+          console.log('NO CONNECTION FOUND FOR ID:', connectionId)
         }
       })
 

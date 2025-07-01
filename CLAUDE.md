@@ -33,6 +33,7 @@ This file contains coding conventions and rules for this project that Claude sho
 - **Currency formatting**: Always display as `$1,234` (whole numbers, commas every 3 digits, no decimals)
 - **NO MARGINS**: Use padding and containers for spacing. Margins cause alignment issues and layout breaks.
 - **TESTID = STYLE NAMES**: The testID attribute MUST ALWAYS match the style property name exactly. If style is `carouselContainer`, testID must be `testID="carouselContainer"`
+- **When listing anything (arguments, imports, etc.) ALWAYS ALPHABETIZE UNLESS EXPLICITLY TOLD OTHERWISE!**
 
 ### File Structure
 - `frontend/systems/` - App-wide logic (Context, WebSocket, etc.)

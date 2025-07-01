@@ -169,19 +169,35 @@ async function handlePlaceBet(ws, data, userId) {
   }
 }
 
-async function handleLogin(ws, data, userId) {
+async function handleLogin(ws, data) {
   console.log('Login attempt:', data.username)
   try {
     const bcrypt = require('bcryptjs')
-    
     // Find user by username
     const user = await prisma.user.findUnique({
       where: { username: data.username }
     })
     
     if (!user) {
+      console.log('USER')
       const response = {
-        type: 'loginCompleted',
+        type: 'login',
+        data: {
+          success: false,
+          message: t.loginFailed
+        }
+      }
+      ws.send(JSON.stringify(response))
+      await prisma.$disconnect()
+      return
+    }
+    
+    // Verify password
+    const passwordMatch = await bcrypt.compare(data.password, user.password)
+    if (!passwordMatch) {
+            console.log('PASSWORD')
+      const response = {
+        type: 'login',
         data: {
           success: false,
           message: t.loginFailed
@@ -220,7 +236,7 @@ async function handleLogin(ws, data, userId) {
     )
     
     const response = {
-      type: 'loginCompleted',
+      type: 'login',
       data: {
         success: true,
         userId: user.id,
@@ -237,7 +253,7 @@ async function handleLogin(ws, data, userId) {
   } catch (error) {
     console.error('Login error:', error)
     const response = {
-      type: 'loginCompleted',
+      type: 'login',
       data: {
         success: false,
         message: t.unableToLogin
@@ -262,7 +278,7 @@ async function handleRegister(ws, data, userId) {
     
     if (existingUser) {
       const response = {
-        type: 'registrationCompleted',
+        type: 'register',
         data: {
           success: false,
           message: t.usernameExists
@@ -276,7 +292,7 @@ async function handleRegister(ws, data, userId) {
     // Validate password
     if (!data.password || data.password.length < 3) {
       const response = {
-        type: 'registrationCompleted',
+        type: 'register',
         data: {
           success: false,
           message: t.passwordTooShort
@@ -323,7 +339,7 @@ async function handleRegister(ws, data, userId) {
     )
     
     const response = {
-      type: 'registrationCompleted',
+      type: 'register',
       data: {
         success: true,
         userId: newUser.id,
@@ -340,7 +356,7 @@ async function handleRegister(ws, data, userId) {
   } catch (error) {
     console.error('Registration error:', error)
     const response = {
-      type: 'registrationCompleted',
+      type: 'register',
       data: {
         success: false,
         message: t.unableToRegister
@@ -474,6 +490,7 @@ async function handleRefreshToken(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
+    console.log('REFRESH')
     console.error('Token refresh error:', error)
     const response = {
       type: 'tokenRefreshed',
@@ -642,6 +659,7 @@ async function handleLeaveTable(ws, data, userId) {
 }
 
 function handleMessage(ws, message, connectionUserId) {
+  console.log('BACKEND/SRC/WEBSOCKET')
   try {
     const parsed = JSON.parse(message)
     const { type, data } = parsed
@@ -679,7 +697,10 @@ function handleMessage(ws, message, connectionUserId) {
       }
     }
     
+    console.log('LOOKING FOR HANDLER:', type, 'AVAILABLE HANDLERS:', Object.keys(messageHandlers));
+    console.log('HANDLER FOUND:', messageHandlers[type]);
     if (messageHandlers[type]) {
+      console.log('CALLING HANDLER FOR:', type, 'HANDLER:', messageHandlers[type].name);
       messageHandlers[type](ws, data, userId)
     } else {
       console.log('Unknown message type:', type)

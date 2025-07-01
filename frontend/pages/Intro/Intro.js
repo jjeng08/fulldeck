@@ -3,20 +3,22 @@ import { View, Text, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 
-import { useApp } from '../../systems/AppContext';
+import { useApp } from 'systems/AppContext';
+import WebSocketService from 'systems/websocket';
 import { introStyles as s } from './IntroStyles';
-import { text as t } from '../../shared/text';
-import Button from '../../components/Button';
-import TextInput from '../../components/TextInput';
-import Toast from '../../components/Toast';
+import { text as t } from 'shared/text';
+import Button from 'components/Button';
+import TextInput from 'components/TextInput';
+import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, isAuthenticated, isLoadingAuth, gameMessage, toast, sendMessage, setGameMessage, hideToast } = useApp();
+  const { connected, hideToast, isAuthenticated, isLoadingAuth, sendMessage, setAuthenticatedUser, showToast, toast } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [formError, setFormError] = useState('');
   const [loginData, setLoginData] = useState({
     username: '',
     password: ''
@@ -33,15 +35,58 @@ export default function IntroPage() {
       // Clear form data before navigation
       setShowLoginForm(false);
       setShowRegisterForm(false);
+      setFormError('');
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
       navigation.navigate('Blackjack');
     }
   }, [isAuthenticated, navigation]);
 
+  // Listen for login/register responses directly
+  useEffect(() => {
+    const handleLoginResponse = (data) => {
+      console.log('Login response received:', data);
+      if (data.success) {
+        const userData = {
+          id: data.userId,
+          username: data.username,
+          balance: data.balance
+        };
+        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
+        navigation.navigate('Blackjack');
+      } else {
+        setFormError(data.message);
+      }
+    };
+
+    const handleRegisterResponse = (data) => {
+      if (data.success) {
+        const userData = {
+          id: data.userId,
+          username: data.username,
+          balance: data.balance
+        };
+        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
+        showToast(`Registration successful! Welcome, ${data.username}!`, 'success');
+        navigation.navigate('Blackjack');
+      } else {
+        setFormError(data.message);
+      }
+    };
+
+    WebSocketService.onMessage('login', handleLoginResponse);
+    WebSocketService.onMessage('register', handleRegisterResponse);
+
+    return () => {
+      WebSocketService.removeMessageHandler('login');
+      WebSocketService.removeMessageHandler('register');
+    };
+  }, []);
+
   const onShowLoginForm = () => {
     setShowLoginForm(true);
     setShowRegisterForm(false);
+    setFormError('');
     // Clear both forms when switching
     setLoginData({ username: '', password: '' });
     setRegisterData({ username: '', password: '', confirmPassword: '' });
@@ -50,6 +95,7 @@ export default function IntroPage() {
   const onShowRegisterForm = () => {
     setShowRegisterForm(true);
     setShowLoginForm(false);
+    setFormError('');
     // Clear both forms when switching
     setLoginData({ username: '', password: '' });
     setRegisterData({ username: '', password: '', confirmPassword: '' });
@@ -64,17 +110,22 @@ export default function IntroPage() {
 
   const onLoginDataChange = (field, value) => {
     setLoginData({ ...loginData, [field]: value });
+    if (formError && formError.length > 0) {
+      setFormError('');
+    }
   };
 
   const onRegisterDataChange = (field, value) => {
     setRegisterData({ ...registerData, [field]: value });
+    if (formError) {
+      setFormError('');
+    }
   };
 
   const onLoginSubmit = () => {
     if (loginData.username && loginData.password) {
       // Store navigation reference for auto-redirect after login
       global.navigation = navigation;
-      
       sendMessage('login', {
         username: loginData.username,
         password: loginData.password
@@ -94,7 +145,7 @@ export default function IntroPage() {
         });
       } else {
         // Show error message for password mismatch - don't send to server
-        setGameMessage(t.passwordMismatch);
+        setFormError(t.passwordMismatch);
       }
     }
   };
@@ -141,20 +192,20 @@ export default function IntroPage() {
       {showLoginForm && (
         <View style={s.formContainer}>
           <Text style={s.formTitle}>{t.login}</Text>
-          <TextInput
-            placeholder={t.enterUsername}
-            value={loginData.username}
-            onChangeText={(text) => onLoginDataChange('username', text)}
-          />
-          <TextInput
-            placeholder={t.enterPassword}
-            value={loginData.password}
-            onChangeText={(text) => onLoginDataChange('password', text)}
-            secureTextEntry
-          />
-          {gameMessage && (gameMessage.includes('login') || gameMessage.includes('Invalid username') || gameMessage.includes('Unable to login')) && (
-            <Text style={s.errorText}>{gameMessage}</Text>
-          )}
+          <form style={{ display: 'contents' }}>
+            <TextInput
+              placeholder={t.enterUsername}
+              value={loginData.username}
+              onChangeText={(text) => onLoginDataChange('username', text)}
+            />
+            <TextInput
+              placeholder={t.enterPassword}
+              value={loginData.password}
+              onChangeText={(text) => onLoginDataChange('password', text)}
+              secureTextEntry
+            />
+          </form>
+          {formError ? <Text style={s.errorText}>{formError}</Text> : null}
           <View style={s.formButtons}>
             <Button 
               label={t.cancel}
@@ -174,28 +225,28 @@ export default function IntroPage() {
       {showRegisterForm && (
         <View style={s.formContainer}>
           <Text style={s.formTitle}>{t.register}</Text>
-          <TextInput
-            placeholder={t.enterUsername}
-            value={registerData.username}
-            onChangeText={(text) => onRegisterDataChange('username', text)}
-          />
-          <TextInput
-            style={s.formInput}
-            placeholder={t.enterPassword}
-            value={registerData.password}
-            onChangeText={(text) => onRegisterDataChange('password', text)}
-            secureTextEntry
-          />
-          <TextInput
-            style={s.formInput}
-            placeholder={t.confirmYourPassword}
-            value={registerData.confirmPassword}
-            onChangeText={(text) => onRegisterDataChange('confirmPassword', text)}
-            secureTextEntry
-          />
-          {gameMessage && gameMessage.includes('register') && (
-            <Text style={s.errorText}>{gameMessage}</Text>
-          )}
+          <form>
+            <TextInput
+              placeholder={t.enterUsername}
+              value={registerData.username}
+              onChangeText={(text) => onRegisterDataChange('username', text)}
+            />
+            <TextInput
+              style={s.formInput}
+              placeholder={t.enterPassword}
+              value={registerData.password}
+              onChangeText={(text) => onRegisterDataChange('password', text)}
+              secureTextEntry
+            />
+            <TextInput
+              style={s.formInput}
+              placeholder={t.confirmYourPassword}
+              value={registerData.confirmPassword}
+              onChangeText={(text) => onRegisterDataChange('confirmPassword', text)}
+              secureTextEntry
+            />
+          </form>
+          {formError ? <Text style={s.errorText}>{formError}</Text> : null}
           <View style={s.formButtons}>
             <Button 
               label={t.cancel}
