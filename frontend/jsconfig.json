@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "*": ["*"],
+      "systems/*": ["systems/*"],
+      "pages/*": ["pages/*"],
+      "components/*": ["components/*"],
+      "shared/*": ["shared/*"]
+    }
+  },
+  "include": [
+    "**/*.js",
+    "**/*.jsx"
+  ],
+  "exclude": ["node_modules"]
+}
