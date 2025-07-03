@@ -8,18 +8,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+model Player {
   id        String   @id @default(cuid())
   username  String   @unique
   password  String
-  balance   Int      @default(1000)
+  balance   Int      @default(10000)
+  winnings  Int      @default(0)
   createdOn DateTime @default(now())
   lastSeen  DateTime @default(now())
   updatedAt DateTime @updatedAt
   
   gameResults GameResult[]
   
-  @@map("users")
+  @@map("players")
 }
 
 model Game {
@@ -36,15 +37,15 @@ model Game {
 model GameResult {
   id           String  @id @default(cuid())
   gameId       String
-  userId       String
+  playerId     String
   result       String
   amountWonLost Float
   playerHand   String
   dealerHand   String
   createdAt    DateTime @default(now())
   
-  game Game @relation(fields: [gameId], references: [id])
-  user User @relation(fields: [userId], references: [id])
+  game   Game   @relation(fields: [gameId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
   
   @@map("game_results")
 }

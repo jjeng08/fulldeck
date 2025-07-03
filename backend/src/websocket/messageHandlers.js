@@ -1,7 +1,8 @@
 const { text: t } = require('../shared/text')
 const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
-const gameManager = require('../core/managers/GameManager');
+const gameManager = require('../games/GameManager');
+const logger = require('../shared/utils/logger');
 
 const prisma = new PrismaClient()
 
@@ -30,7 +31,7 @@ const messageHandlers = {
 }
 
 async function handleStartGame(ws, data, userId) {
-  console.log('Starting game for user:', userId, 'with data:', data)
+  logger.logGameEvent('game_start_request', null, { userId, data });
   
   const response = {
     type: 'gameStarted',
@@ -46,7 +47,7 @@ async function handleStartGame(ws, data, userId) {
 }
 
 async function handleHit(ws, data, userId) {
-  console.log('Player hit:', userId, data)
+  logger.logGameEvent('player_hit', null, { userId, data });
   
   const response = {
     type: 'cardDealt',
@@ -62,7 +63,7 @@ async function handleHit(ws, data, userId) {
 }
 
 async function handleStand(ws, data, userId) {
-  console.log('Player stands:', userId, data)
+  logger.logGameEvent('player_stand', null, { userId, data });
   
   const response = {
     type: 'gameEnded',
@@ -79,7 +80,7 @@ async function handleStand(ws, data, userId) {
 }
 
 async function handleNewGame(ws, data, userId) {
-  console.log('New game requested:', userId)
+  logger.logGameEvent('new_game_request', null, { userId });
   
   const response = {
     type: 'gameReady',
@@ -93,21 +94,18 @@ async function handleNewGame(ws, data, userId) {
 }
 
 async function handlePlaceBet(ws, data, userId) {
-  console.log('=== PLACE BET ===');
-  console.log('User ID:', userId);
-  console.log('Bet amount:', data.amount);
+  logger.logGameEvent('place_bet_request', null, { userId, amount: data.amount });
   
   try {
     // All amounts are in cents
-    console.log('Bet amount:', data.amount);
     
     // First, get current user balance from database
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: userId }
     });
     
     if (!user) {
-      console.log('User not found in database');
+      logger.logError(new Error('User not found for bet'), { userId });
       ws.send(JSON.stringify({
         type: 'betRejected',
         data: { error: 'User not found' }
@@ -115,11 +113,11 @@ async function handlePlaceBet(ws, data, userId) {
       return;
     }
     
-    console.log('Current user balance:', user.balance);
+    logger.logDebug('User balance check', { userId, balance: user.balance, betAmount: data.amount });
     
     // Check if user has enough balance
     if (user.balance < data.amount) {
-      console.log('Insufficient balance');
+      logger.logInfo('Bet rejected - insufficient balance', { userId, balance: user.balance, betAmount: data.amount });
       ws.send(JSON.stringify({
         type: 'betRejected',
         data: { error: 'Insufficient balance' }
@@ -134,10 +132,10 @@ async function handlePlaceBet(ws, data, userId) {
     if (table && table.players && table.players.has(userId)) {
       const player = table.players.get(userId);
       updatedBalance = await player.debitPlayer(data.amount);
-      console.log('Player debited via table. Updated balance:', updatedBalance);
+      logger.logDebug('Player debited via table', { userId, updatedBalance });
     } else {
-      console.log('Player not found in table, using direct database update');
-      await prisma.user.update({
+      logger.logDebug('Player not in table, using direct database update', { userId });
+      await prisma.player.update({
         where: { id: userId },
         data: { balance: updatedBalance }
       });
@@ -145,7 +143,7 @@ async function handlePlaceBet(ws, data, userId) {
     
     // Now try to place bet in game logic (game will handle validation and setBet)
     const result = gameManager.handlePlayerAction(userId, 'placeBet', { amount: data.amount });
-    console.log('GameManager result:', result);
+    logger.logDebug('GameManager bet result', { userId, result: result?.success });
     
     const response = {
       type: 'betAccepted',
@@ -156,11 +154,11 @@ async function handlePlaceBet(ws, data, userId) {
       }
     };
     
-    console.log('Sending response:', response);
+    logger.logInfo('Bet accepted', { userId, betAmount: data.amount, newBalance: updatedBalance });
     ws.send(JSON.stringify(response));
     
   } catch (error) {
-    console.error('Error handling place bet:', error);
+    logger.logError(error, { userId, betAmount: data.amount, action: 'place_bet' });
     const response = {
       type: 'betRejected', 
       data: { error: 'Failed to place bet: ' + error.message }
@@ -170,16 +168,15 @@ async function handlePlaceBet(ws, data, userId) {
 }
 
 async function handleLogin(ws, data) {
-  console.log('Login attempt:', data.username)
+  logger.logAuthEvent('login_attempt', null, { username: data.username });
   try {
     const bcrypt = require('bcryptjs')
     // Find user by username
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { username: data.username }
     })
     
     if (!user) {
-      console.log('USER')
       const response = {
         type: 'login',
         data: {
@@ -195,7 +192,6 @@ async function handleLogin(ws, data) {
     // Verify password
     const passwordMatch = await bcrypt.compare(data.password, user.password)
     if (!passwordMatch) {
-            console.log('PASSWORD')
       const response = {
         type: 'login',
         data: {
@@ -209,7 +205,7 @@ async function handleLogin(ws, data) {
     }
     
     // Update last seen
-    await prisma.user.update({
+    await prisma.player.update({
       where: { id: user.id },
       data: { lastSeen: new Date() }
     })
@@ -251,7 +247,7 @@ async function handleLogin(ws, data) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.error('Login error:', error)
+    logger.logError(error, { username: data.username, action: 'login' });
     const response = {
       type: 'login',
       data: {
@@ -264,15 +260,14 @@ async function handleLogin(ws, data) {
 }
 
 async function handleRegister(ws, data, userId) {
-  console.log('Registration attempt:', data.username)
-  
+  logger.logAuthEvent('registration_attempt', null, { username: data.username });
   try {
     const { PrismaClient } = require('@prisma/client')
     const bcrypt = require('bcryptjs')
     const prisma = new PrismaClient()
     
     // Check if username already exists
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.player.findUnique({
       where: { username: data.username }
     })
     
@@ -307,7 +302,7 @@ async function handleRegister(ws, data, userId) {
     const hashedPassword = await bcrypt.hash(data.password, 12)
     
     // Create new user
-    const newUser = await prisma.user.create({
+    const newUser = await prisma.player.create({
       data: {
         username: data.username,
         password: hashedPassword,
@@ -354,7 +349,7 @@ async function handleRegister(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.error('Registration error:', error)
+    logger.logError(error, { username: data.username, action: 'register' });
     const response = {
       type: 'register',
       data: {
@@ -417,7 +412,7 @@ async function handleDoubleDown(ws, data, userId) {
 }
 
 async function handleValidateToken(ws, data, userId) {
-  console.log('Token validation request for user:', userId)
+  logger.logAuthEvent('token_validation_request', userId, { userId });
   
   try {
     const { validateToken } = require('./tokenValidator')
@@ -430,7 +425,7 @@ async function handleValidateToken(ws, data, userId) {
     
     ws.send(JSON.stringify(response))
   } catch (error) {
-    console.error('Token validation error:', error)
+    logger.logError(error, { userId, action: 'token_validation' });
     const response = {
       type: 'tokenValidated',
       data: {
@@ -443,7 +438,7 @@ async function handleValidateToken(ws, data, userId) {
 }
 
 async function handleRefreshToken(ws, data, userId) {
-  console.log('Token refresh request for user:', userId)
+  logger.logAuthEvent('token_refresh_request', userId, { userId });
   
   try {
     const decoded = jwt.verify(data.refreshToken, JWT_SECRET)
@@ -456,7 +451,7 @@ async function handleRefreshToken(ws, data, userId) {
     const prisma = new PrismaClient()
     
     // Verify user still exists
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: decoded.userId }
     })
     
@@ -490,8 +485,7 @@ async function handleRefreshToken(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.log('REFRESH')
-    console.error('Token refresh error:', error)
+    logger.logError(error, { userId, action: 'token_refresh' });
     const response = {
       type: 'tokenRefreshed',
       data: {
@@ -504,14 +498,14 @@ async function handleRefreshToken(ws, data, userId) {
 }
 
 async function handleUpdateBalance(ws, data, userId) {
-  console.log('Balance update for user:', userId, 'new balance:', data.newBalance)
+  logger.logUserAction('balance_update_request', userId, { userId, newBalance: data.newBalance });
   
   try {
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
     // Update user balance in database
-    const updatedUser = await prisma.user.update({
+    const updatedUser = await prisma.player.update({
       where: { id: userId },
       data: { balance: data.newBalance }
     })
@@ -529,7 +523,7 @@ async function handleUpdateBalance(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.error('Balance update error:', error)
+    logger.logError(error, { userId, action: 'balance_update', newBalance: data.newBalance });
     const response = {
       type: 'errorOccurred',
       data: { message: t.databaseError }
@@ -539,14 +533,14 @@ async function handleUpdateBalance(ws, data, userId) {
 }
 
 async function handleJoinTable(ws, data, userId) {
-  console.log('Player joining table:', userId)
+  logger.logUserAction('table_join_request', userId, { userId });
   
   try {
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
     // Get user data
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: userId }
     })
     
@@ -580,7 +574,7 @@ async function handleJoinTable(ws, data, userId) {
         }
       }
       ws.send(JSON.stringify(response))
-      console.log(`Player ${user.username} joined table ${result.table.getId()}`)
+      logger.logUserAction('table_joined', userId, { userId, username: user.username, tableId: result.table.getId() });
     } else {
       const response = {
         type: 'tableJoinResult',
@@ -595,7 +589,7 @@ async function handleJoinTable(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.error('Join table error:', error)
+    logger.logError(error, { userId, action: 'join_table' });
     const response = {
       type: 'tableJoinResult',
       data: {
@@ -608,14 +602,14 @@ async function handleJoinTable(ws, data, userId) {
 }
 
 async function handleLeaveTable(ws, data, userId) {
-  console.log('Player leaving table:', userId)
+  logger.logUserAction('table_leave_request', userId, { userId });
   
   try {
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
     // Get user data for logging
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: userId }
     })
     
@@ -631,7 +625,7 @@ async function handleLeaveTable(ws, data, userId) {
         }
       }
       ws.send(JSON.stringify(response))
-      console.log(`Player ${user?.username || userId} left table`)
+      logger.logUserAction('table_left', userId, { userId, username: user?.username });
     } else {
       const response = {
         type: 'tableLeaveResult',
@@ -646,7 +640,7 @@ async function handleLeaveTable(ws, data, userId) {
     await prisma.$disconnect()
     
   } catch (error) {
-    console.error('Leave table error:', error)
+    logger.logError(error, { userId, action: 'leave_table' });
     const response = {
       type: 'tableLeaveResult',
       data: {
@@ -659,12 +653,12 @@ async function handleLeaveTable(ws, data, userId) {
 }
 
 function handleMessage(ws, message, connectionUserId) {
-  console.log('BACKEND/SRC/WEBSOCKET')
+  logger.logWebSocketEvent('message_received', null, { action: 'message_processing' });
   try {
     const parsed = JSON.parse(message)
     const { type, data } = parsed
     
-    console.log(`Received message: ${type}`, data)
+    logger.logWebSocketEvent('message_parsed', null, { messageType: type, hasData: !!data });
     
     // Messages that don't require authentication
     const unauthenticatedMessages = ['login', 'register', 'refreshToken']
@@ -687,7 +681,7 @@ function handleMessage(ws, message, connectionUserId) {
           throw new Error('Invalid token type')
         }
         userId = decoded.userId
-        console.log(`Authenticated message from user: ${decoded.username}`)
+        logger.logAuthEvent('message_authenticated', decoded.userId, { username: decoded.username, messageType: type });
       } catch (error) {
         ws.send(JSON.stringify({
           type: 'errorOccurred',
@@ -696,21 +690,18 @@ function handleMessage(ws, message, connectionUserId) {
         return
       }
     }
-    
-    console.log('LOOKING FOR HANDLER:', type, 'AVAILABLE HANDLERS:', Object.keys(messageHandlers));
-    console.log('HANDLER FOUND:', messageHandlers[type]);
     if (messageHandlers[type]) {
-      console.log('CALLING HANDLER FOR:', type, 'HANDLER:', messageHandlers[type].name);
+      logger.logWebSocketEvent('handler_called', userId, { messageType: type, handlerName: messageHandlers[type].name });
       messageHandlers[type](ws, data, userId)
     } else {
-      console.log('Unknown message type:', type)
+      logger.logWebSocketEvent('unknown_message_type', userId, { messageType: type });
       ws.send(JSON.stringify({
         type: 'errorOccurred',
         data: { message: t.unknownMessageType.replace('{type}', type) }
       }))
     }
   } catch (error) {
-    console.error('Error handling message:', error)
+    logger.logError(error, { action: 'message_handling', messageType: parsed?.type });
     ws.send(JSON.stringify({
       type: 'errorOccurred',
       data: { message: t.invalidMessageFormat }
@@ -720,14 +711,14 @@ function handleMessage(ws, message, connectionUserId) {
 
 // Blackjack-specific handlers
 async function handleJoinBlackjackTable(ws, data, userId) {
-  console.log('Player joining blackjack table:', userId, 'mode:', data.gameMode)
+  logger.logUserAction('blackjack_table_join_request', userId, { userId, gameMode: data.gameMode });
   
   try {
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
     // Get user data
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: userId }
     })
     
@@ -762,7 +753,7 @@ async function handleJoinBlackjackTable(ws, data, userId) {
         }
       }
       ws.send(JSON.stringify(response))
-      console.log(`Player ${user.username} joined blackjack table ${result.table.getId()} (${gameMode} mode)`)
+      logger.logUserAction('blackjack_table_joined', userId, { userId, username: user.username, tableId: result.table.getId(), gameMode });
     } else {
       const response = {
         type: 'tableJoinResult',
@@ -776,7 +767,7 @@ async function handleJoinBlackjackTable(ws, data, userId) {
     
     await prisma.$disconnect()
   } catch (error) {
-    console.error('Error joining blackjack table:', error)
+    logger.logError(error, { userId, action: 'join_blackjack_table', gameMode: data.gameMode });
     const response = {
       type: 'errorOccurred',
       data: { message: 'Failed to join table' }
@@ -786,11 +777,11 @@ async function handleJoinBlackjackTable(ws, data, userId) {
 }
 
 async function handleLeaveBlackjackTable(ws, data, userId) {
-  console.log('Player leaving blackjack table:', userId)
+  logger.logUserAction('blackjack_table_leave_request', userId, { userId });
   
   try {
     // Get current user balance from database
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: userId }
     });
     
@@ -806,7 +797,7 @@ async function handleLeaveBlackjackTable(ws, data, userId) {
         }
       }
       ws.send(JSON.stringify(response))
-      console.log(`Player ${userId} left blackjack table with balance: ${user.balance}`)
+      logger.logUserAction('blackjack_table_left', userId, { userId, balance: user.balance });
     } else {
       const response = {
         type: 'tableLeaveResult',
@@ -818,7 +809,7 @@ async function handleLeaveBlackjackTable(ws, data, userId) {
       ws.send(JSON.stringify(response))
     }
   } catch (error) {
-    console.error('Error leaving blackjack table:', error)
+    logger.logError(error, { userId, action: 'leave_blackjack_table' });
     const response = {
       type: 'errorOccurred',
       data: { message: 'Failed to leave table' }

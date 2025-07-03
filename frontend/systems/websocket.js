@@ -1,3 +1,5 @@
+import { getConfig } from '../shared/environment';
+
 class WebSocketService {
   constructor() {
     this.ws = null
@@ -12,7 +14,6 @@ class WebSocketService {
   connect(url) {
     // Use environment config if no URL provided
     if (!url) {
-      const { getConfig } = require('../shared/environment')
       const config = getConfig()
       url = config.websocketUrl
     }

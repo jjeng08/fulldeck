@@ -9,7 +9,7 @@ const validateToken = async (token) => {
     const prisma = new PrismaClient()
     
     // Check if user still exists in database
-    const user = await prisma.user.findUnique({
+    const user = await prisma.player.findUnique({
       where: { id: decoded.userId }
     })
     

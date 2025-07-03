@@ -45,6 +45,11 @@ This file contains coding conventions and rules for this project that Claude sho
 - **Use text constants** with alias `t` from `src/shared/text.js`
 - **Alphabetize** message handlers and object properties
 - **JWT tokens**: Access token (1 hour), Refresh token (7 days)
+- **MANDATORY LOGGING**: ALL backend functionality MUST include proper logging
+  - **Import logger**: `const logger = require('../shared/utils/logger')`
+  - **Use structured logging**: `logger.logInfo('User action', { userId, action })`
+  - **Log all user actions, errors, and significant events**
+  - **Never develop backend features without logging - no functionality should be invisible**
 
 ## Project-Specific Rules
 
@@ -133,6 +138,18 @@ Claude is authorized to run ALL system commands necessary for project developmen
 - System utilities: `grep`, `find`, `curl`, `wget`, `which`, `whereis`, `ss`, `ps`, `aux`
 - Directory management: `mkdir`, `rmdir`, `mv`, `cp` within /mnt/c/src/fulldeck
 - All other commands needed for full-stack development within this project
+
+## DATABASE MIGRATION RULES - CRITICAL
+- **NEVER perform database schema changes without data migration**
+- **ALWAYS preserve existing data when changing models/tables**
+- **Before any Prisma schema changes**:
+  1. Export existing data from affected tables
+  2. Create migration script to transfer data to new schema
+  3. Verify data integrity after migration
+  4. Test rollback procedures
+- **NEVER use `prisma db push` in production - always use proper migrations**
+- **ALWAYS backup database before schema changes**
+- **Data loss is NEVER acceptable in any environment**
 
 ## System Command Authorizations
 - **CRITICAL AUTHORIZATION**: 

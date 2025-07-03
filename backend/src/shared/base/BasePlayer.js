@@ -32,7 +32,7 @@ class BasePlayer {
     const prisma = new PrismaClient();
     
     try {
-      const updatedUser = await prisma.user.update({
+      const updatedUser = await prisma.player.update({
         where: { id: this.userId },
         data: { balance: { decrement: amount } }
       });
@@ -52,7 +52,7 @@ class BasePlayer {
     const prisma = new PrismaClient();
     
     try {
-      const updatedUser = await prisma.user.update({
+      const updatedUser = await prisma.player.update({
         where: { id: this.userId },
         data: { balance: { increment: amount } }
       });

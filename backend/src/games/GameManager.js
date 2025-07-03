@@ -1,6 +1,6 @@
-const Blackjack = require('../../games/blackjack/Blackjack');
-const Poker = require('../../games/poker/Poker');
-const Baccarat = require('../../games/baccarat/Baccarat');
+const Blackjack = require('./blackjack/Blackjack');
+const Poker = require('./poker/Poker');
+const Baccarat = require('./baccarat/Baccarat');
 const { v4: uuidv4 } = require('uuid');
 
 class GameManager {

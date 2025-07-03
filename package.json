@@ -4,7 +4,7 @@
   "description": "Full-stack gaming platform with React frontend and Node.js backend",
   "private": true,
   "scripts": {
-    "startlocal": "npm install && cd backend && npm install && cd ../frontend && npm install && cd .. && concurrently \"cd backend && npm run dev\" \"cd frontend && npm run web -- --port 3000\"",
+    "startlocal": "npm install && cd backend && npm install && cd ../frontend && npm install && cd .. && concurrently --names \"BACKEND,FRONTEND\" --prefix name --prefix-colors \"cyan,magenta\" \"cd backend && npm run dev\" \"cd frontend && npm run web -- --port 3000\"",
     "install-all": "npm install && npm install --workspace=frontend && npm install --workspace=backend",
     "build": "npm run build --workspace=frontend && npm run build --workspace=backend",
     "clean": "rm -rf node_modules frontend/node_modules backend/node_modules"
