@@ -1,7 +1,7 @@
 const WebSocket = require('ws')
 const jwt = require('jsonwebtoken')
 const url = require('url')
-const { handleMessage } = require('./messageHandlers')
+const { onMessage } = require('./messages')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'blackjack-secret-key'
 
@@ -34,7 +34,7 @@ class WebSocketServer {
         console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
         if (connection) {
-          handleMessage(ws, message.toString(), connection.userId)
+          onMessage(ws, message.toString(), connection.userId)
         } else {
           console.log('NO CONNECTION FOUND FOR ID:', connectionId)
         }

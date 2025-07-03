@@ -7,7 +7,7 @@ import { lobbyStyles as s } from './LobbyStyles';
 import { text as t } from '../../shared/text';
 import { formatCurrency } from '../../shared/utils';
 import Button from '../../components/Button';
-import GameCarousel from '../../components/GameCarousel';
+import GamesCarousel from '../../components/GamesCarousel';
 
 export default function LobbyPage() {
   const navigation = useNavigation();
@@ -90,7 +90,7 @@ export default function LobbyPage() {
         </View>
 
         <View style={s.mainContent}>
-          <GameCarousel />
+          <GamesCarousel />
         </View>
       </View>
     </View>

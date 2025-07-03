@@ -1,4 +1,5 @@
 import { getConfig } from '../shared/environment';
+import logger from '../shared/logger';
 
 class WebSocketService {
   constructor() {
@@ -17,7 +18,7 @@ class WebSocketService {
       const config = getConfig()
       url = config.websocketUrl
     }
-    console.log('Connecting to WebSocket URL:', url);
+    logger.logWebSocketEvent('connection_attempt', { url });
     try {
       // Store the URL for reconnections
       this.currentUrl = url
@@ -26,7 +27,7 @@ class WebSocketService {
       this.ws = new WebSocket(url)
       
       this.ws.onopen = () => {
-        console.log('WebSocket connected')
+        logger.logWebSocketEvent('connected', { url: this.currentUrl })
         this.connected = true
         this.reconnectAttempts = 0
       }
@@ -36,35 +37,40 @@ class WebSocketService {
           const message = JSON.parse(event.data)
           this.handleMessage(message)
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          logger.logError(error, { type: 'websocket_error', action: 'message_parsing' })
         }
       }
 
       this.ws.onclose = () => {
-        console.log('WebSocket disconnected')
+        logger.logWebSocketEvent('disconnect', { reconnectAttempts: this.reconnectAttempts })
         this.connected = false
         this.attemptReconnect()
       }
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+        logger.logError(error, { type: 'websocket_error', action: 'connection' })
       }
 
     } catch (error) {
-      console.error('Failed to connect to WebSocket:', error)
+      logger.logError(error, { type: 'websocket_error', action: 'connection_failed', url })
     }
   }
 
   attemptReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+      logger.logWebSocketEvent('reconnection_attempt', { 
+        attempt: this.reconnectAttempts, 
+        maxAttempts: this.maxReconnectAttempts 
+      })
       
       setTimeout(() => {
         this.connect(this.currentUrl)
       }, this.reconnectDelay * this.reconnectAttempts)
     } else {
-      console.log('Max reconnection attempts reached')
+      logger.logWebSocketEvent('max_reconnections_reached', { 
+        maxAttempts: this.maxReconnectAttempts 
+      })
     }
   }
 
@@ -72,23 +78,27 @@ class WebSocketService {
     if (this.connected && this.ws) {
       const message = { type, data }
       const jsonMessage = JSON.stringify(message)
-      console.log('About to send message:', jsonMessage)
+      logger.logDebug('WebSocket message sending', { type, dataKeys: Object.keys(data) })
       this.ws.send(jsonMessage)
-      console.log('Sent message:', type, data)
+      logger.logDebug('WebSocket message sent', { type })
     } else {
-      console.error('WebSocket not connected')
+      logger.logError(new Error('WebSocket not connected'), { 
+        type: 'websocket_error', 
+        action: 'send_message_failed', 
+        messageType: type 
+      })
     }
   }
 
   handleMessage(message) {
     const { type, data } = message
-    console.log('Received message:', type, data)
+    logger.logDebug('WebSocket message received', { type, hasData: !!data })
 
     if (this.messageHandlers.has(type)) {
       const handler = this.messageHandlers.get(type)
       handler(data)
     } else {
-      console.log('No handler for message type:', type)
+      logger.logWarn('No WebSocket message handler', { messageType: type })
     }
   }
 
@@ -108,50 +118,6 @@ class WebSocketService {
     }
   }
 
-  // Game-specific message methods
-  startGame(betAmount) {
-    this.sendMessage('startGame', { betAmount })
-  }
-
-  hit() {
-    this.sendMessage('hit')
-  }
-
-  stand() {
-    this.sendMessage('stand')
-  }
-
-  newGame() {
-    this.sendMessage('newGame')
-  }
-
-  placeBet(amount) {
-    this.sendMessage('placeBet', { amount })
-  }
-
-  login(username, password) {
-    this.sendMessage('login', { username, password })
-  }
-
-  register(username, password) {
-    this.sendMessage('register', { username, password })
-  }
-
-  getBalance() {
-    this.sendMessage('getBalance')
-  }
-
-  getGameState() {
-    this.sendMessage('getGameState')
-  }
-
-  surrender() {
-    this.sendMessage('surrender')
-  }
-
-  doubleDown() {
-    this.sendMessage('doubleDown')
-  }
 }
 
 export default new WebSocketService()

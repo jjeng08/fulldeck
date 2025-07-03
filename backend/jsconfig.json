@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "baseUrl": "./src",
+    "paths": {
+      "*": ["*"],
+      "shared/*": ["shared/*"],
+      "games/*": ["games/*"],
+      "websocket/*": ["websocket/*"],
+      "http/*": ["http/*"]
+    },
+    "target": "es2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "logs",
+    "prisma/migrations"
+  ]
+}

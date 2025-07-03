@@ -1,7 +1,7 @@
 const BaseGame = require('../../shared/base/BaseGame');
 const BlackjackEngine = require('./BlackjackEngine');
 const BlackjackPlayer = require('./BlackjackPlayer');
-const BettingUtils = require('../../shared/utils/BettingUtils');
+const { validateBetAmount, processBet, processAllInBet, formatCurrency, calculatePayout } = require('../../shared/utils');
 
 class Blackjack extends BaseGame {
   constructor(tableId, betLevel = 1, gameMode = 'multiplayer') {
@@ -119,13 +119,13 @@ class Blackjack extends BaseGame {
     }
 
     // Validate bet using BettingUtils
-    const validation = BettingUtils.validateBetAmount(amount, player.balance, 100, this.betAmounts.maxBet);
+    const validation = validateBetAmount(amount, player.balance, 100, this.betAmounts.maxBet);
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
 
     // Process the bet
-    const betAmount = BettingUtils.processBet(player, amount);
+    const betAmount = processBet(player, amount);
     player.setBet(betAmount);
     
     // Change status to betting if this is the first bet

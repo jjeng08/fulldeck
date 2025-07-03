@@ -18,6 +18,7 @@ This file contains coding conventions and rules for this project that Claude sho
 
 ### Naming Conventions
 - **Event handlers**: Use `on*` prefix (e.g., `onLogin`, `onRegister`)
+- **Message handlers**: Use `on*` prefix + message name properly cased (e.g., `onLogin`, `onRegister`, `onTokenRefreshed`)
 - **Styles alias**: Always use `s` (e.g., `import { introStyles as s }`)
 - **Text alias**: Always use `t` (e.g., `import { text as t }`)
 - **StyleConstants alias**: Always use `sc` (e.g., `import { styleConstants as sc }`)
@@ -33,13 +34,24 @@ This file contains coding conventions and rules for this project that Claude sho
 - **Currency formatting**: Always display as `$1,234` (whole numbers, commas every 3 digits, no decimals)
 - **NO MARGINS**: Use padding and containers for spacing. Margins cause alignment issues and layout breaks.
 - **TESTID = STYLE NAMES**: The testID attribute MUST ALWAYS match the style property name exactly. If style is `carouselContainer`, testID must be `testID="carouselContainer"`
+- **Constants**: Use camelCase for constants, not ALL_CAPS (e.g., `messageTypes`, not `MESSAGE_TYPES`)
+- **React hooks ordering**: In React hooks and contexts, always define useEffects first unless something is strictly necessary for the useEffect to work
 - **When listing anything (arguments, imports, etc.) ALWAYS ALPHABETIZE UNLESS EXPLICITLY TOLD OTHERWISE!**
 
 ### File Structure
 - `frontend/systems/` - App-wide logic (Context, WebSocket, etc.)
-- `frontend/shared/` - Shared constants (text.js)
+- `frontend/shared/` - Shared constants (text.js, logger.js)
 - `frontend/pages/` - Page components with co-located styles
 - `frontend/components/` - Reusable components
+
+### Frontend
+- **Use text constants** with alias `t` from `shared/text.js`
+- **MANDATORY LOGGING**: ALL critical frontend functionality MUST include proper logging
+  - **Import logger**: `import logger from 'shared/logger'`
+  - **Use structured logging**: `logger.logUserAction('login_attempt', { username })`
+  - **Log critical errors**: `logger.logError(error, { type: 'websocket_error' })`
+  - **Development visibility**: Console logs automatically shown in development
+  - **Backend persistence**: Critical events automatically sent to backend for monitoring
 
 ### Backend
 - **Use text constants** with alias `t` from `src/shared/text.js`
@@ -117,6 +129,7 @@ setGameMessage("Insufficient balance for this bet!");
 - **Separate diagnosis from execution** - answer questions first, wait for instructions
 - If user asks about a problem, explain the cause but do NOT automatically attempt fixes
 - **STOP and WAIT for user instruction after completing each requested task**
+- **Planning Mode**: If user starts message with "Question:", do NOT execute any code - only provide analysis and recommendations
 
 ## PACKAGE.JSON RULES
 - **Create package.json files where needed for proper project structure**

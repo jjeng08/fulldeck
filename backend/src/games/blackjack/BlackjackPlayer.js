@@ -1,5 +1,5 @@
 const BasePlayer = require('../../shared/base/BasePlayer');
-const BettingUtils = require('../../shared/utils/BettingUtils');
+const { validateBetAmount, processBet, processAllInBet, formatCurrency, calculatePayout } = require('../../shared/utils');
 
 class BlackjackPlayer extends BasePlayer {
   constructor(userId, username, balance, status = 'active') {

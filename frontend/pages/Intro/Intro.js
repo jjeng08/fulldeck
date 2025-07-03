@@ -4,12 +4,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
-import WebSocketService from 'systems/websocket';
 import { introStyles as s } from './IntroStyles';
 import { text as t } from 'shared/text';
 import Button from 'components/Button';
 import TextInput from 'components/TextInput';
 import Toast from 'components/Toast';
+import logger from 'shared/logger';
 
 export default function IntroPage() {
   const navigation = useNavigation();
@@ -42,46 +42,6 @@ export default function IntroPage() {
     }
   }, [isAuthenticated, navigation]);
 
-  // Listen for login/register responses directly
-  useEffect(() => {
-    const handleLoginResponse = (data) => {
-      console.log('Login response received:', data);
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
-        navigation.navigate('Lobby');
-      } else {
-        setFormError(data.message);
-      }
-    };
-
-    const handleRegisterResponse = (data) => {
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
-        showToast(`Registration successful! Welcome, ${data.username}!`, 'success');
-        navigation.navigate('Lobby');
-      } else {
-        setFormError(data.message);
-      }
-    };
-
-    WebSocketService.onMessage('login', handleLoginResponse);
-    WebSocketService.onMessage('register', handleRegisterResponse);
-
-    return () => {
-      WebSocketService.removeMessageHandler('login');
-      WebSocketService.removeMessageHandler('register');
-    };
-  }, []);
 
   const onShowLoginForm = () => {
     setShowLoginForm(true);
@@ -124,8 +84,6 @@ export default function IntroPage() {
 
   const onLoginSubmit = () => {
     if (loginData.username && loginData.password) {
-      // Store navigation reference for auto-redirect after login
-      global.navigation = navigation;
       sendMessage('login', {
         username: loginData.username,
         password: loginData.password
@@ -136,15 +94,11 @@ export default function IntroPage() {
   const onRegisterSubmit = () => {
     if (registerData.username && registerData.password && registerData.confirmPassword) {
       if (registerData.password === registerData.confirmPassword) {
-        // Store navigation reference for auto-redirect after registration
-        global.navigation = navigation;
-        
         sendMessage('register', {
           username: registerData.username,
           password: registerData.password
         });
       } else {
-        // Show error message for password mismatch - don't send to server
         setFormError(t.passwordMismatch);
       }
     }

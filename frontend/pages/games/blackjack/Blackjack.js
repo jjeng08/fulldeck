@@ -7,6 +7,7 @@ import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from '../../../shared/text';
 import { formatCurrency } from '../../../shared/utils';
 import Button from '../../../components/Button';
+import logger from '../../../shared/logger';
 
 export default function Blackjack() {
   const navigation = useNavigation();
@@ -31,7 +32,7 @@ export default function Blackjack() {
 
   // Update displayed balance when user balance changes
   useEffect(() => {
-    console.log(currentBet)
+    logger.logDebug('Current bet amount', { currentBet })
     if (user?.balance !== undefined) {
       setDisplayedBalance(user.balance - currentBet);
     }
@@ -66,7 +67,7 @@ export default function Blackjack() {
   // Handle auto bet submission when triggered by backend
   useEffect(() => {
     if (tableState.autoSubmitTrigger && currentBet > 0) {
-      console.log(`Auto-submitting bet: $${currentBet}`);
+      logger.logGameEvent('bet_submitted', { amount: currentBet, auto: true });
       sendMessage('placeBet', { amount: currentBet });
     }
   }, [tableState.autoSubmitTrigger, currentBet, sendMessage]);
@@ -95,8 +96,11 @@ export default function Blackjack() {
   const currentPlayer = tableState.players?.find(p => p.userId === user?.id);
   const otherPlayers = tableState.players?.filter(p => p.userId !== user?.id) || [];
   const betAmounts = tableState.betAmounts;
-  console.log('tableState:', tableState);
-  console.log('betAmounts:', betAmounts);
+  logger.logDebug('Game state update', { 
+    tableId: tableState?.tableId, 
+    gameStatus: tableState?.gameStatus,
+    betAmounts 
+  });
 
   const renderPlayer = (player, position) => {
     return (

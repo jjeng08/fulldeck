@@ -4,16 +4,42 @@ import { View, Text, Image, Dimensions, Animated } from 'react-native';
 const { width: screenWidth } = Dimensions.get('window');
 import { useNavigation } from '@react-navigation/native';
 
-import { allGames } from 'shared/gameConfig';
+import { useApp } from 'systems/AppContext';
 import { text as t } from 'shared/text';
 import { styleConstants as sc } from 'shared/styleConstants';
 import Button from 'components/Button';
 
-export default function GameCarousel() {
+// Game assets mapping - internal to component
+const gameAssets = {
+  blackjack: {
+    logo: require('../assets/logo-blackjack.png'),
+  },
+  poker: {
+    logo: require('../assets/logo-placeholder.png'),
+  },
+  baccarat: {
+    logo: require('../assets/logo-placeholder.png'),
+  }
+};
+
+// Helper function to get game with assets
+const getGameWithAssets = (game) => {
+  const assets = gameAssets[game.id] || {};
+  return {
+    ...game,
+    logo: assets.logo
+  };
+};
+
+export default function GamesCarousel() {
   const navigation = useNavigation();
+  const { availableGames } = useApp();
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Get games with assets
+  const gamesWithAssets = (availableGames || []).map(game => getGameWithAssets(game));
   
   const onPlayGame = (game) => {
     if (game.available) {
@@ -25,44 +51,59 @@ export default function GameCarousel() {
     if (isAnimating) return;
     
     setIsAnimating(true);
-    const slideDistance = 360; // 300px card width + 20% = 360px
     
-    // Slide out current card
+    // Always slide in the visual direction clicked
+    const currentValue = slideAnim._value;
+    const slideDistance = screenWidth * 0.5;
+    const targetValue = currentValue + (direction === 'next' ? -slideDistance : slideDistance);
+    
+    // Animate to new position
     Animated.timing(slideAnim, {
-      toValue: direction === 'next' ? -slideDistance : slideDistance,
-      duration: 200,
+      toValue: targetValue,
+      duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      // Update index
+      // Update index after animation
       callback();
       
-      // Reset position for slide in
-      slideAnim.setValue(direction === 'next' ? slideDistance : -slideDistance);
+      // Check if we need to reset position for seamless infinite scroll
+      const currentPos = slideAnim._value;
+      const maxOffset = gamesWithAssets.length * slideDistance;
       
-      // Slide in new card
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => {
-        setIsAnimating(false);
-      });
+      if (currentPos <= -maxOffset) {
+        // Moved too far right, reset to left side
+        slideAnim.setValue(currentPos + maxOffset);
+      } else if (currentPos >= maxOffset) {
+        // Moved too far left, reset to right side  
+        slideAnim.setValue(currentPos - maxOffset);
+      }
+      
+      setIsAnimating(false);
     });
   };
 
   const goToNext = () => {
     animateSlide('next', () => {
-      setActiveIndex((prevIndex) => (prevIndex + 1) % allGames.length);
+      setActiveIndex((prevIndex) => (prevIndex + 1) % gamesWithAssets.length);
     });
   };
 
   const goToPrevious = () => {
     animateSlide('prev', () => {
-      setActiveIndex((prevIndex) => (prevIndex - 1 + allGames.length) % allGames.length);
+      setActiveIndex((prevIndex) => (prevIndex - 1 + gamesWithAssets.length) % gamesWithAssets.length);
     });
   };
 
-  const currentGame = allGames[activeIndex];
+  const currentGame = gamesWithAssets[activeIndex];
+
+  // Don't render if no games available
+  if (!gamesWithAssets.length) {
+    return (
+      <View style={carouselStyles.container} testID="container">
+        <Text style={carouselStyles.title} testID="title">No games available</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={carouselStyles.container} testID="container">
@@ -83,40 +124,51 @@ export default function GameCarousel() {
       </View>
       
       <View style={carouselStyles.cardContainer} testID="cardContainer">
-        <Animated.View 
-          style={[
-            carouselStyles.card, 
-            {
-              transform: [{ translateX: slideAnim }]
-            }
-          ]} 
-          testID="card"
-        >
-          <Image 
-            source={currentGame.logo} 
-            style={carouselStyles.logo} 
-            testID="logo"
-            resizeMode="contain" 
-          />
-          <Text style={carouselStyles.gameName} testID="gameName">{currentGame.name}</Text>
-          <Text style={carouselStyles.description} testID="description">
-            {currentGame.description}
-          </Text>
-          <Button 
-            label={currentGame.available ? 'Play' : 'Coming Soon'}
-            onPress={() => onPlayGame(currentGame)}
-            style={[
-              carouselStyles.playButton,
-              !currentGame.available && carouselStyles.disabledButton
-            ]}
-            disabled={!currentGame.available}
-            testID="playButton"
-          />
-        </Animated.View>
+        {[...gamesWithAssets, ...gamesWithAssets, ...gamesWithAssets].map((game, index) => {
+          const cardWidth = screenWidth * 0.5;
+          const baseOffset = (index - gamesWithAssets.length) * cardWidth;
+          
+          return (
+            <Animated.View 
+              key={`${game.id}-${index}`}
+              style={[
+                carouselStyles.card,
+                {
+                  position: 'absolute',
+                  transform: [{ 
+                    translateX: Animated.add(slideAnim, baseOffset) 
+                  }]
+                }
+              ]} 
+              testID="card"
+            >
+              <Image 
+                source={game.logo} 
+                style={carouselStyles.logo} 
+                testID="logo"
+                resizeMode="contain" 
+              />
+              <Text style={carouselStyles.gameName} testID="gameName">{game.name}</Text>
+              <Text style={carouselStyles.description} testID="description">
+                {game.description}
+              </Text>
+              <Button 
+                label={game.available ? 'Play' : 'Coming Soon'}
+                onPress={() => onPlayGame(game)}
+                style={[
+                  carouselStyles.playButton,
+                  !game.available && carouselStyles.disabledButton
+                ]}
+                disabled={!game.available}
+                testID="playButton"
+              />
+            </Animated.View>
+          );
+        })}
       </View>
       
       <View style={carouselStyles.indicators} testID="indicators">
-        {allGames.map((_, index) => (
+        {gamesWithAssets.map((_, index) => (
           <View 
             key={index}
             style={[
@@ -134,8 +186,8 @@ export default function GameCarousel() {
 // GameCarousel specific styles using styleConstants
 const carouselStyles = {
   container: {
-    width: '100%',
-    height: 500,
+    width: '50%',
+    height: '70%',
     paddingVertical: sc.size.lg,
     alignItems: 'center',
     backgroundColor: 'transparent',
@@ -147,7 +199,7 @@ const carouselStyles = {
     justifyContent: 'center',
     paddingHorizontal: sc.size.lg,
     marginBottom: sc.size.md,
-    maxWidth: 360,
+    maxWidth: 500,
   },
   title: {
     ...sc.baseComponents.heading,
@@ -172,7 +224,7 @@ const carouselStyles = {
   },
   cardContainer: {
     width: '100%',
-    maxWidth: 360,
+    height: '80%',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
@@ -183,8 +235,8 @@ const carouselStyles = {
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#ffd700',
-    height: 400,
-    width: 300,
+    height: '100%',
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
