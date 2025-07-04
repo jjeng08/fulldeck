@@ -47,6 +47,42 @@ function sendAvailableGames(ws) {
   }
 }
 
+// Helper function to log activity to database
+async function logActivity(playerId, username, activityType, options = {}) {
+  try {
+    const { credit, debit, balance, winnings } = options;
+    
+    await prisma.activityLog.create({
+      data: {
+        playerId,
+        username,
+        activityType,
+        credit: credit || null,
+        debit: debit || null,
+        balance,
+        winnings: winnings || null
+      }
+    });
+    
+    logger.logInfo('Activity logged to database', { 
+      playerId, 
+      username, 
+      activityType, 
+      credit, 
+      debit, 
+      balance, 
+      winnings 
+    });
+  } catch (error) {
+    logger.logError(error, { 
+      playerId, 
+      username, 
+      activityType, 
+      action: 'log_activity' 
+    });
+  }
+}
+
 const messages = {
   // Authentication
   'login': onLogin,
@@ -157,7 +193,7 @@ async function onPlaceBet(ws, data, userId) {
       logger.logError(new Error('User not found for bet'), { userId });
       ws.send(JSON.stringify({
         type: 'betRejected',
-        data: { error: 'User not found' }
+        data: { errorMessage: t.userNotFound }
       }));
       return;
     }
@@ -169,7 +205,7 @@ async function onPlaceBet(ws, data, userId) {
       logger.logInfo('Bet rejected - insufficient balance', { userId, balance: user.balance, betAmount: data.amount });
       ws.send(JSON.stringify({
         type: 'betRejected',
-        data: { error: 'Insufficient balance' }
+        data: { errorMessage: t.insufficientBalance }
       }));
       return;
     }
@@ -186,6 +222,12 @@ async function onPlaceBet(ws, data, userId) {
       logger.logDebug('Player not in table, using direct database update', { userId });
       await updatePlayerBalance(userId, updatedBalance, 'bet_placed', { betAmount: data.amount });
     }
+    
+    // Log activity to database
+    await logActivity(userId, user.username, 'bet_placed', {
+      debit: data.amount,
+      balance: updatedBalance
+    });
     
     // Now try to place bet in game logic (game will handle validation and setBet)
     const result = gameManager.handlePlayerAction(userId, 'placeBet', { amount: data.amount });
@@ -207,7 +249,7 @@ async function onPlaceBet(ws, data, userId) {
     logger.logError(error, { userId, betAmount: data.amount, action: 'place_bet' });
     const response = {
       type: 'betRejected', 
-      data: { error: 'Failed to place bet: ' + error.message }
+      data: { errorMessage: t.serverError }
     };
     ws.send(JSON.stringify(response));
   }

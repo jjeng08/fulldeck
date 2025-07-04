@@ -8,8 +8,12 @@ const gameConfigs = {
     available: true,
     description: 'Classic 21 card game',
     route: 'Blackjack',
-    minBet: 100,      // in cents ($1.00)
-    maxBet: 10000,    // in cents ($100.00)
+    maxMulti: 5,
+    tiers: [
+      [25, 50, 100],
+      [100, 200, 500],
+      [500, 1000, 2500]
+    ], 
     maxPlayers: 6,
     variants: ['classic'],
     rules: {
@@ -27,8 +31,7 @@ const gameConfigs = {
     available: false,
     description: 'Coming Soon',
     route: 'Poker',
-    minBet: 200,      // in cents ($2.00)
-    maxBet: 50000,    // in cents ($500.00)
+    tiers: [200, 500, 1000, 2500, 5000, 10000, 25000, 50000],    // in cents ($2, $5, $10, $25, $50, $100, $250, $500)
     maxPlayers: 9,
     variants: ['holdem'],
     rules: {
@@ -43,8 +46,7 @@ const gameConfigs = {
     available: false,
     description: 'Coming Soon',
     route: 'Baccarat',
-    minBet: 500,      // in cents ($5.00)
-    maxBet: 100000,   // in cents ($1000.00)
+    tiers: [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000],
     maxPlayers: 14,
     variants: ['punto_banco'],
     rules: {
@@ -97,7 +99,7 @@ const setGameAvailability = (gameId, available) => {
 const updateGameConfig = (gameId, updates) => {
   if (gameConfigs[gameId]) {
     // Only allow certain fields to be updated
-    const allowedUpdates = ['available', 'minBet', 'maxBet', 'description'];
+    const allowedUpdates = ['available', 'tiers', 'description'];
     const filteredUpdates = {};
     
     for (const key of allowedUpdates) {
@@ -125,12 +127,9 @@ const validateBetAmount = (gameId, amount) => {
     return { valid: false, error: 'Game not available' };
   }
   
-  if (amount < game.minBet) {
-    return { valid: false, error: `Minimum bet is $${game.minBet / 100}` };
-  }
-  
-  if (amount > game.maxBet) {
-    return { valid: false, error: `Maximum bet is $${game.maxBet / 100}` };
+  if (!game.tiers || !game.tiers.includes(amount)) {
+    const availableTiers = game.tiers.map(tier => `$${tier / 100}`).join(', ');
+    return { valid: false, error: `Available bet tiers: ${availableTiers}` };
   }
   
   return { valid: true };

@@ -8,6 +8,109 @@ export const tableStyles = StyleSheet.create({
     backgroundColor: sc.colors.green,
     justifyContent: 'space-between'
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.md,
+    backgroundColor: sc.colors.greenDark,
+    borderBottomWidth: 1,
+    borderBottomColor: sc.colors.gray400,
+  },
+  title: {
+    fontSize: sc.fontSizes['2xl'],
+    fontWeight: 'bold',
+    color: sc.colors.text
+  },
+  gameArea: {
+    flex: 1,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: sc.size.lg,
+    paddingBottom: sc.size.lg,
+  },
+  gameStatus: {
+    fontSize: sc.fontSizes.lg,
+    color: sc.colors.text,
+    marginBottom: sc.size.lg,
+    textAlign: 'center'
+  },
+  balance: {
+    fontSize: sc.fontSizes.xl,
+    color: sc.colors.success,
+    fontWeight: '600',
+    marginBottom: sc.size.md,
+    textAlign: 'center'
+  },
+  currentBet: {
+    fontSize: sc.fontSizes.lg,
+    color: sc.colors.warning,
+    fontWeight: '500'
+  },
+  betButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-start',
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.xl,
+    width: '100%'
+  },
+  betButtonColumn: {
+    alignItems: 'center',
+    gap: sc.size.sm
+  },
+  betButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 7,
+    borderStyle: 'solid',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: sc.size.sm,
+    overflow: 'hidden'
+  },
+  betButtonBlue: {
+    borderColor: '#007AFF'
+  },
+  betButtonRed: {
+    borderColor: '#FF3B30'
+  },
+  betButtonBlack: {
+    borderColor: '#000000'
+  },
+  betButtonText: {
+    fontSize: sc.fontSizes.lg,
+    fontWeight: 'bold',
+    textAlign: 'center'
+  },
+  minusButton: {
+    width: 30,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  minusButtonText: {
+    color: '#FFFFFF',
+    fontSize: sc.fontSizes.sm,
+    fontWeight: 'bold'
+  },
+  placeBetButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#FF3B30',
+    marginTop: sc.size.md,
+    maxWidth: '33%',
+    paddingVertical: sc.size.md,
+    alignSelf: 'center'
+  },
+  placeBetButtonDisabled: {
+    backgroundColor: sc.colors.gray500,
+    opacity: 0.6
+  },
   tableHeader: {
     position: 'absolute',
     top: 0,
@@ -175,29 +278,6 @@ export const tableStyles = StyleSheet.create({
     fontWeight: 'bold',
     paddingBottom: 20
   },
-  betButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    paddingBottom: 20
-  },
-  betGroup: {
-    alignItems: 'center'
-  },
-  betButton: {
-    backgroundColor: '#28a745',
-    minWidth: 80,
-    paddingBottom: 5
-  },
-  betButtonMinus: {
-    backgroundColor: '#dc3545',
-    minWidth: 80
-  },
-  placeBetButton: {
-    backgroundColor: '#ffc107',
-    minWidth: 150,
-    paddingVertical: 15
-  },
   disabled: {
     backgroundColor: '#6c757d',
     opacity: 0.6
@@ -212,8 +292,9 @@ export const tableStyles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: '#1A5C3A',
     paddingTop: 15,
-    paddingBottom: 10,
-    paddingHorizontal: 20
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    minHeight: 180
   },
   leaveButton: {
     backgroundColor: '#6c757d',

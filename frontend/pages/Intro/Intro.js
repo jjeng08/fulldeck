@@ -31,16 +31,20 @@ export default function IntroPage() {
 
   useEffect(() => {
     console.log('Intro useEffect - isAuthenticated:', isAuthenticated);
-    // Navigate to lobby when user successfully logs in
+    // Navigate to blackjack when user successfully logs in (development mode)
     if (isAuthenticated) {
-      console.log('User is authenticated, navigating to Lobby');
+      console.log('User is authenticated, navigating to Blackjack for development');
       // Clear form data before navigation
       setShowLoginForm(false);
       setShowRegisterForm(false);
       setErrorMessage('');
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
-      navigation.navigate('Lobby');
+      navigation.navigate('Blackjack', {
+        selectedTier: 0,
+        tiers: [[100, 200, 500]],
+        maxMulti: 5
+      });
     }
   }, [isAuthenticated, navigation]);
 

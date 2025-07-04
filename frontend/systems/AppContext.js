@@ -121,6 +121,18 @@ export function AppProvider({ children }) {
     setAvailableGames(data.availableGames);
   };
 
+  const onBetAccepted = (data) => {
+    clearLoadingAction('placeBet');
+    setPlayerBalance(data.newBalance);
+    logger.logInfo('Bet accepted', { betAmount: data.betAmount, newBalance: data.newBalance });
+  };
+
+  const onBetRejected = (data) => {
+    clearLoadingAction('placeBet');
+    showToast(data.errorMessage || 'Failed to place bet', 'error');
+    logger.logError(new Error('Bet rejected'), { errorMessage: data.errorMessage });
+  };
+
   const onLogout = (data) => {
     clearLoadingAction('logout');
     
@@ -147,6 +159,8 @@ export function AppProvider({ children }) {
       // Set up incoming message handlers
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
+      WebSocketService.onMessage('betAccepted', onBetAccepted);
+      WebSocketService.onMessage('betRejected', onBetRejected);
       WebSocketService.onMessage('connected', onConnected);
       WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
@@ -163,6 +177,8 @@ export function AppProvider({ children }) {
       try {
         WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
+        WebSocketService.removeMessageHandler('betAccepted');
+        WebSocketService.removeMessageHandler('betRejected');
         WebSocketService.removeMessageHandler('connected');
         WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');

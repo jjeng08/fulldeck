@@ -19,6 +19,7 @@ model Player {
   updatedAt DateTime @updatedAt
   
   gameResults GameResult[]
+  activityLogs ActivityLog[]
   
   @@map("players")
 }
@@ -48,4 +49,20 @@ model GameResult {
   player Player @relation(fields: [playerId], references: [id])
   
   @@map("game_results")
+}
+
+model ActivityLog {
+  id           String   @id @default(cuid())
+  playerId     String
+  username     String
+  activityType String
+  credit       Int?
+  debit        Int?
+  balance      Int
+  winnings     Int?
+  createdOn    DateTime @default(now())
+  
+  player Player @relation(fields: [playerId], references: [id])
+  
+  @@map("activity_log")
 }

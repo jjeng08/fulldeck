@@ -40,7 +40,7 @@ const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) =>
       data: { balance: newBalance }
     })
     
-    logger.logBalanceChange(userId, newBalance, reason, metadata)
+    logger.logUserAction('balance_updated', userId, { newBalance, reason, metadata })
     await prisma.$disconnect()
     
     return updatedUser.balance

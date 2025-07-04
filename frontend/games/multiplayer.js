@@ -1,21 +1,28 @@
+// MULTIPLAYER BLACKJACK REFERENCE
+// This file contains the original multiplayer blackjack implementation using WebSockets
+// Saved for future reference if multiplayer functionality needs to be restored
+
 import React, { useState, useEffect } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
-import { useApp } from '../../../systems/AppContext';
-import { tableStyles as s } from './BlackjackStyles';
-import { text as t } from '../../../shared/text';
-import { formatCurrency } from '../../../shared/utils';
-import logger from '../../../shared/logger';
-import Button from '../../../components/Button';
+import { useApp } from 'systems/AppContext';
+import { tableStyles as s } from './blackjack/BlackjackStyles';
+import { text as t } from 'shared/text';
+import { formatCurrency } from 'shared/utils';
+import logger from 'shared/logger';
+import Button from 'components/Button';
 
-export default function Blackjack() {
+export default function MultiplayerBlackjack({ route }) {
   const navigation = useNavigation();
   const { 
     user, 
     sendMessage,
     playerBalance
   } = useApp();
+  
+  // Get navigation params
+  const { selectedTier, tiers, maxMulti } = route?.params || {};
 
   // Local game state
   const [currentBet, setCurrentBet] = useState(0);
@@ -41,9 +48,14 @@ export default function Blackjack() {
   // Join single-player blackjack table when component mounts
   useEffect(() => {
     if (user && !tableState.tableId) {
-      sendMessage('joinBlackjackTable', { gameMode: 'single' });
+      const joinParams = { gameMode: 'single' };
+      if (selectedTier !== undefined && tiers) {
+        joinParams.selectedTier = selectedTier;
+        joinParams.tierConfig = tiers[selectedTier];
+      }
+      sendMessage('joinBlackjackTable', joinParams);
     }
-  }, [user]);
+  }, [user, selectedTier, tiers]);
 
   // Update displayed balance when player balance changes
   useEffect(() => {
