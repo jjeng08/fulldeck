@@ -2,11 +2,11 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import IntroPage from '../pages/Intro/Intro';
-import LobbyPage from '../pages/Lobby/Lobby';
-import Blackjack from '../pages/games/blackjack/Blackjack';
-import Poker from '../pages/games/poker/Poker';
-import Baccarat from '../pages/games/baccarat/Baccarat';
+import IntroPage from 'pages/Intro/Intro';
+import LobbyPage from 'pages/Lobby/Lobby';
+import Blackjack from 'games/blackjack/Blackjack';
+import Poker from 'games/poker/Poker';
+import Baccarat from 'games/baccarat/Baccarat';
 
 const Stack = createNativeStackNavigator();
 

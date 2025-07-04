@@ -36,15 +36,51 @@ export default function GamesCarousel() {
   const { availableGames } = useApp();
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [expandedCards, setExpandedCards] = useState({});
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const cardSlideAnims = useRef({}).current;
 
   // Get games with assets
   const gamesWithAssets = (availableGames || []).map(game => getGameWithAssets(game));
   
   const onPlayGame = (game) => {
     if (game.available) {
-      navigation.navigate(game.route);
+      const cardKey = `${game.id}`;
+      
+      // Initialize animation if not exists
+      if (!cardSlideAnims[cardKey]) {
+        cardSlideAnims[cardKey] = new Animated.Value(0);
+      }
+      
+      const isCurrentlyExpanded = expandedCards[cardKey];
+      
+      // Animate the fade
+      Animated.timing(cardSlideAnims[cardKey], {
+        toValue: isCurrentlyExpanded ? 0 : 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      
+      setExpandedCards(prev => ({
+        ...prev,
+        [cardKey]: !prev[cardKey]
+      }));
     }
+  };
+
+  const onSelectTier = (game, tierIndex) => {
+    navigation.navigate(game.route, { 
+      selectedTier: tierIndex,
+      tiers: game.tiers,
+      maxMulti: game.maxMulti 
+    });
+  };
+
+  const formatCurrency = (cents) => {
+    if (cents < 100) {
+      return `${cents}¢`;
+    }
+    return `$${(cents / 100).toLocaleString()}`;
   };
 
   const animateSlide = (direction, callback) => {
@@ -82,15 +118,27 @@ export default function GamesCarousel() {
     });
   };
 
+  const resetAllCards = () => {
+    // Reset all expanded states
+    setExpandedCards({});
+    
+    // Reset all animations
+    Object.keys(cardSlideAnims).forEach(cardKey => {
+      cardSlideAnims[cardKey].setValue(0);
+    });
+  };
+
   const goToNext = () => {
     animateSlide('next', () => {
       setActiveIndex((prevIndex) => (prevIndex + 1) % gamesWithAssets.length);
+      resetAllCards();
     });
   };
 
   const goToPrevious = () => {
     animateSlide('prev', () => {
       setActiveIndex((prevIndex) => (prevIndex - 1 + gamesWithAssets.length) % gamesWithAssets.length);
+      resetAllCards();
     });
   };
 
@@ -127,6 +175,8 @@ export default function GamesCarousel() {
         {[...gamesWithAssets, ...gamesWithAssets, ...gamesWithAssets].map((game, index) => {
           const cardWidth = screenWidth * 0.5;
           const baseOffset = (index - gamesWithAssets.length) * cardWidth;
+          const cardKey = `${game.id}`;
+          const isExpanded = expandedCards[cardKey];
           
           return (
             <Animated.View 
@@ -142,26 +192,63 @@ export default function GamesCarousel() {
               ]} 
               testID="card"
             >
-              <Image 
-                source={game.logo} 
-                style={carouselStyles.logo} 
-                testID="logo"
-                resizeMode="contain" 
-              />
-              <Text style={carouselStyles.gameName} testID="gameName">{game.name}</Text>
-              <Text style={carouselStyles.description} testID="description">
-                {game.description}
-              </Text>
-              <Button 
-                label={game.available ? 'Play' : 'Coming Soon'}
-                onPress={() => onPlayGame(game)}
-                style={[
-                  carouselStyles.playButton,
-                  !game.available && carouselStyles.disabledButton
-                ]}
-                disabled={!game.available}
-                testID="playButton"
-              />
+              <View style={carouselStyles.cardContent}>
+                <Image 
+                  source={game.logo} 
+                  style={carouselStyles.logo} 
+                  testID="logo"
+                  resizeMode="contain" 
+                />
+                <Text style={carouselStyles.gameName} testID="gameName">{game.name}</Text>
+                <Text style={carouselStyles.description} testID="description">
+                  {game.description}
+                </Text>
+              </View>
+              
+              <View style={carouselStyles.buttonContainer}>
+                <Button 
+                  label={game.available ? (isExpanded ? 'Back' : 'Play') : 'Coming Soon'}
+                  onPress={() => onPlayGame(game)}
+                  style={[
+                    carouselStyles.playButton,
+                    !game.available && carouselStyles.disabledButton
+                  ]}
+                  disabled={!game.available}
+                  testID="playButton"
+                />
+              </View>
+              
+              {game.available && game.tiers && (
+                <Animated.View 
+                  style={[
+                    carouselStyles.tierContainer,
+                    {
+                      opacity: cardSlideAnims[cardKey] || 0
+                    }
+                  ]}
+                  testID="tierContainer"
+                >
+                  {game.tiers.map((tier, tierIndex) => {
+                    const tierBackgrounds = ['bronze', 'silver', 'gold'];
+                    const tierBg = tierBackgrounds[tierIndex] || 'bronze';
+                    const minBet = tier[0];
+                    const maxBet = tier[tier.length - 1];
+                    
+                    return (
+                      <Button
+                        key={tierIndex}
+                        label={`${formatCurrency(minBet)} - ${formatCurrency(maxBet)}`}
+                        onPress={() => onSelectTier(game, tierIndex)}
+                        style={[
+                          carouselStyles.tierButton,
+                          carouselStyles[`${tierBg}Button`]
+                        ]}
+                        testID={`tierButton-${tierIndex}`}
+                      />
+                    );
+                  })}
+                </Animated.View>
+              )}
             </Animated.View>
           );
         })}
@@ -237,9 +324,20 @@ const carouselStyles = {
     borderColor: '#ffd700',
     height: '100%',
     width: '100%',
+    overflow: 'hidden',
+  },
+  cardContent: {
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     padding: 20,
+    flex: 1,
+  },
+  buttonContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
   },
   activeCard: {
     ...sc.shadows.lg,
@@ -286,5 +384,32 @@ const carouselStyles = {
     backgroundColor: sc.colors.primary,
     width: 12,
     height: 12,
+  },
+  tierContainer: {
+    position: 'absolute',
+    bottom: 70,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: sc.borderRadius.md,
+    padding: sc.size.md,
+    gap: sc.size.sm,
+  },
+  tierButton: {
+    ...sc.componentStyles.button,
+    minWidth: 120,
+    paddingHorizontal: sc.size.sm,
+  },
+  bronzeButton: {
+    backgroundColor: '#CD7F32',
+    borderColor: '#8B4513',
+  },
+  silverButton: {
+    backgroundColor: '#C0C0C0',
+    borderColor: '#808080',
+  },
+  goldButton: {
+    backgroundColor: '#FFD700',
+    borderColor: '#B8860B',
   },
 };
