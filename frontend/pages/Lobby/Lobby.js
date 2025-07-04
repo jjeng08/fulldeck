@@ -47,7 +47,7 @@ export default function LobbyPage() {
   };
 
   const onLogout = () => {
-    sendMessage('performLogout');
+    sendMessage('logout');
     navigation.navigate('Intro');
   };
 

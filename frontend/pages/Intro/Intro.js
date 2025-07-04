@@ -44,46 +44,6 @@ export default function IntroPage() {
     }
   }, [isAuthenticated, navigation]);
 
-  // Listen for login/register responses directly
-  useEffect(() => {
-    const handleLoginResponse = (data) => {
-      console.log('Login response received:', data);
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
-        navigation.navigate('Lobby');
-      } else {
-        setFormError(data.message);
-      }
-    };
-
-    const handleRegisterResponse = (data) => {
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
-        showToast(`Registration successful! Welcome, ${data.username}!`, 'success');
-        navigation.navigate('Lobby');
-      } else {
-        setFormError(data.message);
-      }
-    };
-
-    WebSocketService.onMessage('login', handleLoginResponse);
-    WebSocketService.onMessage('register', handleRegisterResponse);
-
-    return () => {
-      WebSocketService.removeMessageHandler('login');
-      WebSocketService.removeMessageHandler('register');
-    };
-  }, []);
 
 
   const onShowLoginForm = () => {
@@ -126,20 +86,24 @@ export default function IntroPage() {
     }
   };
 
-  const onLoginSubmit = () => {
+  const onLoginSubmit = (addLoadingCallback) => {
     if (loginData.username && loginData.password) {
+      addLoadingCallback();
       // Store navigation reference for auto-redirect after login
       global.navigation = navigation;
       sendMessage('login', {
         username: loginData.username,
         password: loginData.password
       });
+    } else {
+      setErrorMessage(t.enterUsernameAndPassword);
     }
   };
 
-  const onRegisterSubmit = () => {
+  const onRegisterSubmit = (addLoadingCallback) => {
     if (registerData.username && registerData.password && registerData.confirmPassword) {
       if (registerData.password === registerData.confirmPassword) {
+        addLoadingCallback();
         // Store navigation reference for auto-redirect after registration
         global.navigation = navigation;
         
@@ -150,6 +114,8 @@ export default function IntroPage() {
       } else {
         setErrorMessage(t.passwordMismatch);
       }
+    } else {
+      setErrorMessage(t.enterAllFields);
     }
   };
 

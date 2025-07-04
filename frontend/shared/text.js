@@ -88,4 +88,8 @@ export const text = {
   passwordTooShort: 'Password must be at least 3 characters long.',
   registrationError: 'Registration failed. Please try again.',
   passwordMismatch: 'Passwords do not match.',
+  
+  // Form Validation Errors
+  enterUsernameAndPassword: 'Please enter both username and password.',
+  enterAllFields: 'Please fill in all required fields.',
 }

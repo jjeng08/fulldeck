@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import WebSocketService from './websocket';
 import { text as t } from '../shared/text';
+import logger from '../shared/logger';
 
 const AppContext = createContext();
 
@@ -12,11 +13,11 @@ export function AppProvider({ children }) {
   // User state
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [availableGames, setAvailableGames] = useState([]);
   const [authToken, setAuthToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [messageQueue, setMessageQueue] = useState([]);
-  const [playerBalance, setPlayerBalance] = useState(0);
   const [loadingActions, setLoadingActions] = useState(new Set());
   
   // Toast state
@@ -54,343 +55,83 @@ export function AppProvider({ children }) {
     loadSavedToken();
   }, []);
 
-<<<<<<< Updated upstream
-  // Handlers for messages coming FROM backend TO frontend
-  const incomingMessages = {
-    balanceReceived: (data) => {
-      setUser(prev => prev ? { ...prev, balance: data.balance } : null);
-    },
-    
-    balanceUpdated: (data) => {
-      // Real-time balance update from external systems (ATM, admin, etc.)
-      setUser(prev => prev ? { ...prev, balance: data.newBalance } : null);
-      setGameMessage(t.balanceUpdated.replace('{balance}', data.newBalance.toFixed(2)));
-    },
-    
-    betAccepted: (data) => {
-      setCurrentBet(data.betAmount);
-      setUser(prev => prev ? { ...prev, balance: data.newBalance } : null);
-      setGameState('ready_to_deal');
-      setGameMessage('Bet placed! Ready to deal cards.');
-    },
-    
-    cardDealt: (data) => {
-      setPlayerHand(data.playerHand || []);
-      setGameMessage(`Card dealt: ${data.card?.value || 'Unknown'} of ${data.card?.suit || 'Unknown'}`);
-    },
-    
-    connectionEstablished: (data) => {
-      setConnected(true);
-      setGameMessage('Connected to server. Please login to continue.');
-    },
-    
-    errorOccurred: (data) => {
-      setGameMessage(`Error: ${data.message}`);
-    },
-    
-    gameEnded: (data) => {
-      setGameState('game_ended');
-      setDealerHand(data.dealerHand || []);
-      setGameMessage(`Game ${data.result}! Amount: $${data.amountWon || data.amountLost || 0}`);
-      
-      // Update balance
-      if (user) {
-        const balanceChange = data.amountWon || -data.amountLost || 0;
-        setUser(prev => ({ ...prev, balance: prev.balance + balanceChange }));
-      }
-    },
-    
-    gameStarted: (data) => {
-      setGameState('game_active');
-      setPlayerHand(data.playerHand || []);
-      setDealerHand(data.dealerHand || []);
-      setGameMessage('Game started! Make your move.');
-    },
-    
-    
-    betAccepted: (data) => {
-      // Update user balance
-      if (user) {
-        setUser(prev => ({ ...prev, balance: data.newBalance }));
-      }
-      // Update table state if provided
-      if (data.tableState) {
-        setTableState(data.tableState);
-      }
-      setGameMessage(`Bet placed: $${data.betAmount}`);
-    },
-    
-    gameStateUpdate: (data) => {
-      setTableState(data);
-      if (data.dealerCards?.length > 0) {
-        setGameMessage('Cards dealt! Make your move.');
-      }
-    },
-    
-    tableJoinResult: (data) => {
-      if (data.success) {
-        setTableState(data.tableState);
-        setGameMessage('Joined table successfully!');
-      } else {
-        setGameMessage(`Failed to join table: ${data.error}`);
-      }
-    },
-    
-    tableLeaveResult: (data) => {
-      if (data.success) {
-        // Update user balance if provided
-        if (data.updatedBalance !== undefined && user) {
-          setUser(prev => ({ ...prev, balance: data.updatedBalance }));
-        }
-        setGameMessage('Left table successfully');
-        // Clear table state
-        setTableState({});
-      } else {
-        setGameMessage(`Failed to leave table: ${data.message}`);
-      }
-    },
-    
-    gameReady: (data) => {
-      setGameState('waiting_for_bet');
-      setCurrentBet(0);
-      setPlayerHand([]);
-      setDealerHand([]);
-      setUser(prev => prev ? { ...prev, balance: data.balance } : null);
-      setGameMessage('Ready for a new game! Place your bet.');
-    },
-    
-    
-    tokenValidated: (data) => {
-      if (!data.valid) {
-        // Token is invalid, try to refresh
-        attemptTokenRefresh();
-      } else {
-        // Token is valid, update user data
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setUser(userData);
-        setIsAuthenticated(true);
-        setGameMessage(`Welcome back, ${data.username}!`);
-      }
-    },
-    
-    tokenRefreshed: (data) => {
-      if (data.success) {
-        const userData = {
-          id: data.userId,
-          username: data.username,
-          balance: data.balance
-        };
-        setAuthToken(data.accessToken);
-        setUser(userData);
-        setIsRefreshing(false);
-        // Save updated auth data
-        saveAuthData(data.accessToken, refreshToken, userData);
-        // Process queued messages
-        processMessageQueue();
-      } else {
-        // Refresh failed, clear auth state
-        setUser(null);
-        setAuthToken(null);
-        setRefreshToken(null);
-        setIsAuthenticated(false);
-        setIsRefreshing(false);
-        setMessageQueue([]);
-        setGameMessage('Session expired. Please login again.');
-        clearAuthData();
-      }
-    },
-    
-    tableJoinResult: (data) => {
-      if (data.success) {
-        console.log('DEBUG: tableJoinResult data:', data);
-        console.log('DEBUG: user?.id:', user?.id);
-        console.log('DEBUG: players:', data.tableState.players);
-        
-        const myPlayer = data.tableState.players.find(p => p.userId === user?.id);
-        // If no round in progress and game is waiting, new players should be active
-        const defaultStatus = (!data.tableState.roundInProgress && data.tableState.gameStatus === 'waiting') ? 'active' : 'observer';
-        const myStatus = myPlayer?.status || defaultStatus;
-        
-        console.log('DEBUG: myPlayer:', myPlayer);
-        console.log('DEBUG: defaultStatus logic:', defaultStatus);
-        console.log('DEBUG: calculated myStatus:', myStatus);
-        
-        // Update table state
-        setTableState({
-          tableId: data.tableId,
-          players: data.tableState.players,
-          gameStatus: data.tableState.gameStatus,
-          currentTurn: data.tableState.currentTurn,
-          dealerCards: data.tableState.dealerCards,
-          betLevel: data.tableState.betLevel,
-          betAmounts: data.tableState.betAmounts,
-          maxBet: data.tableState.maxBet || 20,
-          bettingTimeLeft: data.tableState.bettingTimeLeft || 0,
-          canBet: data.tableState.canBet || false,
-          myStatus: myStatus
-        });
-        
-        // Don't set any message here - let the backend welcome sequence handle it
-      } else {
-        setGameMessage(data.message || 'Failed to join table. Please try again.');
-      }
-    },
-    
-    tableLeaveResult: (data) => {
-      if (data.success) {
-        // Clear table state
-        setTableState({
-          tableId: null,
-          players: [],
-          gameStatus: 'waiting',
-          currentTurn: null,
-          dealerCards: [],
-          betLevel: 1,
-          betAmounts: null,
-          myStatus: 'observer'
-        });
-        
-        // Clear any existing message when leaving table
-        setGameMessage('');
-      } else {
-        setGameMessage(data.message || 'Failed to leave table. Please try again.');
-      }
-    },
-    
-    gameMessage: (data) => {
-      setGameMessage(data.message);
-    },
-    
-    pillMessage: (data) => {
-      setGameMessage(data.message);
-    },
-    
-    bettingStarted: (data) => {
-      setTableState(prev => ({
-        ...prev,
-        gameStatus: 'betting',
-        bettingTimeLeft: data.timeLeft,
-        canBet: true
-      }));
-    },
-    
-    bettingTimer: (data) => {
-      setTableState(prev => ({
-        ...prev,
-        bettingTimeLeft: data.timeLeft
-      }));
-    },
-    
-    autoSubmitBets: (data) => {
-      // Trigger auto-submission of current bet from TablePage
-      setTableState(prev => ({
-        ...prev,
-        autoSubmitTrigger: Date.now() // Use timestamp to trigger effect
-      }));
-    }
-  };
-
-  // Handlers for messages going FROM frontend TO backend (local-only actions)
-  const outgoingMessages = {
-    performLogout: () => {
-=======
-  const onLogin = (response) => {
-    // Clear loading state for login
+  const onLogin = (data) => {
     clearLoadingAction('login');
-    
-    console.log('onLogin received response:', response);
-    console.log('response success:', response?.success);
-    console.log('response data userId:', response?.data?.userId);
-    logger.logAuthEvent('login_response_received', response?.data?.userId, { 
-      success: response?.success, 
-      userId: response?.data?.userId 
+    logger.logAuthEvent('login_response_received', null, { 
+      success: data.success, 
+      userId: data.userId 
     });
-    if (response?.success) {
-      console.log('Login successful, setting authenticated user');
-      console.log('Current isAuthenticated:', isAuthenticated);
+    if (data.success) {
       const userData = {
-        id: response.data.userId,
-        username: response.data.username
+        id: data.userId,
+        username: data.username,
+        balance: data.balance
       };
-      setAuthenticatedUser(userData, response.data.accessToken, response.data.refreshToken);
+      setAuthenticatedUser(userData, data.accessToken, data.refreshToken, data.availableGames);
     } else {
-      console.log('Login failed, message:', response?.data?.message);
+      setGameMessage(data.message);
     }
   };
 
-  const onRegister = (response) => {
-    // Clear loading state for register
+  const onRegister = (data) => {
     clearLoadingAction('register');
-    
-    if (response.success) {
+    if (data.success) {
       const userData = {
-        id: response.data.userId,
-        username: response.data.username
+        id: data.userId,
+        username: data.username,
+        balance: data.balance
       };
-      setAuthenticatedUser(userData, response.data.accessToken, response.data.refreshToken);
+      setAuthenticatedUser(userData, data.accessToken, data.refreshToken, data.availableGames);
+      setGameMessage(`Registration successful! Welcome, ${data.username}!`);
     } else {
+      setGameMessage(data.message);
     }
   };
 
-  const onTokenRefreshed = (response) => {
-    // Clear loading state for token refresh
-    clearLoadingAction('refreshToken');
-    
-    if (response.success) {
+  const onTokenRefreshed = (data) => {
+    if (data.success) {
       const userData = {
-        id: response.data.userId,
-        username: response.data.username
+        id: data.userId,
+        username: data.username,
+        balance: data.balance
       };
-      setAuthToken(response.data.accessToken);
+      setAuthToken(data.accessToken);
       setUser(userData);
       setIsRefreshing(false);
-      saveAuthData(response.data.accessToken, refreshToken, userData);
+      setAvailableGames(data.availableGames);
+      saveAuthData(data.accessToken, refreshToken, userData);
       processMessageQueue();
     } else {
->>>>>>> Stashed changes
       setUser(null);
       setAuthToken(null);
       setRefreshToken(null);
       setIsAuthenticated(false);
-<<<<<<< Updated upstream
-      setGameState('waiting_for_bet');
-      setCurrentBet(0);
-      setPlayerHand([]);
-      setDealerHand([]);
-      setGameMessage();
-=======
       setIsRefreshing(false);
       setMessageQueue([]);
->>>>>>> Stashed changes
+      setGameMessage('Session expired. Please login again.');
       clearAuthData();
     }
   };
 
-<<<<<<< Updated upstream
-=======
-  const onConnected = (message) => {
-    logger.logWebSocketEvent('server_connected', { connectionId: message.data.connectionId });
+  const onConnected = (data) => {
+    logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
     setConnected(true);
   };
 
-  const onBalance = (message) => {
-    setPlayerBalance(message.data.balance);
+  const onBalance = (data) => {
+    if (user) {
+      setUser(prev => ({ ...prev, balance: data.balance }));
+    }
   };
 
-  const onAvailableGames = (message) => {
-    setAvailableGames(message.data.availableGames);
+  const onGameConfigs = (data) => {
+    setAvailableGames(data.availableGames);
   };
 
-  const onLogout = (response) => {
-    // Clear loading state for logout
+  const onLogout = (data) => {
     clearLoadingAction('logout');
     
-    logger.logAuthEvent('logout_completed', null, { success: response?.success });
-    // Clear all auth data
+    // Clear all auth data regardless of success/failure
     setUser(null);
     setAuthToken(null);
     setRefreshToken(null);
@@ -401,45 +142,38 @@ export function AppProvider({ children }) {
     clearAuthData();
   };
 
->>>>>>> Stashed changes
   useEffect(() => {
-    // Initialize WebSocket connection only - pages handle their own message listeners
+    // Initialize WebSocket connection and set up message handlers
     try {
       WebSocketService.connect();
-<<<<<<< Updated upstream
-=======
       
       // Set up incoming message handlers
-      WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
       WebSocketService.onMessage('connected', onConnected);
+      WebSocketService.onMessage('gameConfigs', onGameConfigs);
       WebSocketService.onMessage('login', onLogin);
-      WebSocketService.onMessage('logoutPerformed', onLogout);
+      WebSocketService.onMessage('logout', onLogout);
       WebSocketService.onMessage('register', onRegister);
       WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
       
->>>>>>> Stashed changes
     } catch (error) {
-      console.error('Failed to initialize WebSocket:', error);
+      logger.logError(error, { type: 'websocket_error', action: 'initialization_failed' });
       setConnected(false);
     }
 
     // Cleanup on unmount
     return () => {
       try {
-<<<<<<< Updated upstream
-=======
-        WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
         WebSocketService.removeMessageHandler('connected');
+        WebSocketService.removeMessageHandler('gameConfigs');
         WebSocketService.removeMessageHandler('login');
-        WebSocketService.removeMessageHandler('logoutPerformed');
+        WebSocketService.removeMessageHandler('logout');
         WebSocketService.removeMessageHandler('register');
         WebSocketService.removeMessageHandler('tokenRefreshed');
->>>>>>> Stashed changes
         WebSocketService.disconnect();
       } catch (error) {
-        console.error('Error disconnecting WebSocket:', error);
+        logger.logError(error, { type: 'websocket_error', action: 'disconnect_failed' });
       }
     };
   }, []);
@@ -449,25 +183,44 @@ export function AppProvider({ children }) {
       const savedToken = await AsyncStorage.getItem('authToken');
       const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
       
-      if (savedToken && savedRefreshToken) {
+      if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {
         const savedUser = await AsyncStorage.getItem('userData');
         if (savedUser) {
-          const userData = JSON.parse(savedUser);
           setAuthToken(savedToken);
           setRefreshToken(savedRefreshToken);
-          setUser(userData);
-          setPlayerBalance(userData.balance || 0);
+          setUser(JSON.parse(savedUser));
           setIsAuthenticated(true);
-<<<<<<< Updated upstream
           setGameMessage(`Welcome back, ${JSON.parse(savedUser).username}!`);
-=======
-          setGameMessage(`Welcome back, ${userData.username}!`);
           
->>>>>>> Stashed changes
+          // Set games immediately - we need to get them somehow
+          // For now, hardcode until we can get them from backend
+          setAvailableGames([
+            {
+              id: 'blackjack',
+              name: 'Blackjack',
+              available: true,
+              description: 'Classic 21 card game',
+              route: 'Blackjack'
+            },
+            {
+              id: 'poker',
+              name: 'Texas Hold\'em Poker',
+              available: false,
+              description: 'Coming Soon',
+              route: 'Poker'
+            },
+            {
+              id: 'baccarat',
+              name: 'Baccarat',
+              available: false,
+              description: 'Coming Soon',
+              route: 'Baccarat'
+            }
+          ]);
         }
       }
     } catch (error) {
-      console.error('Error loading saved auth:', error);
+      logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
     } finally {
       setIsLoadingAuth(false);
     }
@@ -479,23 +232,20 @@ export function AppProvider({ children }) {
       await AsyncStorage.setItem('refreshToken', refreshToken);
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
     } catch (error) {
-      console.error('Error saving auth data:', error);
+      logger.logError(error, { type: 'authentication_error', action: 'save_auth_data' });
     }
   };
 
   const clearAuthData = async () => {
     try {
-      await AsyncStorage.removeItem('authToken');
-      await AsyncStorage.removeItem('refreshToken');
-      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.multiRemove(['authToken', 'refreshToken', 'userData']);
     } catch (error) {
-      console.error('Error clearing auth data:', error);
+      logger.logError(error, { type: 'authentication_error', action: 'clear_auth_data' });
     }
   };
 
-
   const attemptTokenRefresh = () => {
-    if (refreshToken && !isRefreshing) {
+    if (refreshToken && refreshToken !== 'null' && !isRefreshing) {
       setIsRefreshing(true);
       // Send refresh request with refresh token (not access token)
       WebSocketService.sendMessage('refreshToken', { 
@@ -509,6 +259,7 @@ export function AppProvider({ children }) {
       setIsAuthenticated(false);
       setMessageQueue([]);
       setIsRefreshing(false);
+      setGameMessage('Session expired. Please login again.');
       clearAuthData();
     }
   };
@@ -517,72 +268,47 @@ export function AppProvider({ children }) {
     const queuedMessages = [...messageQueue];
     setMessageQueue([]);
     queuedMessages.forEach(({ messageType, data }) => {
-      // Send queued messages with token included
-      WebSocketService.sendMessage(messageType, {
-        ...data,
-        token: authToken
-      });
+      // Re-process queued messages through sendMessage
+      sendMessage(messageType, data);
     });
   };
 
   // Generic message sender with automatic token inclusion
   const sendMessage = (messageType, data = {}) => {
-    // Handle local-only actions (messages that don't go to backend)
-    if (outgoingMessages[messageType]) {
-      outgoingMessages[messageType](data);
+    // Messages that don't need authentication
+    const unauthenticatedMessages = ['login', 'register', 'refreshToken'];
+    
+    if (unauthenticatedMessages.includes(messageType)) {
+      // Send without token
+      WebSocketService.sendMessage(messageType, data);
     } else {
-<<<<<<< Updated upstream
-      // Messages that don't need authentication
-      const unauthenticatedMessages = ['login', 'register', 'refreshToken'];
-=======
       // Check if we have a valid token
       if (!authToken) {
-        // User needs to login - this should be handled by navigation logic
+        setGameMessage(t.loginToStart);
         return;
       }
->>>>>>> Stashed changes
       
-      if (unauthenticatedMessages.includes(messageType)) {
-        // Send without token
-        WebSocketService.sendMessage(messageType, data);
+      // Check if token is expired and refresh if needed
+      if (isTokenExpired(authToken) && !isRefreshing) {
+        // Queue the message and refresh token
+        setMessageQueue(prev => [...prev, { messageType, data }]);
+        attemptTokenRefresh();
+      } else if (isRefreshing) {
+        // Token is being refreshed, queue the message
+        setMessageQueue(prev => [...prev, { messageType, data }]);
       } else {
-<<<<<<< Updated upstream
-        // Check if we have a valid token
-        if (!authToken) {
-          setGameMessage(t.loginToStart);
-          return;
-        }
-        
-        // Check if token is expired and refresh if needed
-        if (isTokenExpired(authToken) && !isRefreshing) {
-          // Queue the message and refresh token
-          setMessageQueue(prev => [...prev, { messageType, data }]);
-          attemptTokenRefresh();
-        } else if (isRefreshing) {
-          // Token is being refreshed, queue the message
-          setMessageQueue(prev => [...prev, { messageType, data }]);
-        } else {
-          // Special validation for placeBet
-          if (messageType === 'placeBet') {
-            if (!user || data.amount > user.balance) {
-              setGameMessage(t.insufficientBalance);
-              return;
-            }
-=======
         // Special validation for placeBet
         if (messageType === 'placeBet') {
-          if (!user || data.amount > playerBalance) {
-            // Insufficient balance - this should be handled by the game component
+          if (!user || data.amount > user.balance) {
+            setGameMessage(t.insufficientBalance);
             return;
->>>>>>> Stashed changes
           }
-          
-          // Send with token included in message
-          WebSocketService.sendMessage(messageType, {
-            ...data,
-            token: authToken
-          });
         }
+        // Send with token included in message
+        WebSocketService.sendMessage(messageType, {
+          ...data,
+          token: authToken
+        });
       }
     }
   };
@@ -603,7 +329,7 @@ export function AppProvider({ children }) {
       // Check if token expires in next 5 minutes (buffer for refresh)
       return payload.exp < (currentTime + 300);
     } catch (error) {
-      console.error('Token decode error:', error);
+      logger.logError(error, { type: 'authentication_error', action: 'token_decode' });
       return true; // If we can't decode, assume expired
     }
   };
@@ -620,11 +346,12 @@ export function AppProvider({ children }) {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
-  const setAuthenticatedUser = (userData, accessToken, refreshToken) => {
+  const setAuthenticatedUser = (userData, accessToken, refreshToken, games = []) => {
     setUser(userData);
     setAuthToken(accessToken);
     setRefreshToken(refreshToken);
     setIsAuthenticated(true);
+    setAvailableGames(games);
     saveAuthData(accessToken, refreshToken, userData);
   };
 
@@ -646,6 +373,7 @@ export function AppProvider({ children }) {
     user,
     isAuthenticated,
     isLoadingAuth,
+    availableGames,
     gameState,
     currentBet,
     playerHand,
@@ -653,8 +381,6 @@ export function AppProvider({ children }) {
     gameMessage,
     toast,
     tableState,
-    playerBalance,
-    availableGames,
     loadingActions,
     
     // Actions

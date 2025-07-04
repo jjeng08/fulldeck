@@ -11,11 +11,12 @@ export default function Button({ label, onPress, style, textStyle, disabled, sub
   const isDisabled = disabled || isPageBlocked || isSpecificLoading;
   
   const handlePress = () => {
-    // Add this message type to loading actions when button is clicked
     if (messageType) {
-      addLoadingAction(messageType);
+      const addLoadingCallback = () => addLoadingAction(messageType);
+      onPress(addLoadingCallback);
+    } else {
+      onPress();
     }
-    onPress();
   };
   
   return (
