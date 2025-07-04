@@ -13,12 +13,15 @@ export function AppProvider({ children }) {
   // User state
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [availableGames, setAvailableGames] = useState([]);
   const [authToken, setAuthToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [messageQueue, setMessageQueue] = useState([]);
   const [loadingActions, setLoadingActions] = useState(new Set());
+  
+  // Global state for balance and games - ONLY updated by their respective handlers
+  const [playerBalance, setPlayerBalance] = useState(0);
+  const [availableGames, setAvailableGames] = useState([]);
   
   // Toast state
   const [toast, setToast] = useState({
@@ -27,33 +30,22 @@ export function AppProvider({ children }) {
     type: 'success'
   });
   
-  // Game state
-  const [gameState, setGameState] = useState('waiting_for_bet');
-  const [currentBet, setCurrentBet] = useState(0);
-  const [playerHand, setPlayerHand] = useState([]);
-  const [dealerHand, setDealerHand] = useState([]);
-  const [gameMessage, setGameMessage] = useState();
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   
-  // Table state
-  const [tableState, setTableState] = useState({
-    tableId: null,
-    players: [],
-    gameStatus: 'waiting',
-    currentTurn: null,
-    dealerCards: [],
-    betLevel: 1,
-    betAmounts: null,
-    maxBet: null,
-    bettingTimeLeft: 0,
-    canBet: false,
-    myStatus: 'observer'
-  });
 
   useEffect(() => {
     // Load saved token on app startup
     loadSavedToken();
   }, []);
+
+  useEffect(() => {
+    // When both connected and authenticated, request fresh data
+    if (connected && isAuthenticated && authToken) {
+      sendMessage('balance');
+      sendMessage('availableGames');
+    }
+  }, [connected, isAuthenticated, authToken]);
+
 
   const onLogin = (data) => {
     clearLoadingAction('login');
@@ -62,43 +54,43 @@ export function AppProvider({ children }) {
       userId: data.userId 
     });
     if (data.success) {
+      // Only handle auth data - balance and games handled by their own handlers
       const userData = {
         id: data.userId,
-        username: data.username,
-        balance: data.balance
+        username: data.username
       };
-      setAuthenticatedUser(userData, data.accessToken, data.refreshToken, data.availableGames);
+      setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
     } else {
-      setGameMessage(data.message);
+      // Login failed - handle error appropriately
+      console.log('Login failed:', data.message);
     }
   };
 
   const onRegister = (data) => {
     clearLoadingAction('register');
     if (data.success) {
+      // Only handle auth data - balance and games handled by their own handlers
       const userData = {
         id: data.userId,
-        username: data.username,
-        balance: data.balance
+        username: data.username
       };
-      setAuthenticatedUser(userData, data.accessToken, data.refreshToken, data.availableGames);
-      setGameMessage(`Registration successful! Welcome, ${data.username}!`);
+      setAuthenticatedUser(userData, data.accessToken, data.refreshToken);
+      console.log(`Registration successful! Welcome, ${data.username}!`);
     } else {
-      setGameMessage(data.message);
+      console.log('Registration failed:', data.message);
     }
   };
 
   const onTokenRefreshed = (data) => {
     if (data.success) {
+      // Only handle auth data - balance and games handled by their own handlers
       const userData = {
         id: data.userId,
-        username: data.username,
-        balance: data.balance
+        username: data.username
       };
       setAuthToken(data.accessToken);
       setUser(userData);
       setIsRefreshing(false);
-      setAvailableGames(data.availableGames);
       saveAuthData(data.accessToken, refreshToken, userData);
       processMessageQueue();
     } else {
@@ -108,7 +100,7 @@ export function AppProvider({ children }) {
       setIsAuthenticated(false);
       setIsRefreshing(false);
       setMessageQueue([]);
-      setGameMessage('Session expired. Please login again.');
+      console.log('Session expired. Please login again.');
       clearAuthData();
     }
   };
@@ -118,13 +110,14 @@ export function AppProvider({ children }) {
     setConnected(true);
   };
 
+  // ONLY place playerBalance is updated
   const onBalance = (data) => {
-    if (user) {
-      setUser(prev => ({ ...prev, balance: data.balance }));
-    }
+    setPlayerBalance(data.balance);
   };
 
-  const onGameConfigs = (data) => {
+  // ONLY place availableGames is updated  
+  const onAvailableGames = (data) => {
+    console.log('GOT GAMES')
     setAvailableGames(data.availableGames);
   };
 
@@ -136,9 +129,13 @@ export function AppProvider({ children }) {
     setAuthToken(null);
     setRefreshToken(null);
     setIsAuthenticated(false);
-    setAvailableGames([]);
     setMessageQueue([]);
     setIsRefreshing(false);
+    
+    // Reset global states
+    setPlayerBalance(0);
+    setAvailableGames([]);
+    
     clearAuthData();
   };
 
@@ -148,9 +145,9 @@ export function AppProvider({ children }) {
       WebSocketService.connect();
       
       // Set up incoming message handlers
+      WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
       WebSocketService.onMessage('connected', onConnected);
-      WebSocketService.onMessage('gameConfigs', onGameConfigs);
       WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
       WebSocketService.onMessage('register', onRegister);
@@ -164,9 +161,9 @@ export function AppProvider({ children }) {
     // Cleanup on unmount
     return () => {
       try {
+        WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
         WebSocketService.removeMessageHandler('connected');
-        WebSocketService.removeMessageHandler('gameConfigs');
         WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');
         WebSocketService.removeMessageHandler('register');
@@ -186,37 +183,18 @@ export function AppProvider({ children }) {
       if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {
         const savedUser = await AsyncStorage.getItem('userData');
         if (savedUser) {
+          const userData = JSON.parse(savedUser);
           setAuthToken(savedToken);
           setRefreshToken(savedRefreshToken);
-          setUser(JSON.parse(savedUser));
+          setUser(userData);
           setIsAuthenticated(true);
-          setGameMessage(`Welcome back, ${JSON.parse(savedUser).username}!`);
           
-          // Set games immediately - we need to get them somehow
-          // For now, hardcode until we can get them from backend
-          setAvailableGames([
-            {
-              id: 'blackjack',
-              name: 'Blackjack',
-              available: true,
-              description: 'Classic 21 card game',
-              route: 'Blackjack'
-            },
-            {
-              id: 'poker',
-              name: 'Texas Hold\'em Poker',
-              available: false,
-              description: 'Coming Soon',
-              route: 'Poker'
-            },
-            {
-              id: 'baccarat',
-              name: 'Baccarat',
-              available: false,
-              description: 'Coming Soon',
-              route: 'Baccarat'
-            }
-          ]);
+          // Set saved balance from cached user data
+          if (userData.balance !== undefined) {
+            setPlayerBalance(userData.balance);
+          }
+          
+          console.log(`Welcome back, ${userData.username}!`);
         }
       }
     } catch (error) {
@@ -228,9 +206,14 @@ export function AppProvider({ children }) {
 
   const saveAuthData = async (accessToken, refreshToken, userData) => {
     try {
+      // Include current balance in cached user data
+      const userDataWithBalance = {
+        ...userData,
+        balance: playerBalance
+      };
       await AsyncStorage.setItem('authToken', accessToken);
       await AsyncStorage.setItem('refreshToken', refreshToken);
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      await AsyncStorage.setItem('userData', JSON.stringify(userDataWithBalance));
     } catch (error) {
       logger.logError(error, { type: 'authentication_error', action: 'save_auth_data' });
     }
@@ -259,7 +242,7 @@ export function AppProvider({ children }) {
       setIsAuthenticated(false);
       setMessageQueue([]);
       setIsRefreshing(false);
-      setGameMessage('Session expired. Please login again.');
+      console.log('Session expired. Please login again.');
       clearAuthData();
     }
   };
@@ -284,7 +267,7 @@ export function AppProvider({ children }) {
     } else {
       // Check if we have a valid token
       if (!authToken) {
-        setGameMessage(t.loginToStart);
+        console.log('Please login to continue');
         return;
       }
       
@@ -299,8 +282,8 @@ export function AppProvider({ children }) {
       } else {
         // Special validation for placeBet
         if (messageType === 'placeBet') {
-          if (!user || data.amount > user.balance) {
-            setGameMessage(t.insufficientBalance);
+          if (!user || data.amount > playerBalance) {
+            console.log('Insufficient balance for this bet');
             return;
           }
         }
@@ -346,12 +329,11 @@ export function AppProvider({ children }) {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
-  const setAuthenticatedUser = (userData, accessToken, refreshToken, games = []) => {
+  const setAuthenticatedUser = (userData, accessToken, refreshToken) => {
     setUser(userData);
     setAuthToken(accessToken);
     setRefreshToken(refreshToken);
     setIsAuthenticated(true);
-    setAvailableGames(games);
     saveAuthData(accessToken, refreshToken, userData);
   };
 
@@ -374,20 +356,14 @@ export function AppProvider({ children }) {
     isAuthenticated,
     isLoadingAuth,
     availableGames,
-    gameState,
-    currentBet,
-    playerHand,
-    dealerHand,
-    gameMessage,
+    playerBalance,
     toast,
-    tableState,
     loadingActions,
     
     // Actions
     sendMessage,
     addLoadingAction,
     clearLoadingAction,
-    setGameMessage,
     showToast,
     hideToast,
     setAuthenticatedUser

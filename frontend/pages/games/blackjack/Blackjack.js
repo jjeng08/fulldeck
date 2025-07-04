@@ -13,13 +13,27 @@ export default function Blackjack() {
   const navigation = useNavigation();
   const { 
     user, 
-    tableState,
-    gameMessage,
     sendMessage,
     playerBalance
   } = useApp();
 
+  // Local game state
   const [currentBet, setCurrentBet] = useState(0);
+  const [gameMessage, setGameMessage] = useState('');
+  const [tableState, setTableState] = useState({
+    tableId: null,
+    players: [],
+    gameStatus: 'waiting',
+    currentTurn: null,
+    dealerCards: [],
+    betLevel: 1,
+    betAmounts: null,
+    maxBet: null,
+    bettingTimeLeft: 0,
+    canBet: false,
+    myStatus: 'observer',
+    autoSubmitTrigger: false
+  });
   const [displayedBalance, setDisplayedBalance] = useState(playerBalance);
   const [showPill, setShowPill] = useState(false);
   const [pillOpacity] = useState(new Animated.Value(0));

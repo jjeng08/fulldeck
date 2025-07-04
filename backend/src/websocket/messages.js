@@ -10,6 +10,43 @@ const prisma = new PrismaClient()
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
 
+// Helper function to send current balance for a user
+async function sendBalanceUpdate(ws, userId) {
+  try {
+    const user = await prisma.player.findUnique({
+      where: { id: userId }
+    });
+    
+    if (user) {
+      const balanceResponse = {
+        type: 'balance',
+        data: {
+          balance: user.balance
+        }
+      };
+      ws.send(JSON.stringify(balanceResponse));
+    }
+  } catch (error) {
+    logger.logError(error, { userId, action: 'send_balance_update' });
+  }
+}
+
+// Helper function to send available games
+function sendAvailableGames(ws) {
+  try {
+    const games = getAllGames();
+    const gamesResponse = {
+      type: 'availableGames',
+      data: {
+        availableGames: games
+      }
+    };
+    ws.send(JSON.stringify(gamesResponse));
+  } catch (error) {
+    logger.logError(error, { action: 'send_available_games' });
+  }
+}
+
 const messages = {
   // Authentication
   'login': onLogin,
@@ -18,6 +55,7 @@ const messages = {
   'validateToken': onValidateToken,
   
   // Data requests
+  'availableGames': onAvailableGames,
   'balance': onBalance,
   'gameConfigs': onGameConfigs,
   'gameState': onGameState,
@@ -239,20 +277,22 @@ async function onLogin(ws, data) {
       { expiresIn: '7d' }
     )
     
-    const response = {
+    // Send auth response first
+    const authResponse = {
       type: 'login',
       data: {
         success: true,
         userId: user.id,
         username: user.username,
-        balance: user.balance,
         accessToken: accessToken,
-        refreshToken: refreshToken,
-        availableGames: getAllGames()
+        refreshToken: refreshToken
       }
     }
+    ws.send(JSON.stringify(authResponse))
     
-    ws.send(JSON.stringify(response))
+    // Then send balance and games using helper functions
+    await sendBalanceUpdate(ws, user.id)
+    sendAvailableGames(ws)
     await prisma.$disconnect()
     
   } catch (error) {
@@ -342,20 +382,22 @@ async function onRegister(ws, data) {
       { expiresIn: '7d' }
     )
     
-    const response = {
+    // Send auth response first
+    const authResponse = {
       type: 'register',
       data: {
         success: true,
         userId: newUser.id,
         username: newUser.username,
-        balance: newUser.balance,
         accessToken: accessToken,
-        refreshToken: refreshToken,
-        availableGames: getAllGames()
+        refreshToken: refreshToken
       }
     }
+    ws.send(JSON.stringify(authResponse))
     
-    ws.send(JSON.stringify(response))
+    // Then send balance and games using helper functions
+    await sendBalanceUpdate(ws, newUser.id)
+    sendAvailableGames(ws)
     await prisma.$disconnect()
     
   } catch (error) {
@@ -371,15 +413,12 @@ async function onRegister(ws, data) {
   }
 }
 
+async function onAvailableGames(ws, data, userId) {
+  sendAvailableGames(ws)
+}
+
 async function onBalance(ws, data, userId) {
-  const response = {
-    type: 'balance',
-    data: {
-      balance: 1000
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
+  await sendBalanceUpdate(ws, userId)
 }
 
 async function onGameConfigs(ws, data, userId) {
@@ -505,19 +544,21 @@ async function onRefreshToken(ws, data) {
       { expiresIn: '1h' }
     )
     
-    const response = {
+    // Send token refresh response first
+    const tokenResponse = {
       type: 'tokenRefreshed',
       data: {
         success: true,
         accessToken: newAccessToken,
         userId: user.id,
-        username: user.username,
-        balance: user.balance,
-        availableGames: getAllGames()
+        username: user.username
       }
     }
+    ws.send(JSON.stringify(tokenResponse))
     
-    ws.send(JSON.stringify(response))
+    // Then send balance and games using helper functions
+    await sendBalanceUpdate(ws, user.id)
+    sendAvailableGames(ws)
     await prisma.$disconnect()
     
   } catch (error) {

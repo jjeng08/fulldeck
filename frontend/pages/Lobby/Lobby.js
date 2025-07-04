@@ -11,25 +11,14 @@ import GameCarousel from '../../components/GameCarousel';
 
 export default function LobbyPage() {
   const navigation = useNavigation();
-  const { user, tableState, sendMessage, playerBalance } = useApp();
+  const { user, sendMessage, playerBalance } = useApp();
 
   useEffect(() => {
     // Get current balance when entering lobby
     sendMessage('balance');
   }, []);
 
-  // Navigate to appropriate table when successfully joined
-  useEffect(() => {
-    if (tableState.tableId) {
-      if (tableState.gameType === 'blackjack') {
-        navigation.navigate('Blackjack');
-      } else if (tableState.gameType === 'poker') {
-        navigation.navigate('Poker');
-      } else if (tableState.gameType === 'baccarat') {
-        navigation.navigate('Baccarat');
-      }
-    }
-  }, [tableState.tableId, tableState.gameType, navigation]);
+  // Table navigation will be handled by individual game components
 
   const onViewAccount = () => {
     // TODO: Navigate to account details or show modal
