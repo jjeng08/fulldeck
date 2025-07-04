@@ -13,12 +13,12 @@ import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, hideToast, isAuthenticated, isLoadingAuth, sendMessage, setAuthenticatedUser, showToast, toast } = useApp();
+  const { connected, hideToast, isAuthenticated, isLoadingAuth, sendMessage, toast } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
-  const [formError, setFormError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [loginData, setLoginData] = useState({
     username: '',
     password: ''
@@ -30,12 +30,14 @@ export default function IntroPage() {
   });
 
   useEffect(() => {
+    console.log('Intro useEffect - isAuthenticated:', isAuthenticated);
     // Navigate to lobby when user successfully logs in
     if (isAuthenticated) {
+      console.log('User is authenticated, navigating to Lobby');
       // Clear form data before navigation
       setShowLoginForm(false);
       setShowRegisterForm(false);
-      setFormError('');
+      setErrorMessage('');
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
       navigation.navigate('Lobby');
@@ -83,10 +85,11 @@ export default function IntroPage() {
     };
   }, []);
 
+
   const onShowLoginForm = () => {
     setShowLoginForm(true);
     setShowRegisterForm(false);
-    setFormError('');
+    setErrorMessage('');
     // Clear both forms when switching
     setLoginData({ username: '', password: '' });
     setRegisterData({ username: '', password: '', confirmPassword: '' });
@@ -95,7 +98,7 @@ export default function IntroPage() {
   const onShowRegisterForm = () => {
     setShowRegisterForm(true);
     setShowLoginForm(false);
-    setFormError('');
+    setErrorMessage('');
     // Clear both forms when switching
     setLoginData({ username: '', password: '' });
     setRegisterData({ username: '', password: '', confirmPassword: '' });
@@ -104,21 +107,22 @@ export default function IntroPage() {
   const onCancelForm = () => {
     setShowLoginForm(false);
     setShowRegisterForm(false);
+    setErrorMessage('');
     setLoginData({ username: '', password: '' });
     setRegisterData({ username: '', password: '', confirmPassword: '' });
   };
 
   const onLoginDataChange = (field, value) => {
     setLoginData({ ...loginData, [field]: value });
-    if (formError && formError.length > 0) {
-      setFormError('');
+    if (errorMessage) {
+      setErrorMessage('');
     }
   };
 
   const onRegisterDataChange = (field, value) => {
     setRegisterData({ ...registerData, [field]: value });
-    if (formError) {
-      setFormError('');
+    if (errorMessage) {
+      setErrorMessage('');
     }
   };
 
@@ -144,8 +148,7 @@ export default function IntroPage() {
           password: registerData.password
         });
       } else {
-        // Show error message for password mismatch - don't send to server
-        setFormError(t.passwordMismatch);
+        setErrorMessage(t.passwordMismatch);
       }
     }
   };
@@ -205,7 +208,7 @@ export default function IntroPage() {
               secureTextEntry
             />
           </form>
-          {formError ? <Text style={s.errorText}>{formError}</Text> : null}
+          {errorMessage ? <Text style={s.errorText}>{errorMessage}</Text> : null}
           <View style={s.formButtons}>
             <Button 
               label={t.cancel}
@@ -217,6 +220,7 @@ export default function IntroPage() {
               onPress={onLoginSubmit}
               style={s.submitButton}
               submit
+              messageType="login"
             />
           </View>
         </View>
@@ -246,7 +250,7 @@ export default function IntroPage() {
               secureTextEntry
             />
           </form>
-          {formError ? <Text style={s.errorText}>{formError}</Text> : null}
+          {errorMessage ? <Text style={s.errorText}>{errorMessage}</Text> : null}
           <View style={s.formButtons}>
             <Button 
               label={t.cancel}
@@ -258,6 +262,7 @@ export default function IntroPage() {
               onPress={onRegisterSubmit}
               style={s.submitButton}
               submit
+              messageType="register"
             />
           </View>
         </View>

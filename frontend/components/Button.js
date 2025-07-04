@@ -1,23 +1,21 @@
 import React, { useState } from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, View } from 'react-native';
 import { styleConstants as sc } from 'shared/styleConstants';
+import { useApp } from 'systems/AppContext';
 
-export default function Button({ label, onPress, style, textStyle, disabled, submit }) {
-  const [isLoading, setIsLoading] = useState(false);
+export default function Button({ label, onPress, style, textStyle, disabled, submit, messageType }) {
+  const { loadingActions, addLoadingAction } = useApp();
   
-  const isDisabled = disabled || (submit && isLoading);
+  const isPageBlocked = loadingActions.size > 0;
+  const isSpecificLoading = messageType && loadingActions.has(messageType);
+  const isDisabled = disabled || isPageBlocked || isSpecificLoading;
   
-  const handlePress = async () => {
-    if (submit) {
-      setIsLoading(true);
-      try {
-        await onPress();
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      onPress();
+  const handlePress = () => {
+    // Add this message type to loading actions when button is clicked
+    if (messageType) {
+      addLoadingAction(messageType);
     }
+    onPress();
   };
   
   return (
@@ -31,7 +29,7 @@ export default function Button({ label, onPress, style, textStyle, disabled, sub
       disabled={isDisabled}
     >
       <View style={sc.componentStyles.buttonContent}>
-        {isLoading && (
+        {isSpecificLoading && (
           <ActivityIndicator 
             size="small" 
             color="#fff" 

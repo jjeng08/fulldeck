@@ -86,7 +86,7 @@ class WebSocketService {
 
     if (this.messageHandlers.has(type)) {
       const handler = this.messageHandlers.get(type)
-      handler(data)
+      handler(message)
     } else {
       console.log('No handler for message type:', type)
     }

@@ -6,6 +6,7 @@ import { useApp } from '../../../systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from '../../../shared/text';
 import { formatCurrency } from '../../../shared/utils';
+import logger from '../../../shared/logger';
 import Button from '../../../components/Button';
 
 export default function Blackjack() {
@@ -14,11 +15,12 @@ export default function Blackjack() {
     user, 
     tableState,
     gameMessage,
-    sendMessage
+    sendMessage,
+    playerBalance
   } = useApp();
 
   const [currentBet, setCurrentBet] = useState(0);
-  const [displayedBalance, setDisplayedBalance] = useState(user?.balance || 0);
+  const [displayedBalance, setDisplayedBalance] = useState(playerBalance);
   const [showPill, setShowPill] = useState(false);
   const [pillOpacity] = useState(new Animated.Value(0));
 
@@ -29,13 +31,11 @@ export default function Blackjack() {
     }
   }, [user]);
 
-  // Update displayed balance when user balance changes
+  // Update displayed balance when player balance changes
   useEffect(() => {
-    console.log(currentBet)
-    if (user?.balance !== undefined) {
-      setDisplayedBalance(user.balance - currentBet);
-    }
-  }, [user?.balance, currentBet]);
+    logger.logDebug('Current bet amount', { currentBet })
+    setDisplayedBalance(playerBalance - currentBet);
+  }, [playerBalance, currentBet]);
 
   // Handle pill fade in/out when gameMessage changes
   useEffect(() => {
@@ -102,7 +102,7 @@ export default function Blackjack() {
     return (
       <View key={player.userId} style={s.playerSeat}>
         <Text style={s.playerName}>{player.username}</Text>
-        <Text style={s.playerBalance}>{formatCurrency(player.balance)}</Text>
+        <Text style={s.playerBalance}>{formatCurrency(player.userId === user?.id ? playerBalance : player.balance)}</Text>
         <Text style={s.playerStatus}>{player.status}</Text>
         {player.currentBet > 0 && (
           <Text style={s.playerBet}>Bet: {formatCurrency(player.currentBet)}</Text>

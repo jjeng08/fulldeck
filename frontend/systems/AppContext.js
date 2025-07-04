@@ -16,6 +16,8 @@ export function AppProvider({ children }) {
   const [refreshToken, setRefreshToken] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [messageQueue, setMessageQueue] = useState([]);
+  const [playerBalance, setPlayerBalance] = useState(0);
+  const [loadingActions, setLoadingActions] = useState(new Set());
   
   // Toast state
   const [toast, setToast] = useState({
@@ -52,6 +54,7 @@ export function AppProvider({ children }) {
     loadSavedToken();
   }, []);
 
+<<<<<<< Updated upstream
   // Handlers for messages coming FROM backend TO frontend
   const incomingMessages = {
     balanceReceived: (data) => {
@@ -294,23 +297,128 @@ export function AppProvider({ children }) {
   // Handlers for messages going FROM frontend TO backend (local-only actions)
   const outgoingMessages = {
     performLogout: () => {
+=======
+  const onLogin = (response) => {
+    // Clear loading state for login
+    clearLoadingAction('login');
+    
+    console.log('onLogin received response:', response);
+    console.log('response success:', response?.success);
+    console.log('response data userId:', response?.data?.userId);
+    logger.logAuthEvent('login_response_received', response?.data?.userId, { 
+      success: response?.success, 
+      userId: response?.data?.userId 
+    });
+    if (response?.success) {
+      console.log('Login successful, setting authenticated user');
+      console.log('Current isAuthenticated:', isAuthenticated);
+      const userData = {
+        id: response.data.userId,
+        username: response.data.username
+      };
+      setAuthenticatedUser(userData, response.data.accessToken, response.data.refreshToken);
+    } else {
+      console.log('Login failed, message:', response?.data?.message);
+    }
+  };
+
+  const onRegister = (response) => {
+    // Clear loading state for register
+    clearLoadingAction('register');
+    
+    if (response.success) {
+      const userData = {
+        id: response.data.userId,
+        username: response.data.username
+      };
+      setAuthenticatedUser(userData, response.data.accessToken, response.data.refreshToken);
+    } else {
+    }
+  };
+
+  const onTokenRefreshed = (response) => {
+    // Clear loading state for token refresh
+    clearLoadingAction('refreshToken');
+    
+    if (response.success) {
+      const userData = {
+        id: response.data.userId,
+        username: response.data.username
+      };
+      setAuthToken(response.data.accessToken);
+      setUser(userData);
+      setIsRefreshing(false);
+      saveAuthData(response.data.accessToken, refreshToken, userData);
+      processMessageQueue();
+    } else {
+>>>>>>> Stashed changes
       setUser(null);
       setAuthToken(null);
       setRefreshToken(null);
       setIsAuthenticated(false);
+<<<<<<< Updated upstream
       setGameState('waiting_for_bet');
       setCurrentBet(0);
       setPlayerHand([]);
       setDealerHand([]);
       setGameMessage();
+=======
+      setIsRefreshing(false);
+      setMessageQueue([]);
+>>>>>>> Stashed changes
       clearAuthData();
     }
   };
 
+<<<<<<< Updated upstream
+=======
+  const onConnected = (message) => {
+    logger.logWebSocketEvent('server_connected', { connectionId: message.data.connectionId });
+    setConnected(true);
+  };
+
+  const onBalance = (message) => {
+    setPlayerBalance(message.data.balance);
+  };
+
+  const onAvailableGames = (message) => {
+    setAvailableGames(message.data.availableGames);
+  };
+
+  const onLogout = (response) => {
+    // Clear loading state for logout
+    clearLoadingAction('logout');
+    
+    logger.logAuthEvent('logout_completed', null, { success: response?.success });
+    // Clear all auth data
+    setUser(null);
+    setAuthToken(null);
+    setRefreshToken(null);
+    setIsAuthenticated(false);
+    setAvailableGames([]);
+    setMessageQueue([]);
+    setIsRefreshing(false);
+    clearAuthData();
+  };
+
+>>>>>>> Stashed changes
   useEffect(() => {
     // Initialize WebSocket connection only - pages handle their own message listeners
     try {
       WebSocketService.connect();
+<<<<<<< Updated upstream
+=======
+      
+      // Set up incoming message handlers
+      WebSocketService.onMessage('availableGames', onAvailableGames);
+      WebSocketService.onMessage('balance', onBalance);
+      WebSocketService.onMessage('connected', onConnected);
+      WebSocketService.onMessage('login', onLogin);
+      WebSocketService.onMessage('logoutPerformed', onLogout);
+      WebSocketService.onMessage('register', onRegister);
+      WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
+      
+>>>>>>> Stashed changes
     } catch (error) {
       console.error('Failed to initialize WebSocket:', error);
       setConnected(false);
@@ -319,6 +427,16 @@ export function AppProvider({ children }) {
     // Cleanup on unmount
     return () => {
       try {
+<<<<<<< Updated upstream
+=======
+        WebSocketService.removeMessageHandler('availableGames');
+        WebSocketService.removeMessageHandler('balance');
+        WebSocketService.removeMessageHandler('connected');
+        WebSocketService.removeMessageHandler('login');
+        WebSocketService.removeMessageHandler('logoutPerformed');
+        WebSocketService.removeMessageHandler('register');
+        WebSocketService.removeMessageHandler('tokenRefreshed');
+>>>>>>> Stashed changes
         WebSocketService.disconnect();
       } catch (error) {
         console.error('Error disconnecting WebSocket:', error);
@@ -334,11 +452,18 @@ export function AppProvider({ children }) {
       if (savedToken && savedRefreshToken) {
         const savedUser = await AsyncStorage.getItem('userData');
         if (savedUser) {
+          const userData = JSON.parse(savedUser);
           setAuthToken(savedToken);
           setRefreshToken(savedRefreshToken);
-          setUser(JSON.parse(savedUser));
+          setUser(userData);
+          setPlayerBalance(userData.balance || 0);
           setIsAuthenticated(true);
+<<<<<<< Updated upstream
           setGameMessage(`Welcome back, ${JSON.parse(savedUser).username}!`);
+=======
+          setGameMessage(`Welcome back, ${userData.username}!`);
+          
+>>>>>>> Stashed changes
         }
       }
     } catch (error) {
@@ -368,6 +493,7 @@ export function AppProvider({ children }) {
     }
   };
 
+
   const attemptTokenRefresh = () => {
     if (refreshToken && !isRefreshing) {
       setIsRefreshing(true);
@@ -383,7 +509,6 @@ export function AppProvider({ children }) {
       setIsAuthenticated(false);
       setMessageQueue([]);
       setIsRefreshing(false);
-      setGameMessage('Session expired. Please login again.');
       clearAuthData();
     }
   };
@@ -406,13 +531,22 @@ export function AppProvider({ children }) {
     if (outgoingMessages[messageType]) {
       outgoingMessages[messageType](data);
     } else {
+<<<<<<< Updated upstream
       // Messages that don't need authentication
       const unauthenticatedMessages = ['login', 'register', 'refreshToken'];
+=======
+      // Check if we have a valid token
+      if (!authToken) {
+        // User needs to login - this should be handled by navigation logic
+        return;
+      }
+>>>>>>> Stashed changes
       
       if (unauthenticatedMessages.includes(messageType)) {
         // Send without token
         WebSocketService.sendMessage(messageType, data);
       } else {
+<<<<<<< Updated upstream
         // Check if we have a valid token
         if (!authToken) {
           setGameMessage(t.loginToStart);
@@ -434,6 +568,13 @@ export function AppProvider({ children }) {
               setGameMessage(t.insufficientBalance);
               return;
             }
+=======
+        // Special validation for placeBet
+        if (messageType === 'placeBet') {
+          if (!user || data.amount > playerBalance) {
+            // Insufficient balance - this should be handled by the game component
+            return;
+>>>>>>> Stashed changes
           }
           
           // Send with token included in message
@@ -487,6 +628,18 @@ export function AppProvider({ children }) {
     saveAuthData(accessToken, refreshToken, userData);
   };
 
+  const addLoadingAction = (messageType) => {
+    setLoadingActions(prev => new Set([...prev, messageType]));
+  };
+
+  const clearLoadingAction = (messageType) => {
+    setLoadingActions(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(messageType);
+      return newSet;
+    });
+  };
+
   const value = {
     // State
     connected,
@@ -500,9 +653,14 @@ export function AppProvider({ children }) {
     gameMessage,
     toast,
     tableState,
+    playerBalance,
+    availableGames,
+    loadingActions,
     
     // Actions
     sendMessage,
+    addLoadingAction,
+    clearLoadingAction,
     setGameMessage,
     showToast,
     hideToast,

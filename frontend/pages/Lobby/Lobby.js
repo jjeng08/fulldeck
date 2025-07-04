@@ -11,11 +11,11 @@ import GameCarousel from '../../components/GameCarousel';
 
 export default function LobbyPage() {
   const navigation = useNavigation();
-  const { user, tableState, sendMessage } = useApp();
+  const { user, tableState, sendMessage, playerBalance } = useApp();
 
   useEffect(() => {
     // Get current balance when entering lobby
-    sendMessage('getBalance');
+    sendMessage('balance');
   }, []);
 
   // Navigate to appropriate table when successfully joined
@@ -79,7 +79,7 @@ export default function LobbyPage() {
               {t.welcomeUser.replace('{username}', user?.username || 'Guest')}
             </Text>
             <Text style={s.balanceText}>
-              {t.balance.replace('{balance}', formatCurrency(user?.balance || 0))}
+              {t.balance.replace('{balance}', formatCurrency(playerBalance))}
             </Text>
           </View>
           <Button 

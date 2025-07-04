@@ -32,6 +32,8 @@ const text = {
   serverError: 'Server error occurred. Please try again.',
   unableToLogin: 'Unable to login at this time. Please try again.',
   unableToRegister: 'Unable to register at this time. Please try again.',
+  invalidRefreshToken: 'No valid refresh token provided.',
+  tokenRefreshFailed: 'Unable to refresh token at this time. Please login again.',
   
   // Validation Messages
   missingUsername: 'Username is required.',

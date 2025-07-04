@@ -117,6 +117,21 @@ setGameMessage("Insufficient balance for this bet!");
 - **Separate diagnosis from execution** - answer questions first, wait for instructions
 - If user asks about a problem, explain the cause but do NOT automatically attempt fixes
 - **STOP and WAIT for user instruction after completing each requested task**
+- **Planning Mode**: If user starts message with "Question:", do NOT execute any code - only provide analysis and recommendations
+- **CRITICAL: IF USER ASKS FOR SOMETHING THAT WON'T WORK DUE TO TECHNICAL LIMITATIONS, IMMEDIATELY TELL THEM WHY IT'S IMPOSSIBLE BEFORE ATTEMPTING ANYTHING**
+
+## WEBSOCKET MESSAGE HANDLER RULES - CRITICAL
+- **ONE HANDLER PER MESSAGE TYPE**: WebSocketService only allows ONE handler per message type
+- **HANDLER OVERWRITES**: Registering a new handler for the same message type overwrites the previous one
+- **NO MULTIPLE LISTENERS**: Cannot have handlers in both AppContext AND component for same message type
+- **INFORM USER**: If user requests multiple handlers for same message type, IMMEDIATELY explain this limitation
+
+## WEBSOCKET MESSAGE ERROR HANDLING RULES - CRITICAL
+- **STANDARDIZED ERROR RESPONSES**: All message responses with success=false MUST have data.errorMessage property
+- **NO HARDCODED ERROR MESSAGES**: All error messages MUST come from backend/src/shared/text.js (NOT frontend text.js)
+- **I18N READY**: Use text constants for all error messages to support internationalization
+- **CONSISTENT STRUCTURE**: Failed responses always follow: `{type: 'messageType', success: false, data: {errorMessage: t.someErrorKey}}`
+- **BACKEND TEXT SOURCE**: Error messages originate from backend text.js and are sent to frontend, not generated on frontend
 
 ## PACKAGE.JSON RULES
 - **Create package.json files where needed for proper project structure**
@@ -150,6 +165,32 @@ Claude is authorized to run ALL system commands necessary for project developmen
 - **NEVER use `prisma db push` in production - always use proper migrations**
 - **ALWAYS backup database before schema changes**
 - **Data loss is NEVER acceptable in any environment**
+
+## BALANCE STATE MANAGEMENT RULES - CRITICAL
+- **ONLY ONE BALANCE HANDLER**: There must be exactly one handler for 'balance' messages in frontend/systems/AppContext.js
+- **CENTRALIZED BALANCE STATE**: All balance data MUST come from the `playerBalance` state in AppContext
+- **NO DIRECT BALANCE ACCESS**: Components MUST NOT access balance from user object or any other source
+- **BALANCE UPDATES**: Only the `onBalance` message handler is allowed to update `playerBalance`
+- **MANDATORY USAGE**: All balance displays and validations MUST use `playerBalance` from useApp() hook
+- **FORBIDDEN SOURCES**: Never use `user.balance`, `player.balance`, or any other balance source except `playerBalance`
+
+## AVAILABLE GAMES STATE MANAGEMENT RULES - CRITICAL
+- **ONLY ONE GAMES HANDLER**: There must be exactly one handler for 'availableGames' messages in frontend/systems/AppContext.js
+- **CENTRALIZED GAMES STATE**: All availableGames data MUST come from the `availableGames` state in AppContext
+- **NO DIRECT GAMES ACCESS**: Components MUST NOT access games from auth responses or any other source
+- **GAMES UPDATES**: Only the `onAvailableGames` message handler is allowed to update `availableGames`
+- **MANDATORY USAGE**: All game lists and availability checks MUST use `availableGames` from useApp() hook
+- **FORBIDDEN SOURCES**: Never use auth response games, hardcoded games, or any other games source except `availableGames` state
+- **BACKEND SEPARATION**: Backend MUST send availableGames via separate 'availableGames' message, not in auth responses
+
+## LOADING STATE MANAGEMENT RULES - CRITICAL
+- **SINGLE LOADING STATE**: Use only the `loadingActions` Set in AppContext - NEVER create additional loading states
+- **AUTOMATIC TRACKING**: AppContext automatically tracks loading for all sendMessage calls
+- **COMPONENT INTERNAL**: Components check `loadingActions` internally - NEVER pass loading props
+- **PAGE BLOCKING**: Use `loadingActions.size > 0` to block entire pages during any loading
+- **SPECIFIC LOADING**: Use `loadingActions.has('messageType')` for specific button loading states
+- **BUTTON INTEGRATION**: Button component checks loadingActions internally with `messageType` prop
+- **NO DUPLICATE STATES**: NEVER create isLoading, isPageBlocked, or similar derived states
 
 ## System Command Authorizations
 - **CRITICAL AUTHORIZATION**: 
