@@ -111,6 +111,40 @@ export const tableStyles = StyleSheet.create({
     backgroundColor: sc.colors.gray500,
     opacity: 0.6
   },
+  playingControlsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: sc.size.md
+  },
+  mainActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    paddingBottom: sc.size.md
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: sc.size.sm
+  },
+  actionButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#28a745',
+    minWidth: 120,
+    paddingVertical: sc.size.md,
+    paddingHorizontal: sc.size.lg
+  },
+  secondaryActionButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#17a2b8',
+    minWidth: 100,
+    paddingVertical: sc.size.sm,
+    paddingHorizontal: sc.size.md
+  },
   tableHeader: {
     position: 'absolute',
     top: 0,
@@ -382,5 +416,46 @@ export const tableStyles = StyleSheet.create({
     color: sc.colors.gold,
     fontWeight: 'bold',
     paddingTop: sc.size.xs,
+  },
+  topBanner: {
+    backgroundColor: sc.colors.greenDark,
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: sc.colors.gray400,
+    minHeight: 60
+  },
+  centerGameArea: {
+    flex: 1,
+    backgroundColor: sc.colors.green,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.md
+  },
+  deckSection: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: sc.size.lg,
+    paddingBottom: sc.size.md,
+    width: '100%'
+  },
+  instructionSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%'
+  },
+  bottomControlsArea: {
+    backgroundColor: sc.colors.greenDark,
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.md,
+    borderTopWidth: 1,
+    borderTopColor: sc.colors.gray400,
+    minHeight: 180,
+    alignItems: 'center'
   }
 });
