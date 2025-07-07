@@ -1,5 +1,5 @@
 import React, { useState, useImperativeHandle, forwardRef } from 'react';
-import { View, Dimensions, ImageBackground, Animated } from 'react-native';
+import { View, Dimensions, ImageBackground, Animated, Easing } from 'react-native';
 import { styleConstants as sc } from 'shared/styleConstants';
 import Card from './Card';
 
@@ -7,13 +7,14 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const Deck = forwardRef(({ 
   onDealCard = () => {},
-  style = {}
+  style = {},
+  shuffleDuration = 800
 }, ref) => {
   // Animated values for shuffle animations
   const shuffleProgress = React.useRef(new Animated.Value(0)).current;
   
   // Toggle for alternating animation direction
-  const redGoesUp = React.useRef(true);
+  const evenGoesUp = React.useRef(true);
   
   const [dealtCards, setDealtCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
@@ -73,7 +74,7 @@ const Deck = forwardRef(({
     shuffleProgress.setValue(0);
     
     // Toggle animation direction for this shuffle
-    redGoesUp.current = !redGoesUp.current;
+    evenGoesUp.current = !evenGoesUp.current;
     
     // Mark all cards as animating
     setCards(prev => prev.map(card => ({ ...card, animating: true })));
@@ -96,12 +97,13 @@ const Deck = forwardRef(({
           right: newZIndex 
         };
       }));
-    }, 750); // At peak of animation when cards are most separated
+    }, shuffleDuration / 2); // At peak of animation when cards are most separated
     
     // Start 3-phase arc animation: up -> right with rotation -> back down
     Animated.timing(shuffleProgress, {
       toValue: 1,
-      duration: 1500,
+      duration: shuffleDuration,
+      easing: Easing.inOut(Easing.quad),
       useNativeDriver: true,
     }).start(() => {
       // Animation complete - remove animation flag and complete shuffle
@@ -190,11 +192,11 @@ const Deck = forwardRef(({
       let animatedStyle = {};
       
       if (card.animating) {
-        // Animation targeting: use toggle to alternate between red/blue cards
+        // Animation targeting: use toggle to alternate between even/odd cards
         const originalCardIndex = parseInt(card.id.replace('card', ''));
-        const cardIsRed = originalCardIndex % 2 === 0; // card0,2,4,6,8 are red
+        const cardIsEven = originalCardIndex % 2 === 0; // card0,2,4,6,8 are even
         
-        const shouldAnimateUp = cardIsRed ? redGoesUp.current : !redGoesUp.current;
+        const shouldAnimateUp = cardIsEven ? evenGoesUp.current : !evenGoesUp.current;
         
         if (shouldAnimateUp) {
           // Cards animating up and right with rotation
@@ -211,7 +213,7 @@ const Deck = forwardRef(({
           
           const rotate = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: ['0deg', '15deg', '0deg'],
+            outputRange: ['0deg', '35deg', '0deg'],
           });
           
           animatedStyle = {
@@ -236,7 +238,7 @@ const Deck = forwardRef(({
           
           const rotate = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: ['0deg', '15deg', '0deg'],
+            outputRange: ['0deg', '35deg', '0deg'],
           });
           
           animatedStyle = {
@@ -261,11 +263,10 @@ const Deck = forwardRef(({
             animatedStyle
           ]}
         >
-          <View 
-            style={[
-              styles.deckCard,
-              { backgroundColor: parseInt(card.id.replace('card', '')) % 2 === 0 ? 'red' : 'blue' }
-            ]}
+          <ImageBackground
+            source={require('assets/card-back.png')}
+            style={styles.deckCard}
+            imageStyle={styles.deckCardImage}
           />
         </Animated.View>
       );
@@ -331,7 +332,7 @@ const Deck = forwardRef(({
             }}
             style={{
               position: 'absolute',
-              zIndex: 1000 + card.id,
+              zIndex: 20 + card.id,
             }}
           />
         );
