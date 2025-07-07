@@ -1,26 +1,19 @@
 import React, { useState, useImperativeHandle, forwardRef } from 'react';
-import { View, Dimensions, ImageBackground } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming, 
-  runOnJS,
-  interpolate
-} from 'react-native-reanimated';
+import { View, Dimensions, ImageBackground, Animated } from 'react-native';
 import { styleConstants as sc } from 'shared/styleConstants';
 import Card from './Card';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const Deck = forwardRef(({ 
-  position = { x: screenWidth / 2 - 45, y: 100 }, 
   onDealCard = () => {},
-  shuffling = false,
   style = {}
 }, ref) => {
-  // Reanimated values for shuffle animations
-  const shuffleProgress = useSharedValue(0);
-  const shufflePhase = useSharedValue(0); // 0: none, 1: initial, 2: half-second, 3: full-second
+  // Animated values for shuffle animations
+  const shuffleProgress = React.useRef(new Animated.Value(0)).current;
+  
+  // Toggle for alternating animation direction
+  const redGoesUp = React.useRef(true);
   
   const [dealtCards, setDealtCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
@@ -52,39 +45,92 @@ const Deck = forwardRef(({
 
   const [deck, setDeck] = useState(createDeck());
 
-  // Single shuffle animation with reset
-  const startSingleShuffle = (onComplete) => {
-    shuffleProgress.value = withTiming(1, { duration: 800 }, () => {
-      shuffleProgress.value = 0;
-      runOnJS(resetCardStates)();
-      if (onComplete) runOnJS(onComplete)();
-    });
+
+    // Card refs for direct DOM manipulation
+  const cardRefs = React.useRef([]);
+  
+  // Build deck with specified number of cards
+  const buildDeck = (numCards) => {
+    const deck = [];
+    for (let i = 0; i < numCards; i++) {
+      deck.push({
+        id: `card${i}`,
+        zIndex: i,
+        top: i * 1,
+        right: i * 1
+      });
+    }
+    return deck;
   };
 
-  // Triple shuffle animation - loops 3 times
-  const startShuffle = () => {
-    if (isShuffling) return;
+  const [cards, setCards] = React.useState(buildDeck(10));
+
+  const [shuffleTimes, setShuffleTimes] = React.useState(0);
+
+  // Arc animation function using React Native Animated API
+  const animateShuffle = () => {
+    // Reset animation value
+    shuffleProgress.setValue(0);
     
-    setIsShuffling(true);
+    // Toggle animation direction for this shuffle
+    redGoesUp.current = !redGoesUp.current;
     
-    // First shuffle
-    startSingleShuffle(() => {
-      // Second shuffle
-      startSingleShuffle(() => {
-        // Third shuffle
-        startSingleShuffle(() => {
+    // Mark all cards as animating
+    setCards(prev => prev.map(card => ({ ...card, animating: true })));
+    
+    // Z-index swapping: always swap based on current z-index positions
+    setTimeout(() => {
+      setCards(prev => prev.map(card => {
+        let newZIndex;
+        if (card.zIndex % 2 === 0) {
+          // Even z-index cards move to next odd z-index
+          newZIndex = card.zIndex + 1;
+        } else {
+          // Odd z-index cards move to previous even z-index
+          newZIndex = card.zIndex - 1;
+        }
+        return { 
+          ...card, 
+          zIndex: newZIndex, 
+          top: newZIndex, 
+          right: newZIndex 
+        };
+      }));
+    }, 750); // At peak of animation when cards are most separated
+    
+    // Start 3-phase arc animation: up -> right with rotation -> back down
+    Animated.timing(shuffleProgress, {
+      toValue: 1,
+      duration: 1500,
+      useNativeDriver: true,
+    }).start(() => {
+      // Animation complete - remove animation flag and complete shuffle
+      setCards(prev => prev.map(card => ({ ...card, animating: false })));
+      
+      setShuffleTimes(prev => {
+        const remaining = prev - 1;
+        if (remaining <= 0) {
           setIsShuffling(false);
-        });
+        }
+        return remaining;
       });
     });
   };
 
-  // Auto-start shuffle when shuffling prop is true
+  // Trigger animation when isShuffling becomes true or when more shuffles remain
   React.useEffect(() => {
-    if (shuffling && !isShuffling) {
-      startShuffle();
+    if (isShuffling && shuffleTimes > 0) {
+      animateShuffle();
     }
-  }, [shuffling]);
+  }, [isShuffling, shuffleTimes]);
+
+  // Simple shuffle function
+  const shuffle = (times = 1) => {
+    if (isShuffling) return;
+    setShuffleTimes(times);
+    setIsShuffling(true);
+  };
+
 
   // Deal a card animation
   const dealCard = (targetPosition, flipDelay = 250) => {
@@ -133,165 +179,104 @@ const Deck = forwardRef(({
     
     return dealCard({ x: targetX, y: dealerAreaY });
   };
-
-  // Card refs for direct DOM manipulation
-  const cardRefs = React.useRef([]);
   
-  
-  // Set up card positions and styles
-  const [cardStates, setCardStates] = React.useState(() => 
-    Array.from({ length: 10 }, (_, i) => ({
-      zIndex: 10 - i,  // Card 0 gets z-index 10, Card 9 gets z-index 1
-      top: (10 - i - 1) * 1,  // Higher z-index = more down
-      left: -(10 - i - 1) * 1,  // Higher z-index = more left
-      transform: ''
-    }))
-  );
-  
-  // Create animated styles for transform only
-  const createCardAnimatedStyle = (arrayIndex) => {
-    return useAnimatedStyle(() => {
-      const isRemovedCard = [1, 3, 5, 7].includes(arrayIndex);
-      
-      if (shuffleProgress.value > 0 && isRemovedCard) {
-        const translateY = interpolate(
-          shuffleProgress.value,
-          [0, 0.16, 0.33, 0.5, 0.67, 0.84, 1],
-          [0, -60, -120, -180, -120, -60, 0]
-        );
-        
-        const translateX = interpolate(
-          shuffleProgress.value,
-          [0, 0.16, 0.33, 0.5, 0.67, 0.84, 1],
-          [0, 0, 30, 60, 30, 0, 0]
-        );
-        
-        const rotate = interpolate(
-          shuffleProgress.value,
-          [0, 0.16, 0.33, 0.5, 0.67, 0.84, 1],
-          [0, 8, 17, 25, 17, 8, 0]
-        );
-        
-        // At apex (0.5), trigger DOM manipulation
-        if (shuffleProgress.value >= 0.5) {
-          runOnJS(updateCardPositions)();
-        }
-        
-        return {
-          transform: [{ translateX }, { translateY }, { rotate: `${rotate}deg` }]
-        };
-      }
-      
-      return {};
-    });
-  };
-  
-  // Direct DOM manipulation for instant z-index changes
-  const updateCardPositions = () => {
-    setCardStates(prev => prev.map((state, i) => {
-      const isRemovedCard = [1, 3, 5, 7].includes(i);
-      const isRemainingCard = [0, 2, 4, 6].includes(i);
-      
-      if (isRemovedCard) {
-        const originalZIndex = 10 - i;
-        const originalTop = (originalZIndex - 1) * 1;
-        const originalLeft = -(originalZIndex - 1) * 1;
-        
-        return {
-          ...state,
-          zIndex: originalZIndex + 1,  // +1 to z-index
-          top: originalTop + 1,        // +1 to position
-          left: originalLeft - 1,      // -1 to position (more left)
-        };
-      } else if (isRemainingCard) {
-        // Only specific remaining cards get -1
-        const originalZIndex = 10 - i;
-        const originalTop = (originalZIndex - 1) * 1;
-        const originalLeft = -(originalZIndex - 1) * 1;
-        
-        return {
-          ...state,
-          zIndex: originalZIndex - 1,  // -1 to z-index
-          top: originalTop - 1,        // -1 to position
-          left: originalLeft + 1,      // +1 to position (less left)
-        };
-      } else {
-        // Cards 8,9 don't move
-        return state;
-      }
-    }));
-  };
 
-  // Reset all card states to original positions
-  const resetCardStates = () => {
-    setCardStates(Array.from({ length: 10 }, (_, i) => ({
-      zIndex: 10 - i,
-      top: (10 - i - 1) * 1,
-      left: -(10 - i - 1) * 1,
-      transform: ''
-    })));
-  };
-
-  // Create individual animated styles for each card position
-  const card0Style = createCardAnimatedStyle(0);
-  const card1Style = createCardAnimatedStyle(1);
-  const card2Style = createCardAnimatedStyle(2);
-  const card3Style = createCardAnimatedStyle(3);
-  const card4Style = createCardAnimatedStyle(4);
-  const card5Style = createCardAnimatedStyle(5);
-  const card6Style = createCardAnimatedStyle(6);
-  const card7Style = createCardAnimatedStyle(7);
-  const card8Style = createCardAnimatedStyle(8);
-  const card9Style = createCardAnimatedStyle(9);
-
-  // Render deck cards (visual stack effect) - exactly 10 cards
+  // Render deck cards using React Native Animated API
   const renderDeckStack = () => {
-    const cardStyles = [
-      card0Style, card1Style, card2Style, card3Style, card4Style,
-      card5Style, card6Style, card7Style, card8Style, card9Style
-    ];
+    // Sort cards by z-index to ensure proper rendering order (higher z-index renders last = on top)
+    const sortedCards = [...cards].sort((a, b) => a.zIndex - b.zIndex);
     
-    const stackCards = [];
-    const totalCards = 10; // Exactly 10 cards as requested
-    
-    for (let i = 0; i < totalCards; i++) {
-      const cardState = cardStates[i];
+    return sortedCards.map((card) => {
+      let animatedStyle = {};
       
-      // Create animated style for smooth transitions
-      const positionAnimatedStyle = useAnimatedStyle(() => {
-        return {
-          zIndex: cardState.zIndex,
-          top: withTiming(cardState.top, { duration: 300 }),
-          left: withTiming(cardState.left, { duration: 300 }),
-        };
-      });
-      
-      stackCards.push(
+      if (card.animating) {
+        // Animation targeting: use toggle to alternate between red/blue cards
+        const originalCardIndex = parseInt(card.id.replace('card', ''));
+        const cardIsRed = originalCardIndex % 2 === 0; // card0,2,4,6,8 are red
+        
+        const shouldAnimateUp = cardIsRed ? redGoesUp.current : !redGoesUp.current;
+        
+        if (shouldAnimateUp) {
+          // Cards animating up and right with rotation
+          
+          const translateY = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, -120, 0],
+          });
+          
+          const translateX = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1], 
+            outputRange: [0, 60, 0],
+          });
+          
+          const rotate = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: ['0deg', '15deg', '0deg'],
+          });
+          
+          animatedStyle = {
+            transform: [
+              { translateY },
+              { translateX },
+              { rotate }
+            ]
+          };
+        } else {
+          // Cards animating down and left with rotation
+          
+          const translateY = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: [0, 120, 0],
+          });
+          
+          const translateX = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1], 
+            outputRange: [0, -60, 0],
+          });
+          
+          const rotate = shuffleProgress.interpolate({
+            inputRange: [0, 0.5, 1],
+            outputRange: ['0deg', '15deg', '0deg'],
+          });
+          
+          animatedStyle = {
+            transform: [
+              { translateY },
+              { translateX },
+              { rotate }
+            ]
+          };
+        }
+      }
+
+      return (
         <Animated.View
-          key={i}
-          ref={el => cardRefs.current[i] = el}
+          key={card.id}
           style={[
             styles.deckCardContainer,
-            cardStyles[i],
-            positionAnimatedStyle
+            {
+              top: card.top,
+              right: card.right,
+            },
+            animatedStyle
           ]}
         >
-          <ImageBackground
-            source={require('assets/card-back.png')}
-            style={styles.deckCard}
-            imageStyle={styles.deckCardImage}
+          <View 
+            style={[
+              styles.deckCard,
+              { backgroundColor: parseInt(card.id.replace('card', '')) % 2 === 0 ? 'red' : 'blue' }
+            ]}
           />
         </Animated.View>
       );
-    }
-    return stackCards;
+    });
   };
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     dealToPlayer,
     dealToDealer,
-    shuffle: startShuffle,
+    shuffle,
     remainingCards: deck.length,
     isShuffling,
   }));
@@ -308,10 +293,6 @@ const Deck = forwardRef(({
       <View 
         style={[
           styles.deckContainer,
-          {
-            left: position.x,
-            top: position.y,
-          },
           style
         ]}
       >
@@ -325,6 +306,7 @@ const Deck = forwardRef(({
         
         return (
           <Card
+            testID={'deck-card-'+ card.id}
             key={card.id}
             suit={card.suit}
             value={card.value}
@@ -360,7 +342,7 @@ const Deck = forwardRef(({
 
 const styles = {
   deckContainer: {
-    position: 'absolute',
+    position: 'relative',  // Reference point for absolute children
     width: 90,  // 60 * 1.5
     height: 126, // 84 * 1.5
   },

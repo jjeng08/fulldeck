@@ -438,10 +438,11 @@ export const tableStyles = StyleSheet.create({
   },
   deckSection: {
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: sc.size.lg,
+    justifyContent: 'center',
+    paddingTop: sc.size['4xl'],
     paddingBottom: sc.size.md,
-    width: '100%'
+    width: '100%',
+    minHeight: 200
   },
   instructionSection: {
     flex: 1,

@@ -99,7 +99,7 @@ export default function Blackjack({ route }) {
   // Test shuffle animation
   const onTestShuffle = () => {
     if (deckRef.current) {
-      deckRef.current.shuffle();
+      deckRef.current.shuffle(1);
     }
   };
 
@@ -283,7 +283,6 @@ export default function Blackjack({ route }) {
           <Deck 
             ref={deckRef}
             onDealCard={(card) => console.log('Card dealt:', card)}
-            shuffling={false}
           />
         </View>
 
