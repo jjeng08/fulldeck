@@ -544,6 +544,8 @@ async function onValidateToken(ws, data, userId) {
 async function onRefreshToken(ws, data) {
   logger.logAuthEvent('token_refresh_request', null, { refreshTokenProvided: !!data.refreshToken });
   
+  let decoded, user;
+  
   try {
     if (!data.refreshToken || data.refreshToken === 'null' || data.refreshToken === null) {
       const response = {
@@ -557,7 +559,7 @@ async function onRefreshToken(ws, data) {
       return
     }
     
-    const decoded = jwt.verify(data.refreshToken, JWT_SECRET)
+    decoded = jwt.verify(data.refreshToken, JWT_SECRET)
     
     if (decoded.type !== 'refresh') {
       throw new Error('Invalid refresh token type')
@@ -567,7 +569,7 @@ async function onRefreshToken(ws, data) {
     const prisma = new PrismaClient()
     
     // Verify user still exists
-    const user = await prisma.player.findUnique({
+    user = await prisma.player.findUnique({
       where: { id: decoded.userId }
     })
     
@@ -604,7 +606,7 @@ async function onRefreshToken(ws, data) {
     await prisma.$disconnect()
     
   } catch (error) {
-    logger.logError(error, { userId, action: 'token_refresh' });
+    logger.logError(error, { userId: user?.id || decoded?.userId || 'unknown', action: 'token_refresh' });
     const response = {
       type: 'tokenRefreshed',
       data: {

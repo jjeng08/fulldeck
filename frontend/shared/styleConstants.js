@@ -18,10 +18,7 @@ const baseSpacing = 8;
 
 // Shadow helper
 const createShadow = (offset, blur, opacity = 0.25, color = '#000') => ({
-  shadowColor: color,
-  shadowOffset: { width: 0, height: offset },
-  shadowOpacity: opacity,
-  shadowRadius: blur,
+  boxShadow: `0 ${offset}px ${blur}px rgba(0, 0, 0, ${opacity})`,
   elevation: Math.max(1, offset * 2),
 });
 
