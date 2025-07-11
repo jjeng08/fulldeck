@@ -120,6 +120,13 @@ setGameMessage("Insufficient balance for this bet!");
 - **Planning Mode**: If user starts message with "Question:", do NOT execute any code - only provide analysis and recommendations
 - **CRITICAL: IF USER ASKS FOR SOMETHING THAT WON'T WORK DUE TO TECHNICAL LIMITATIONS, IMMEDIATELY TELL THEM WHY IT'S IMPOSSIBLE BEFORE ATTEMPTING ANYTHING**
 
+## GIT BRANCH AND PR RULES - CRITICAL
+- **ALWAYS WORK OFF DEV BRANCH**: All new branches MUST be created from and merged back to the dev branch
+- **NEVER TOUCH MAIN**: Never checkout, merge to, or work directly on the main branch
+- **BRANCH WORKFLOW**: Create feature branches from dev, work on them, then create PRs back to dev
+- **PR TARGET**: All pull requests MUST target the dev branch, never main
+- **DEV BRANCH ONLY**: When asked to create branches, commits, or PRs, always use dev as the base branch
+
 ## WEBSOCKET MESSAGE HANDLER RULES - CRITICAL
 - **ONE HANDLER PER MESSAGE TYPE**: WebSocketService only allows ONE handler per message type
 - **HANDLER OVERWRITES**: Registering a new handler for the same message type overwrites the previous one
