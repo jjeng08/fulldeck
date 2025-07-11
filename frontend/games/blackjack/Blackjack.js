@@ -23,16 +23,17 @@ export default function Blackjack({ route }) {
     handUpdate: 200
   };
   
-  // Player hand state
-  const [handCards, setHandCards] = useState([]);
+  // Player hand state - supports multiple hands for splits
+  const [playerHands, setPlayerHands] = useState([[]]);
+  const [activeHandIndex, setActiveHandIndex] = useState(0);
+  const [handValues, setHandValues] = useState([0]);
+  const [handLabels, setHandLabels] = useState(['Player Hand']);
   
   // Deck state management
   const [deckCards, setDeckCards] = useState([]);
-  const [isShuffling, setIsShuffling] = useState(false);
-  const [shuffleTimes, setShuffleTimes] = useState(0);
-  const [portalCards, setPortalCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   const [deckCoordinates, setDeckCoordinates] = useState({ x: 0, y: 0 });
+  const [animatingCards, setAnimatingCards] = useState([]);
   
   // Build deck with specified number of cards
   const buildDeck = (numCards) => {
@@ -42,7 +43,8 @@ export default function Blackjack({ route }) {
         id: `card${i}`,
         zIndex: i,
         top: i * 1,
-        right: i * 1
+        right: i * 1,
+        animating: false
       });
     }
     return deck;
@@ -55,84 +57,68 @@ export default function Blackjack({ route }) {
   
   // Shuffle deck function
   const shuffleDeck = (times = 1) => {
-    if (isShuffling) return;
-    setShuffleTimes(times);
-    setIsShuffling(true);
+    if (deckRef.current) {
+      deckRef.current.shuffle(times);
+    }
   };
   
-  // Shuffle effect
-  useEffect(() => {
-    if (isShuffling && shuffleTimes > 0) {
-      // Trigger shuffle animation in deck
-      setShuffleTimes(prev => {
-        const remaining = prev - 1;
-        if (remaining <= 0) {
-          setIsShuffling(false);
-        }
-        return remaining;
-      });
-    }
-  }, [isShuffling, shuffleTimes]);
-  
-  // Deal card function
-  const dealCard = (cardData, targetPosition) => {
-    const cardToDeal = cardData;
+  // Deal card function - with animation
+  const dealCard = (cardData, targetPosition, handIndex = 0) => {
     const newCardId = nextCardId;
     setNextCardId(prev => prev + 1);
     
     const startPos = { x: deckCoordinates.x - 9, y: deckCoordinates.y + 9 };
     
-    // Create portal card for animation with Animated.Values
-    const portalCard = {
+    // Create animating card
+    const animatingCard = {
       id: newCardId,
-      ...cardToDeal,
-      startPosition: startPos,
-      targetPosition: targetPosition,
+      suit: cardData.suit,
+      value: cardData.value,
       animateX: new Animated.Value(startPos.x),
       animateY: new Animated.Value(startPos.y),
       animateRotateY: new Animated.Value(0),
       isFlipping: false,
     };
 
-    setPortalCards(prev => [...prev, portalCard]);
+    setAnimatingCards(prev => [...prev, animatingCard]);
     
-    // Start position animation
+    // Start animation
     Animated.parallel([
-      Animated.timing(portalCard.animateX, {
+      Animated.timing(animatingCard.animateX, {
         toValue: targetPosition.x,
         duration: durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.timing(portalCard.animateY, {
+      Animated.timing(animatingCard.animateY, {
         toValue: targetPosition.y,
         duration: durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // Animation complete - move to hand
-      setHandCards(prev => {
-        const newHand = [...prev, {
-          id: portalCard.id,
-          suit: portalCard.suit,
-          value: portalCard.value,
+      // Animation complete - add to hand and remove from animating
+      setPlayerHands(prev => {
+        const newHands = [...prev];
+        const targetHand = newHands[handIndex] || [];
+        const newCard = {
+          id: newCardId,
+          suit: cardData.suit,
+          value: cardData.value,
           faceUp: true,
-        }];
-        // Recalculate positions for all cards in hand
-        return newHand.map((c, index) => ({
-          ...c,
-          position: getPlayerCardPosition(index, newHand.length),
-        }));
+          position: targetPosition,
+        };
+        
+        newHands[handIndex] = [...targetHand, newCard];
+        return newHands;
       });
       
-      // Remove from portal
-      setPortalCards(prev => prev.filter(c => c.id !== portalCard.id));
+      setAnimatingCards(prev => prev.filter(c => c.id !== newCardId));
     });
     
-    // Flip animation - starts halfway through deal
+    // Flip animation
     setTimeout(() => {
-      Animated.timing(portalCard.animateRotateY, {
+      Animated.timing(animatingCard.animateRotateY, {
         toValue: 180,
         duration: durations.cardFlip,
         easing: Easing.inOut(Easing.quad),
@@ -140,32 +126,47 @@ export default function Blackjack({ route }) {
       }).start();
     }, durations.cardDeal / 2);
     
-    // Change to red background at middle of flip animation
+    // Set flipping flag
     setTimeout(() => {
-      setPortalCards(prev => prev.map(c => 
-        c.id === portalCard.id ? { ...c, isFlipping: true } : c
+      setAnimatingCards(prev => prev.map(c => 
+        c.id === newCardId ? { ...c, isFlipping: true } : c
       ));
     }, durations.cardDeal / 2 + durations.cardFlip / 2);
-    
-    return portalCard;
   };
   
   // Calculate player area position
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const playerAreaY = screenHeight - 400;
   
-  // Calculate card position in player hand
-  const getPlayerCardPosition = (cardIndex, totalCards) => {
+  // Calculate card position in player hand - updated for split hands
+  const getPlayerCardPosition = (cardIndex, totalCards, handIndex = 0, totalHands = 1) => {
     const CARD_WIDTH = 90;
-    const CARD_OVERLAP = 0.3 * CARD_WIDTH; // 30% overlap
-    const totalWidth = CARD_WIDTH + (totalCards - 1) * CARD_OVERLAP;
-    const centerStart = (screenWidth - totalWidth) / 2;
-    const leftOffset = cardIndex * CARD_OVERLAP;
+    const CARD_OVERLAP = 0.3 * CARD_WIDTH; // Show 30% of previous card
     
-    return {
-      x: centerStart + leftOffset,
-      y: playerAreaY,
-    };
+    if (totalHands === 1) {
+      // Single hand - center on screen
+      const totalWidth = CARD_WIDTH + (totalCards - 1) * CARD_OVERLAP;
+      const centerStart = (screenWidth - totalWidth) / 2;
+      const leftOffset = cardIndex * CARD_OVERLAP;
+      
+      return {
+        x: centerStart + leftOffset,
+        y: playerAreaY,
+      };
+    } else {
+      // Split hands - position side by side
+      const handWidth = CARD_WIDTH + (totalCards - 1) * CARD_OVERLAP;
+      const handGap = 40; // Gap between hands
+      const totalWidth = handWidth * totalHands + handGap * (totalHands - 1);
+      const startX = (screenWidth - totalWidth) / 2;
+      const handStartX = startX + handIndex * (handWidth + handGap);
+      const cardX = handStartX + cardIndex * CARD_OVERLAP;
+      
+      return {
+        x: cardX,
+        y: playerAreaY,
+      };
+    }
   };
   
   // Get navigation params
@@ -185,7 +186,9 @@ export default function Blackjack({ route }) {
     canHit: false,
     canStand: false,
     canSplit: false,
-    buyInsurance: false
+    buyInsurance: false,
+    isSplit: false,
+    handsCompleted: [] // Track which hands are completed
   });
 
   const formatCurrencyButton = (cents) => {
@@ -239,9 +242,9 @@ export default function Blackjack({ route }) {
 
   // Test card dealing
   const onTestDeal = () => {
-    const currentHandSize = handCards.length;
-    const targetPosition = getPlayerCardPosition(currentHandSize, currentHandSize + 1);
-    dealCard({ suit: 'hearts', value: 'A' }, targetPosition);
+    const currentHandSize = playerHands[activeHandIndex]?.length || 0;
+    const targetPosition = getPlayerCardPosition(currentHandSize, currentHandSize + 1, activeHandIndex, playerHands.length);
+    dealCard({ suit: 'hearts', value: 'A' }, targetPosition, activeHandIndex);
   };
 
   // Test shuffle animation
@@ -398,6 +401,9 @@ export default function Blackjack({ route }) {
       {/* TOP SECTION - Dark Green Banner */}
       <View style={s.topBanner}>
         <Text style={s.title}>Blackjack</Text>
+        <Text style={s.balanceHeader}>
+          {t.balance.replace('{balance}', formatCurrency(playerBalance - gameState.currentBet))}
+        </Text>
         <View style={{ flexDirection: 'row', gap: 5 }}>
           <Button 
             label={`Test: ${gameState.gameStatus}`}
@@ -428,10 +434,6 @@ export default function Blackjack({ route }) {
         <View style={s.deckSection}>
           <Deck 
             ref={deckRef}
-            cards={deckCards}
-            portalCards={portalCards}
-            isShuffling={isShuffling}
-            shuffleTimes={shuffleTimes}
             durations={durations}
             onDeckCoordinatesChange={setDeckCoordinates}
           />
@@ -451,23 +453,26 @@ export default function Blackjack({ route }) {
           )}
         </View>
         
-        {/* Player Hand */}
+        {/* Player Hand(s) */}
         <Hand 
-          cards={handCards}
+          hands={playerHands}
+          activeHandIndex={activeHandIndex}
+          handLabels={handLabels}
+          handValues={handValues}
+          position={{ x: 0, y: playerAreaY }}
+          deckCoordinates={deckCoordinates}
+          animatingCards={animatingCards}
+          durations={durations}
         />
       </View>
 
       {/* BOTTOM SECTION - Dark Green Controls */}
       <View style={s.bottomControlsArea}>
-        {/* Player Balance */}
-        <Text style={s.balance}>
-          {t.balance.replace('{balance}', formatCurrency(playerBalance - gameState.currentBet))}
-        </Text>
-        
         {/* Conditional Controls Based on Game Status */}
         {gameState.gameStatus === 'betting' && renderBettingControls()}
         {gameState.gameStatus === 'playing' && renderPlayingControls()}
       </View>
+      
     </View>
   );
 }

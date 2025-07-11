@@ -428,6 +428,13 @@ export const tableStyles = StyleSheet.create({
     borderBottomColor: sc.colors.gray400,
     minHeight: 60
   },
+  balanceHeader: {
+    fontSize: sc.fontSizes.xl * 1.3,
+    color: sc.colors.gold,
+    fontWeight: '600',
+    textAlign: 'center',
+    flex: 1
+  },
   centerGameArea: {
     flex: 1,
     backgroundColor: sc.colors.green,

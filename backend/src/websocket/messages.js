@@ -3,8 +3,9 @@ const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
 const gameManager = require('../games/GameManager');
 const logger = require('../shared/utils/logger');
-const { getAvailableGames, getAllGames } = require('../shared/gameConfigs');
+const { getAllGames } = require('../shared/gameConfigs');
 const { updatePlayerBalance } = require('../shared/utils');
+const { blackjackMessages } = require('../games/blackjack/Blackjack');
 
 const prisma = new PrismaClient()
 
@@ -46,6 +47,7 @@ function sendAvailableGames(ws) {
     logger.logError(error, { action: 'send_available_games' });
   }
 }
+
 
 // Helper function to log activity to database
 async function logActivity(playerId, username, activityType, options = {}) {
@@ -96,163 +98,12 @@ const messages = {
   'gameConfigs': onGameConfigs,
   'gameState': onGameState,
   
-  // Game actions
-  'doubleDown': onDoubleDown,
-  'hit': onHit,
-  'newGame': onNewGame,
-  'placeBet': onPlaceBet,
-  'stand': onStand,
-  'startGame': onStartGame,
-  'surrender': onSurrender,
-  
-  // Table management
-  'joinBlackjackTable': onJoinBlackjackTable,
+  // General table management
   'joinTable': onJoinTable,
-  'leaveBlackjackTable': onLeaveBlackjackTable,
   'leaveTable': onLeaveTable,
   
   // User actions
   'logout': onLogout
-}
-
-async function onStartGame(ws, data, userId) {
-  logger.logGameEvent('game_start_request', null, { userId, data });
-  
-  const response = {
-    type: 'gameStarted',
-    data: {
-      gameId: 'game_' + Date.now(),
-      playerHand: [],
-      dealerHand: [],
-      gameState: 'waiting_for_bet'
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
-
-async function onHit(ws, data, userId) {
-  logger.logGameEvent('player_hit', null, { userId, data });
-  
-  const response = {
-    type: 'cardDealt',
-    data: {
-      card: { suit: 'hearts', value: 'A' },
-      playerHand: [],
-      handValue: 21,
-      gameState: 'player_turn'
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
-
-async function onStand(ws, data, userId) {
-  logger.logGameEvent('player_stand', null, { userId, data });
-  
-  const response = {
-    type: 'gameEnded',
-    data: {
-      result: 'win',
-      dealerHand: [],
-      finalPlayerValue: 20,
-      finalDealerValue: 19,
-      amountWon: 100
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
-
-async function onNewGame(ws, data, userId) {
-  logger.logGameEvent('new_game_request', null, { userId });
-  
-  const response = {
-    type: 'gameReady',
-    data: {
-      balance: 1000,
-      gameState: 'waiting_for_bet'
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
-
-async function onPlaceBet(ws, data, userId) {
-  logger.logGameEvent('place_bet_request', null, { userId, amount: data.amount });
-  
-  try {
-    // All amounts are in cents
-    
-    // First, get current user balance from database
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
-    
-    if (!user) {
-      logger.logError(new Error('User not found for bet'), { userId });
-      ws.send(JSON.stringify({
-        type: 'betRejected',
-        data: { errorMessage: t.userNotFound }
-      }));
-      return;
-    }
-    
-    logger.logDebug('User balance check', { userId, balance: user.balance, betAmount: data.amount });
-    
-    // Check if user has enough balance
-    if (user.balance < data.amount) {
-      logger.logInfo('Bet rejected - insufficient balance', { userId, balance: user.balance, betAmount: data.amount });
-      ws.send(JSON.stringify({
-        type: 'betRejected',
-        data: { errorMessage: t.insufficientBalance }
-      }));
-      return;
-    }
-    
-    // Get the table and player, then debit their account
-    const table = gameManager.getPlayerTable(userId);
-    let updatedBalance = user.balance - data.amount;
-    
-    if (table && table.players && table.players.has(userId)) {
-      const player = table.players.get(userId);
-      updatedBalance = await player.debitPlayer(data.amount);
-      logger.logDebug('Player debited via table', { userId, updatedBalance });
-    } else {
-      logger.logDebug('Player not in table, using direct database update', { userId });
-      await updatePlayerBalance(userId, updatedBalance, 'bet_placed', { betAmount: data.amount });
-    }
-    
-    // Log activity to database
-    await logActivity(userId, user.username, 'bet_placed', {
-      debit: data.amount,
-      balance: updatedBalance
-    });
-    
-    // Now try to place bet in game logic (game will handle validation and setBet)
-    const result = gameManager.handlePlayerAction(userId, 'placeBet', { amount: data.amount });
-    logger.logDebug('GameManager bet result', { userId, result: result?.success });
-    
-    const response = {
-      type: 'betAccepted',
-      data: {
-        betAmount: data.amount,
-        newBalance: updatedBalance,
-        tableState: result?.table?.getTableState() || {}
-      }
-    };
-    
-    logger.logInfo('Bet accepted', { userId, betAmount: data.amount, newBalance: updatedBalance });
-    ws.send(JSON.stringify(response));
-    
-  } catch (error) {
-    logger.logError(error, { userId, betAmount: data.amount, action: 'place_bet' });
-    const response = {
-      type: 'betRejected', 
-      data: { errorMessage: t.serverError }
-    };
-    ws.send(JSON.stringify(response));
-  }
 }
 
 async function onLogin(ws, data) {
@@ -490,30 +341,7 @@ async function onGameState(ws, data, userId) {
   ws.send(JSON.stringify(response))
 }
 
-async function onSurrender(ws, data, userId) {
-  const response = {
-    type: 'gameEnded',
-    data: {
-      result: 'surrender',
-      amountLost: 50
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
 
-async function onDoubleDown(ws, data, userId) {
-  const response = {
-    type: 'doubleDownResult',
-    data: {
-      card: { suit: 'spades', value: '10' },
-      finalResult: 'win',
-      amountWon: 200
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
-}
 
 async function onValidateToken(ws, data, userId) {
   logger.logAuthEvent('token_validation_request', userId, { userId });
@@ -777,6 +605,7 @@ function onMessage(ws, message, connectionUserId) {
         return
       }
     }
+    // Check for handler in main messages first
     if (messages[type]) {
       logger.logWebSocketEvent('handler_called', userId, { messageType: type, handlerName: messages[type].name });
       if (unauthenticatedMessages.includes(type)) {
@@ -784,7 +613,13 @@ function onMessage(ws, message, connectionUserId) {
       } else {
         messages[type](ws, data, userId)
       }
-    } else {
+    } 
+    // Check for handler in blackjack messages
+    else if (blackjackMessages[type]) {
+      logger.logWebSocketEvent('blackjack_handler_called', userId, { messageType: type, handlerName: blackjackMessages[type].name });
+      blackjackMessages[type](ws, data, userId)
+    }
+    else {
       logger.logWebSocketEvent('unknown_message_type', userId, { messageType: type });
       ws.send(JSON.stringify({
         type: 'errorOccurred',
@@ -800,114 +635,7 @@ function onMessage(ws, message, connectionUserId) {
   }
 }
 
-// Blackjack-specific handlers
-async function onJoinBlackjackTable(ws, data, userId) {
-  logger.logUserAction('blackjack_table_join_request', userId, { userId, gameMode: data.gameMode });
-  
-  try {
-    const { PrismaClient } = require('@prisma/client')
-    const prisma = new PrismaClient()
-    
-    // Get user data
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    })
-    
-    if (!user) {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: false,
-          message: 'User not found'
-        }
-      }
-      ws.send(JSON.stringify(response))
-      await prisma.$disconnect()
-      return
-    }
-    
-    // Register player connection for broadcasting
-    gameManager.registerPlayerConnection(userId, ws);
-    
-    // Add player to blackjack table
-    const gameMode = data.gameMode || 'single'
-    const result = gameManager.addPlayerToTable(userId, user.username, user.balance, 'blackjack', gameMode)
-    
-    if (result.success) {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: true,
-          tableId: result.table.getId(),
-          rejoined: result.rejoined,
-          tableState: result.table.getTableState()
-        }
-      }
-      ws.send(JSON.stringify(response))
-      logger.logUserAction('blackjack_table_joined', userId, { userId, username: user.username, tableId: result.table.getId(), gameMode });
-    } else {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: false,
-          message: result.error
-        }
-      }
-      ws.send(JSON.stringify(response))
-    }
-    
-    await prisma.$disconnect()
-  } catch (error) {
-    logger.logError(error, { userId, action: 'join_blackjack_table', gameMode: data.gameMode });
-    const response = {
-      type: 'errorOccurred',
-      data: { message: 'Failed to join table' }
-    }
-    ws.send(JSON.stringify(response))
-  }
-}
 
-async function onLeaveBlackjackTable(ws, data, userId) {
-  logger.logUserAction('blackjack_table_leave_request', userId, { userId });
-  
-  try {
-    // Get current user balance from database
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
-    
-    const result = gameManager.removePlayerFromTable(userId)
-    
-    if (result.success) {
-      const response = {
-        type: 'tableLeaveResult',
-        data: {
-          success: true,
-          message: 'Left table successfully',
-          updatedBalance: user.balance  // Include current balance
-        }
-      }
-      ws.send(JSON.stringify(response))
-      logger.logUserAction('blackjack_table_left', userId, { userId, balance: user.balance });
-    } else {
-      const response = {
-        type: 'tableLeaveResult',
-        data: {
-          success: false,
-          message: result.error
-        }
-      }
-      ws.send(JSON.stringify(response))
-    }
-  } catch (error) {
-    logger.logError(error, { userId, action: 'leave_blackjack_table' });
-    const response = {
-      type: 'errorOccurred',
-      data: { message: 'Failed to leave table' }
-    }
-    ws.send(JSON.stringify(response))
-  }
-}
 
 async function onLogout(ws, data, userId) {
   logger.logAuthEvent('logout_request', userId, { userId });
@@ -939,5 +667,7 @@ async function onLogout(ws, data, userId) {
 
 module.exports = {
   onMessage,
-  messages
+  messages,
+  logActivity,
+  updatePlayerBalance
 }

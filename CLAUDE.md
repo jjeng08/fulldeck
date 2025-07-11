@@ -120,6 +120,18 @@ setGameMessage("Insufficient balance for this bet!");
 - **Planning Mode**: If user starts message with "Question:", do NOT execute any code - only provide analysis and recommendations
 - **CRITICAL: IF USER ASKS FOR SOMETHING THAT WON'T WORK DUE TO TECHNICAL LIMITATIONS, IMMEDIATELY TELL THEM WHY IT'S IMPOSSIBLE BEFORE ATTEMPTING ANYTHING**
 
+## CRITICAL FUCKING RULES TO PREVENT DISASTERS
+- **PLACEHOLDERS ARE EVIL**: Any hardcoded values, colors, or symbols are placeholders that must be removed
+- **WHEN USER SAYS "REMOVE PLACEHOLDER" - LOOK FOR**:
+  - Hardcoded background colors (like `backgroundColor: '#1E3A8A'`)
+  - Unicode symbols (like `🂠`)
+  - Dummy values (like `suit="hearts", value="A"`)
+  - ANY hardcoded content that isn't real data
+- **MAKE MINIMAL CHANGES**: If user asks to change ONE thing, change ONLY that thing
+- **DON'T OVERTHINK**: Simple requests require simple solutions
+- **LISTEN TO EXACT WORDS**: When user says "use the PNG", use the PNG. When they say "remove placeholder", remove ALL placeholders
+- **STOP BREAKING WORKING CODE**: If something works, don't change it unless explicitly told to
+
 ## GIT BRANCH AND PR RULES - CRITICAL
 - **ALWAYS WORK OFF DEV BRANCH**: All new branches MUST be created from and merged back to the dev branch
 - **NEVER TOUCH MAIN**: Never checkout, merge to, or work directly on the main branch

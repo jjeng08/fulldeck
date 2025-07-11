@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, ImageBackground } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -143,9 +143,11 @@ const Card = ({
         backAnimatedStyle
       ]}
     >
-      <View style={styles.cardBackPattern}>
-        <Text style={styles.cardBackText}>🂠</Text>
-      </View>
+      <ImageBackground
+        source={require('assets/card-back.png')}
+        style={styles.cardBackPattern}
+        imageStyle={styles.cardBackImage}
+      />
     </Animated.View>
   );
 
@@ -184,7 +186,6 @@ const styles = {
     padding: 4,
   },
   cardBack: {
-    backgroundColor: '#1E3A8A',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -232,10 +233,11 @@ const styles = {
   cardBackPattern: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
-  cardBackText: {
-    fontSize: 32,
-    color: '#FFFFFF',
+  cardBackImage: {
+    borderRadius: 7,
   },
 };
 
