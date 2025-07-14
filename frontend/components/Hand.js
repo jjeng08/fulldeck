@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Dimensions, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Dimensions, Animated, Easing } from 'react-native';
 
 import Card from './Card';
 
@@ -13,12 +13,16 @@ const Hand = ({
   cardSpacing = 0.3,
   style = {},
   deckCoordinates = { x: 0, y: 0 },
-  animatingCards = [],
-  durations = { cardDeal: 1000, cardFlip: 300 }
+  durations = { cardDeal: 1000, cardFlip: 300 },
+  cardData = null, // New card data to deal
+  onHandUpdate = () => {} // Callback when hand is updated
 }) => {
   
   const previousHandSizes = useRef(hands.map(hand => hand.length));
   const cardAnimations = useRef(new Map());
+  const [internalHands, setInternalHands] = useState(hands);
+  const [animatingCards, setAnimatingCards] = useState([]);
+  const [nextCardId, setNextCardId] = useState(0);
   
   const repositionCards = () => {
     // Force re-render to trigger new positioning calculations
@@ -56,6 +60,122 @@ const Hand = ({
     });
   };
   
+  // Calculate card position in hand - updated for split hands and blackjack positioning
+  const getCardPosition = (cardIndex, totalCards, handIndex = 0, totalHands = 1) => {
+    const CARD_WIDTH = cardWidth;
+    const CARD_OVERLAP = cardSpacing * CARD_WIDTH; // Show 30% of previous card
+    
+    if (totalHands === 1) {
+      // Single hand - center on screen
+      // For blackjack: first two cards use 2-card positioning, then normal shifting
+      const positioningCards = totalCards <= 2 ? 2 : totalCards;
+      const totalWidth = CARD_WIDTH + (positioningCards - 1) * CARD_OVERLAP;
+      const centerStart = (screenWidth - totalWidth) / 2;
+      const leftOffset = cardIndex * CARD_OVERLAP;
+      
+      return {
+        x: centerStart + leftOffset,
+        y: position.y,
+      };
+    } else {
+      // Split hands - position side by side
+      // For blackjack: first two cards use 2-card positioning, then normal shifting
+      const positioningCards = totalCards <= 2 ? 2 : totalCards;
+      const handWidth = CARD_WIDTH + (positioningCards - 1) * CARD_OVERLAP;
+      const handGap = 40; // Gap between hands
+      const totalWidth = handWidth * totalHands + handGap * (totalHands - 1);
+      const startX = (screenWidth - totalWidth) / 2;
+      const handStartX = startX + handIndex * (handWidth + handGap);
+      const cardX = handStartX + cardIndex * CARD_OVERLAP;
+      
+      return {
+        x: cardX,
+        y: position.y,
+      };
+    }
+  };
+  
+  // Deal card function - with animation
+  const dealCard = (cardData, handIndex = 0) => {
+    const currentCardId = nextCardId;
+    setNextCardId(prev => prev + 1);
+    
+    const startPos = { x: deckCoordinates.x - 9, y: deckCoordinates.y + 9 };
+    const currentHandSize = internalHands[handIndex]?.length || 0;
+    const targetPosition = getCardPosition(currentHandSize, currentHandSize + 1, handIndex, internalHands.length);
+    
+    // Create animating card
+    const animatingCard = {
+      id: currentCardId,
+      suit: cardData.suit,
+      value: cardData.value,
+      animateX: new Animated.Value(startPos.x),
+      animateY: new Animated.Value(startPos.y),
+      animateRotateY: new Animated.Value(0),
+      isFlipping: false,
+    };
+
+    setAnimatingCards(prev => [...prev, animatingCard]);
+    
+    // Start animation
+    Animated.parallel([
+      Animated.timing(animatingCard.animateX, {
+        toValue: targetPosition.x,
+        duration: durations.cardDeal,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(animatingCard.animateY, {
+        toValue: targetPosition.y,
+        duration: durations.cardDeal,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Animation complete - add to hand and remove from animating
+      setInternalHands(prev => {
+        const newHands = [...prev];
+        const targetHand = newHands[handIndex] || [];
+        const cardWithId = {
+          ...cardData,
+          id: currentCardId,
+          faceUp: true,
+          position: targetPosition,
+        };
+        
+        newHands[handIndex] = [...targetHand, cardWithId];
+        onHandUpdate(newHands);
+        return newHands;
+      });
+      
+      setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
+    });
+    
+    // Flip animation
+    setTimeout(() => {
+      Animated.timing(animatingCard.animateRotateY, {
+        toValue: 180,
+        duration: durations.cardFlip,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }, durations.cardDeal / 2);
+    
+    // Set flipping flag
+    setTimeout(() => {
+      setAnimatingCards(prev => prev.map(c => 
+        c.id === currentCardId ? { ...c, isFlipping: true } : c
+      ));
+    }, durations.cardDeal / 2 + durations.cardFlip / 2);
+  };
+  
+  // Handle new card data
+  useEffect(() => {
+    if (cardData) {
+      dealCard(cardData, activeHandIndex);
+    }
+  }, [cardData]);
+  
   // Detect when cards are being dealt and reposition immediately
   useEffect(() => {
     if (animatingCards.length > 0) {
@@ -63,11 +183,15 @@ const Hand = ({
     }
   }, [animatingCards.length]); // Trigger when dealing starts
   
-  // Legacy support: if cards prop is passed, convert to hands format
-  const cards = hands.length > 0 ? null : arguments[0]?.cards;
-  const displayHands = hands.length > 0 ? hands : [cards || []];
+  // Use internal hands state for display
+  const displayHands = internalHands.length > 0 ? internalHands : [[]];
   const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
   const displayValues = handValues.length > 0 ? handValues : [0];
+  
+  // Sync internal hands with prop changes
+  useEffect(() => {
+    setInternalHands(hands);
+  }, [hands]);
   
   const { width: screenWidth } = Dimensions.get('window');
   const isSplit = displayHands.length > 1;
