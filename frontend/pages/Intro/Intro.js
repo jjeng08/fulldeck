@@ -199,21 +199,19 @@ export default function IntroPage() {
       {showRegisterForm && (
         <View style={s.formContainer}>
           <Text style={s.formTitle}>{t.register}</Text>
-          <form>
+          <form style={{ display: 'contents' }}>
             <TextInput
               placeholder={t.enterUsername}
               value={registerData.username}
               onChangeText={(text) => onRegisterDataChange('username', text)}
             />
             <TextInput
-              style={s.formInput}
               placeholder={t.enterPassword}
               value={registerData.password}
               onChangeText={(text) => onRegisterDataChange('password', text)}
               secureTextEntry
             />
             <TextInput
-              style={s.formInput}
               placeholder={t.confirmYourPassword}
               value={registerData.confirmPassword}
               onChangeText={(text) => onRegisterDataChange('confirmPassword', text)}
