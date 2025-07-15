@@ -101,8 +101,11 @@ const Hand = ({
     setNextCardId(prev => prev + 1);
     
     const startPos = { x: deckCoordinates.x - 9, y: deckCoordinates.y + 9 };
+    // Calculate position based on current hand size plus cards currently animating to this hand
     const currentHandSize = internalHands[handIndex]?.length || 0;
-    const targetPosition = getCardPosition(currentHandSize, currentHandSize + 1, handIndex, internalHands.length);
+    const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
+    const effectiveHandSize = currentHandSize + animatingToThisHand;
+    const targetPosition = getCardPosition(effectiveHandSize, effectiveHandSize + 1, handIndex, internalHands.length);
     
     // Create animating card
     const animatingCard = {
@@ -113,6 +116,7 @@ const Hand = ({
       animateY: new Animated.Value(startPos.y),
       animateRotateY: new Animated.Value(0),
       isFlipping: false,
+      targetHandIndex: handIndex,
     };
 
     setAnimatingCards(prev => [...prev, animatingCard]);
@@ -169,7 +173,7 @@ const Hand = ({
     }, durations.cardDeal / 2 + durations.cardFlip / 2);
   };
   
-  // Handle new card data
+  // Handle new card data - deal immediately (timing controlled by parent)
   useEffect(() => {
     if (cardData) {
       dealCard(cardData, activeHandIndex);

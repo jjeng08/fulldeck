@@ -465,5 +465,21 @@ export const tableStyles = StyleSheet.create({
     borderTopColor: sc.colors.gray400,
     minHeight: 180,
     alignItems: 'center'
+  },
+  testMenu: {
+    position: 'absolute',
+    top: 80,
+    right: sc.size.lg,
+    backgroundColor: sc.colors.surface,
+    borderRadius: sc.borderRadius.base,
+    padding: sc.size.sm,
+    ...sc.shadows.base,
+    zIndex: 1000,
+    gap: sc.size.xs
+  },
+  testMenuButton: {
+    minWidth: 80,
+    paddingVertical: sc.size.xs,
+    paddingHorizontal: sc.size.sm
   }
 });

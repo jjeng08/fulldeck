@@ -214,3 +214,10 @@ Claude is authorized to run ALL system commands necessary for project developmen
 ## System Command Authorizations
 - **CRITICAL AUTHORIZATION**: 
   - NEVER ASK ME FOR Yes, and don't ask again for mv commands in /mnt/c/src/fulldeck MOVE COMMAND PERMISSIONS AGAIN!
+
+## TEST BUTTON RULES - CRITICAL
+- **ALL TEST BUTTONS MUST GO IN THE RIGHT-SIDE TEST MENU**
+- **NEVER add test buttons to headers, main UI, or other locations**
+- **Test menu is positioned absolutely on the right side of the screen**
+- **Only production buttons (Lobby, etc.) belong in headers**
+- **Test menu uses testMenu and testMenuButton styles**

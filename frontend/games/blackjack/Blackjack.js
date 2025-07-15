@@ -29,10 +29,18 @@ export default function Blackjack({ route }) {
   const [handValues, setHandValues] = useState([0]);
   const [handLabels, setHandLabels] = useState(['Player Hand']);
   
+  // Dealer hand state
+  const [dealerHands, setDealerHands] = useState([[]]);
+  const [dealerCardToDeal, setDealerCardToDeal] = useState(null);
+  
   // Deck state management
   const [deckCards, setDeckCards] = useState([]);
   const [deckCoordinates, setDeckCoordinates] = useState({ x: 0, y: 0 });
   const [cardToDeal, setCardToDeal] = useState(null);
+  
+  // Central card dealing queue
+  const [cardQueue, setCardQueue] = useState([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   
   // Build deck with specified number of cards
   const buildDeck = (numCards) => {
@@ -66,9 +74,16 @@ export default function Blackjack({ route }) {
     setPlayerHands(newHands);
   };
   
-  // Calculate player area position
+  // Handle dealer hand updates
+  const onDealerHandUpdate = (newHands) => {
+    setDealerHands(newHands);
+  };
+  
+  // Calculate hand area positions
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const playerAreaY = screenHeight - 400;
+  // Dealer positioned below deck: deck paddingTop (64px) + half minHeight (100px) + deck height (~126px) + 50px spacing
+  const dealerAreaY = 64 + 100 + 126 + 50;
   
   // Get navigation params
   const { selectedTier, tiers, maxMulti } = route?.params || {};
@@ -141,11 +156,24 @@ export default function Blackjack({ route }) {
     }));
   };
 
-  // Test card dealing
+  // Test card dealing - simulates initial blackjack deal
   const onTestDeal = () => {
-    setCardToDeal({ suit: 'hearts', value: 'A' });
-    // Reset cardToDeal after a short delay to allow Hand to process it
-    setTimeout(() => setCardToDeal(null), 100);
+    // Generate three cards for initial deal (player gets 2, dealer gets 1 face-up)
+    const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+    const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+    
+    const dealCards = [
+      { suit: suits[Math.floor(Math.random() * suits.length)], value: values[Math.floor(Math.random() * values.length)], target: 'player' },
+      { suit: suits[Math.floor(Math.random() * suits.length)], value: values[Math.floor(Math.random() * values.length)], target: 'player' },
+      { suit: suits[Math.floor(Math.random() * suits.length)], value: values[Math.floor(Math.random() * values.length)], target: 'dealer' }
+    ];
+    
+    // Clear existing hands
+    setPlayerHands([[]]);
+    setDealerHands([[]]);
+    
+    // Add cards to central queue for sequential dealing
+    setCardQueue(dealCards);
   };
 
   // Test shuffle animation
@@ -162,6 +190,31 @@ export default function Blackjack({ route }) {
     }
   };
 
+  // Central card queue processor - deals one card every 500ms
+  useEffect(() => {
+    if (cardQueue.length > 0 && !isProcessingQueue) {
+      setIsProcessingQueue(true);
+      const nextCard = cardQueue[0];
+      
+      // Deal card to appropriate hand
+      if (nextCard.target === 'player') {
+        setCardToDeal(nextCard);
+        setTimeout(() => setCardToDeal(null), 100);
+      } else if (nextCard.target === 'dealer') {
+        setDealerCardToDeal(nextCard);
+        setTimeout(() => setDealerCardToDeal(null), 100);
+      }
+      
+      // Remove processed card from queue
+      setCardQueue(prev => prev.slice(1));
+      
+      // Wait 500ms before processing next card
+      setTimeout(() => {
+        setIsProcessingQueue(false);
+      }, 500);
+    }
+  }, [cardQueue, isProcessingQueue]);
+  
   // Reset bet when balance changes (indicating bet was processed)
   useEffect(() => {
     if (gameState.gameStatus === 'betting' && gameState.currentBet > 0) {
@@ -305,28 +358,11 @@ export default function Blackjack({ route }) {
         <Text style={s.balanceHeader}>
           {t.balance.replace('{balance}', formatCurrency(playerBalance - gameState.currentBet))}
         </Text>
-        <View style={{ flexDirection: 'row', gap: 5 }}>
-          <Button 
-            label={`Test: ${gameState.gameStatus}`}
-            onPress={onTestStateChange}
-            style={[s.leaveButton, { backgroundColor: '#007AFF', minWidth: 60 }]}
-          />
-          <Button 
-            label="Deal"
-            onPress={onTestDeal}
-            style={[s.leaveButton, { backgroundColor: '#28a745', minWidth: 60 }]}
-          />
-          <Button 
-            label="Shuffle"
-            onPress={onTestShuffle}
-            style={[s.leaveButton, { backgroundColor: '#FF6B35', minWidth: 60 }]}
-          />
-          <Button 
-            label="Lobby"
-            onPress={onLeaveTable}
-            style={[s.leaveButton, { minWidth: 60 }]}
-          />
-        </View>
+        <Button 
+          label="Lobby"
+          onPress={onLeaveTable}
+          style={[s.leaveButton, { minWidth: 60 }]}
+        />
       </View>
 
       {/* CENTER SECTION - Light Green Game Area */}
@@ -354,6 +390,19 @@ export default function Blackjack({ route }) {
           )}
         </View>
         
+        {/* Dealer Hand */}
+        <Hand 
+          hands={dealerHands}
+          activeHandIndex={0}
+          handLabels={['Dealer Hand']}
+          handValues={[0]}
+          position={{ x: 0, y: dealerAreaY }}
+          deckCoordinates={deckCoordinates}
+          durations={durations}
+          cardData={dealerCardToDeal}
+          onHandUpdate={onDealerHandUpdate}
+        />
+        
         {/* Player Hand(s) */}
         <Hand 
           hands={playerHands}
@@ -373,6 +422,25 @@ export default function Blackjack({ route }) {
         {/* Conditional Controls Based on Game Status */}
         {gameState.gameStatus === 'betting' && renderBettingControls()}
         {gameState.gameStatus === 'playing' && renderPlayingControls()}
+      </View>
+      
+      {/* TEST MENU - Right Side */}
+      <View style={s.testMenu}>
+        <Button 
+          label={`Test: ${gameState.gameStatus}`}
+          onPress={onTestStateChange}
+          style={[s.testMenuButton, { backgroundColor: '#007AFF' }]}
+        />
+        <Button 
+          label="Deal"
+          onPress={onTestDeal}
+          style={[s.testMenuButton, { backgroundColor: '#28a745' }]}
+        />
+        <Button 
+          label="Shuffle"
+          onPress={onTestShuffle}
+          style={[s.testMenuButton, { backgroundColor: '#FF6B35' }]}
+        />
       </View>
       
     </View>
