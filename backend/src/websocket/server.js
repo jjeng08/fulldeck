@@ -10,6 +10,40 @@ class WebSocketServer {
     this.wss = new WebSocket.Server({ port })
     this.connections = new Map()
     this.setupServer()
+    
+    // Store singleton instance
+    WebSocketServer.instance = this
+  }
+
+  static getInstance() {
+    return WebSocketServer.instance
+  }
+
+  // Centralized message sending function
+  sendMessage(userId, type, data = {}) {
+    const userConnections = this.getUserConnections(userId)
+    if (userConnections.length === 0) {
+      console.log(`No active connections found for user ${userId}`)
+      return
+    }
+
+    const message = {
+      type,
+      data
+    }
+
+    userConnections.forEach(connection => {
+      if (connection.ws.readyState === WebSocket.OPEN) {
+        connection.ws.send(JSON.stringify(message))
+      }
+    })
+  }
+
+  // Get all connections for a user
+  getUserConnections(userId) {
+    return Array.from(this.connections.values()).filter(
+      connection => connection.userId === userId && connection.connected
+    )
   }
 
   setupServer() {
@@ -30,6 +64,9 @@ class WebSocketServer {
         connectedAt: new Date()
       })
 
+      // Store connection ID on the WebSocket for easy lookup
+      ws.connectionId = connectionId
+      
       ws.on('message', (message) => {
         console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
@@ -68,6 +105,17 @@ class WebSocketServer {
     if (connection) {
       connection.userId = userId
     }
+  }
+
+  // Update connection userId for a specific WebSocket
+  updateConnectionUserId(ws, userId) {
+    const connectionId = ws.connectionId
+    const connection = this.connections.get(connectionId)
+    if (connection) {
+      connection.userId = userId
+      return true;
+    }
+    return false;
   }
 
   broadcastToUser(userId, message) {

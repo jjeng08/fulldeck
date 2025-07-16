@@ -40,8 +40,8 @@ class WebSocketService {
         }
       }
 
-      this.ws.onclose = () => {
-        console.log('WebSocket disconnected')
+      this.ws.onclose = (event) => {
+        console.log('WebSocket disconnected', { code: event.code, reason: event.reason, wasClean: event.wasClean })
         this.connected = false
         this.attemptReconnect()
       }
@@ -72,7 +72,6 @@ class WebSocketService {
     if (this.connected && this.ws) {
       const message = { type, data }
       const jsonMessage = JSON.stringify(message)
-      console.log('About to send message:', jsonMessage)
       this.ws.send(jsonMessage)
       console.log('Sent message:', type, data)
     } else {

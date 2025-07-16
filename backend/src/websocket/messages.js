@@ -11,21 +11,101 @@ const prisma = new PrismaClient()
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
 
+// Helper function to extract userId from JWT token
+function extractUserIdFromToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.type !== 'access') {
+      throw new Error('Invalid token type');
+    }
+    return decoded.userId;
+  } catch (error) {
+    throw new Error('Invalid or expired token');
+  }
+}
+
+// Helper function to send centralized messages
+function sendMessage(userId, type, data) {
+  const WebSocketServer = require('./server');
+  const wsServer = WebSocketServer.getInstance();
+  if (wsServer) {
+    wsServer.sendMessage(userId, type, data);
+  }
+}
+
+// Helper function to complete authentication process - associates connection and sends response
+function completeAuthentication(ws, user, accessToken, refreshToken, responseType) {
+  // Associate this WebSocket connection with the user's ID FIRST
+  const WebSocketServer = require('./server');
+  const wsServer = WebSocketServer.getInstance();
+  if (!wsServer) {
+    throw new Error('WebSocket server not available');
+  }
+  
+  // Ensure association is complete before proceeding
+  const associationSuccess = wsServer.updateConnectionUserId(ws, user.id);
+  if (!associationSuccess) {
+    throw new Error('Failed to associate connection with user');
+  }
+  
+  // Send auth response using the SAME message type as the request
+  const authResponse = {
+    type: responseType,
+    data: {
+      success: true,
+      userId: user.id,
+      username: user.username,
+      accessToken: accessToken,
+      refreshToken: refreshToken
+    }
+  }
+  ws.send(JSON.stringify(authResponse));
+  
+  // Send balance message directly through this connection
+  if (ws.readyState === 1) { // WebSocket.OPEN
+    const balanceMessage = {
+      type: 'balance',
+      data: {
+        balance: user.balance
+      }
+    };
+    ws.send(JSON.stringify(balanceMessage));
+  }
+}
+
+// Helper function for authenticated messages - extracts userId from JWT and calls handler
+async function handleAuthenticatedMessage(ws, data, handler) {
+  try {
+    const userId = extractUserIdFromToken(data.token);
+    return await handler(ws, data, userId);
+  } catch (error) {
+    logger.logError(error, { action: 'authenticated_message' });
+    ws.send(JSON.stringify({
+      type: 'errorOccurred',
+      data: { message: 'Authentication required' }
+    }));
+  }
+}
+
+// Helper function for unauthenticated messages - just calls handler directly
+async function handleUnauthenticatedMessage(ws, data, handler) {
+  return await handler(ws, data);
+}
+
 // Helper function to send current balance for a user
-async function sendBalanceUpdate(ws, userId) {
+async function sendBalanceUpdate(userId) {
   try {
     const user = await prisma.player.findUnique({
       where: { id: userId }
     });
     
     if (user) {
-      const balanceResponse = {
-        type: 'balance',
-        data: {
-          balance: user.balance
-        }
-      };
-      ws.send(JSON.stringify(balanceResponse));
+      logger.logInfo('Sending balance update', { userId, balance: user.balance });
+      sendMessage(userId, 'balance', {
+        balance: user.balance
+      });
+    } else {
+      logger.logError(new Error('User not found for balance update'), { userId });
     }
   } catch (error) {
     logger.logError(error, { userId, action: 'send_balance_update' });
@@ -33,16 +113,25 @@ async function sendBalanceUpdate(ws, userId) {
 }
 
 // Helper function to send available games
-function sendAvailableGames(ws) {
+function sendAvailableGames(ws, userId) {
   try {
     const games = getAllGames();
-    const gamesResponse = {
-      type: 'availableGames',
-      data: {
+    
+    // Use centralized sendMessage if userId is available (authenticated users)
+    if (userId) {
+      sendMessage(userId, 'availableGames', {
         availableGames: games
-      }
-    };
-    ws.send(JSON.stringify(gamesResponse));
+      });
+    } else {
+      // For unauthenticated users, use direct ws.send
+      const gamesResponse = {
+        type: 'availableGames',
+        data: {
+          availableGames: games
+        }
+      };
+      ws.send(JSON.stringify(gamesResponse));
+    }
   } catch (error) {
     logger.logError(error, { action: 'send_available_games' });
   }
@@ -170,22 +259,8 @@ async function onLogin(ws, data) {
       { expiresIn: '7d' }
     )
     
-    // Send auth response first
-    const authResponse = {
-      type: 'login',
-      data: {
-        success: true,
-        userId: user.id,
-        username: user.username,
-        accessToken: accessToken,
-        refreshToken: refreshToken
-      }
-    }
-    ws.send(JSON.stringify(authResponse))
-    
-    // Then send balance and games using helper functions
-    await sendBalanceUpdate(ws, user.id)
-    sendAvailableGames(ws)
+    // Complete authentication - associate connection and send response
+    completeAuthentication(ws, user, accessToken, refreshToken, 'login');
     await prisma.$disconnect()
     
   } catch (error) {
@@ -275,22 +350,8 @@ async function onRegister(ws, data) {
       { expiresIn: '7d' }
     )
     
-    // Send auth response first
-    const authResponse = {
-      type: 'register',
-      data: {
-        success: true,
-        userId: newUser.id,
-        username: newUser.username,
-        accessToken: accessToken,
-        refreshToken: refreshToken
-      }
-    }
-    ws.send(JSON.stringify(authResponse))
-    
-    // Then send balance and games using helper functions
-    await sendBalanceUpdate(ws, newUser.id)
-    sendAvailableGames(ws)
+    // Complete authentication - associate connection and send response
+    completeAuthentication(ws, newUser, accessToken, refreshToken, 'register');
     await prisma.$disconnect()
     
   } catch (error) {
@@ -306,67 +367,58 @@ async function onRegister(ws, data) {
   }
 }
 
-async function onAvailableGames(ws, data, userId) {
-  sendAvailableGames(ws)
-}
-
-async function onBalance(ws, data, userId) {
-  await sendBalanceUpdate(ws, userId)
-}
-
-async function onGameConfigs(ws, data, userId) {
-  logger.logUserAction('game_configs_request', userId, { userId });
-  
-  const response = {
-    type: 'gameConfigs',
-    data: {
-      availableGames: getAllGames()
+async function onAvailableGames(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    // Associate this connection with the user (in case it's not already associated)
+    const WebSocketServer = require('./server');
+    const wsServer = WebSocketServer.getInstance();
+    if (wsServer) {
+      wsServer.updateConnectionUserId(ws, userId);
     }
-  }
-  
-  ws.send(JSON.stringify(response))
+    
+    sendAvailableGames(ws, userId);
+    await sendBalanceUpdate(userId);
+  });
 }
 
-async function onGameState(ws, data, userId) {
-  const response = {
-    type: 'gameState',
-    data: {
+async function onBalance(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    await sendBalanceUpdate(userId);
+  });
+}
+
+async function onGameConfigs(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    logger.logUserAction('game_configs_request', userId, { userId });
+    
+    sendMessage(userId, 'gameConfigs', {
+      availableGames: getAllGames()
+    });
+  });
+}
+
+async function onGameState(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    sendMessage(userId, 'gameState', {
       gameActive: false,
       playerHand: [],
       dealerHand: [],
       gameState: 'waiting_for_bet'
-    }
-  }
-  
-  ws.send(JSON.stringify(response))
+    });
+  });
 }
 
 
 
-async function onValidateToken(ws, data, userId) {
-  logger.logAuthEvent('token_validation_request', userId, { userId });
-  
-  try {
+async function onValidateToken(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    logger.logAuthEvent('token_validation_request', userId, { userId });
+    
     const { validateToken } = require('./tokenValidator')
     const validation = await validateToken(data.token)
     
-    const response = {
-      type: 'tokenValidated',
-      data: validation
-    }
-    
-    ws.send(JSON.stringify(response))
-  } catch (error) {
-    logger.logError(error, { userId, action: 'token_validation' });
-    const response = {
-      type: 'tokenValidated',
-      data: {
-        valid: false,
-        error: 'Validation failed'
-      }
-    }
-    ws.send(JSON.stringify(response))
-  }
+    sendMessage(userId, 'tokenValidated', validation);
+  });
 }
 
 async function onRefreshToken(ws, data) {
@@ -416,21 +468,8 @@ async function onRefreshToken(ws, data) {
       { expiresIn: '1h' }
     )
     
-    // Send token refresh response first
-    const tokenResponse = {
-      type: 'tokenRefreshed',
-      data: {
-        success: true,
-        accessToken: newAccessToken,
-        userId: user.id,
-        username: user.username
-      }
-    }
-    ws.send(JSON.stringify(tokenResponse))
-    
-    // Then send balance and games using helper functions
-    await sendBalanceUpdate(ws, user.id)
-    sendAvailableGames(ws)
+    // Complete authentication - associate connection and send response
+    completeAuthentication(ws, user, newAccessToken, data.refreshToken, 'tokenRefreshed');
     await prisma.$disconnect()
     
   } catch (error) {
@@ -447,10 +486,10 @@ async function onRefreshToken(ws, data) {
 }
 
 
-async function onJoinTable(ws, data, userId) {
-  logger.logUserAction('table_join_request', userId, { userId });
-  
-  try {
+async function onJoinTable(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    logger.logUserAction('table_join_request', userId, { userId });
+    
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
@@ -460,14 +499,10 @@ async function onJoinTable(ws, data, userId) {
     })
     
     if (!user) {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: false,
-          message: 'User not found'
-        }
-      }
-      ws.send(JSON.stringify(response))
+      sendMessage(userId, 'tableJoinResult', {
+        success: false,
+        message: 'User not found'
+      });
       await prisma.$disconnect()
       return
     }
@@ -479,47 +514,28 @@ async function onJoinTable(ws, data, userId) {
     const result = gameManager.addPlayerToTable(userId, user.username, user.balance, 'blackjack', 'multiplayer')
     
     if (result.success) {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: true,
-          tableId: result.table.getId(),
-          rejoined: result.rejoined,
-          tableState: result.table.getTableState()
-        }
-      }
-      ws.send(JSON.stringify(response))
+      sendMessage(userId, 'tableJoinResult', {
+        success: true,
+        tableId: result.table.getId(),
+        rejoined: result.rejoined,
+        tableState: result.table.getTableState()
+      });
       logger.logUserAction('table_joined', userId, { userId, username: user.username, tableId: result.table.getId() });
     } else {
-      const response = {
-        type: 'tableJoinResult',
-        data: {
-          success: false,
-          message: result.error
-        }
-      }
-      ws.send(JSON.stringify(response))
+      sendMessage(userId, 'tableJoinResult', {
+        success: false,
+        message: result.error
+      });
     }
     
     await prisma.$disconnect()
-    
-  } catch (error) {
-    logger.logError(error, { userId, action: 'join_table' });
-    const response = {
-      type: 'tableJoinResult',
-      data: {
-        success: false,
-        message: 'Unable to join table at this time. Please try again.'
-      }
-    }
-    ws.send(JSON.stringify(response))
-  }
+  });
 }
 
-async function onLeaveTable(ws, data, userId) {
-  logger.logUserAction('table_leave_request', userId, { userId });
-  
-  try {
+async function onLeaveTable(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    logger.logUserAction('table_leave_request', userId, { userId });
+    
     const { PrismaClient } = require('@prisma/client')
     const prisma = new PrismaClient()
     
@@ -532,39 +548,20 @@ async function onLeaveTable(ws, data, userId) {
     const result = gameManager.removePlayerFromTable(userId)
     
     if (result.success) {
-      const response = {
-        type: 'tableLeaveResult',
-        data: {
-          success: true,
-          message: 'Successfully left table'
-        }
-      }
-      ws.send(JSON.stringify(response))
+      sendMessage(userId, 'tableLeaveResult', {
+        success: true,
+        message: 'Successfully left table'
+      });
       logger.logUserAction('table_left', userId, { userId, username: user?.username });
     } else {
-      const response = {
-        type: 'tableLeaveResult',
-        data: {
-          success: false,
-          message: result.error || 'Failed to leave table'
-        }
-      }
-      ws.send(JSON.stringify(response))
+      sendMessage(userId, 'tableLeaveResult', {
+        success: false,
+        message: result.error || 'Failed to leave table'
+      });
     }
     
     await prisma.$disconnect()
-    
-  } catch (error) {
-    logger.logError(error, { userId, action: 'leave_table' });
-    const response = {
-      type: 'tableLeaveResult',
-      data: {
-        success: false,
-        message: 'Unable to leave table at this time. Please try again.'
-      }
-    }
-    ws.send(JSON.stringify(response))
-  }
+  });
 }
 
 function onMessage(ws, message, connectionUserId) {
@@ -577,50 +574,22 @@ function onMessage(ws, message, connectionUserId) {
     
     // Messages that don't require authentication
     const unauthenticatedMessages = ['login', 'register', 'refreshToken']
-    
-    let userId = connectionUserId
-    
-    if (!unauthenticatedMessages.includes(type)) {
-      // Validate token from message data
-      if (!data.token) {
-        ws.send(JSON.stringify({
-          type: 'errorOccurred',
-          data: { message: 'Authentication required' }
-        }))
-        return
-      }
-      
-      try {
-        const decoded = jwt.verify(data.token, JWT_SECRET)
-        if (decoded.type !== 'access') {
-          throw new Error('Invalid token type')
-        }
-        userId = decoded.userId
-        logger.logAuthEvent('message_authenticated', decoded.userId, { username: decoded.username, messageType: type });
-      } catch (error) {
-        ws.send(JSON.stringify({
-          type: 'errorOccurred',
-          data: { message: 'Invalid or expired token' }
-        }))
-        return
-      }
-    }
     // Check for handler in main messages first
     if (messages[type]) {
-      logger.logWebSocketEvent('handler_called', userId, { messageType: type, handlerName: messages[type].name });
+      logger.logWebSocketEvent('handler_called', null, { messageType: type, handlerName: messages[type].name });
       if (unauthenticatedMessages.includes(type)) {
-        messages[type](ws, data)
+        handleUnauthenticatedMessage(ws, data, messages[type])
       } else {
-        messages[type](ws, data, userId)
+        handleAuthenticatedMessage(ws, data, messages[type])
       }
     } 
     // Check for handler in blackjack messages
     else if (blackjackMessages[type]) {
-      logger.logWebSocketEvent('blackjack_handler_called', userId, { messageType: type, handlerName: blackjackMessages[type].name });
-      blackjackMessages[type](ws, data, userId)
+      logger.logWebSocketEvent('blackjack_handler_called', null, { messageType: type, handlerName: blackjackMessages[type].name });
+      handleAuthenticatedMessage(ws, data, blackjackMessages[type])
     }
     else {
-      logger.logWebSocketEvent('unknown_message_type', userId, { messageType: type });
+      logger.logWebSocketEvent('unknown_message_type', null, { messageType: type });
       ws.send(JSON.stringify({
         type: 'errorOccurred',
         data: { message: t.unknownMessageType.replace('{type}', type) }
@@ -637,32 +606,26 @@ function onMessage(ws, message, connectionUserId) {
 
 
 
-async function onLogout(ws, data, userId) {
-  logger.logAuthEvent('logout_request', userId, { userId });
-  
-  try {
-    // Clear user session (if any session management needed)
-    // For now, just send success response
-    const response = {
-      type: 'logout',
-      data: {
+async function onLogout(ws, data) {
+  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
+    logger.logAuthEvent('logout_request', userId, { userId });
+    
+    try {
+      // Clear user session (if any session management needed)
+      // For now, just send success response
+      sendMessage(userId, 'logout', {
         success: true,
         message: 'Logged out successfully'
-      }
-    }
-    ws.send(JSON.stringify(response))
-    logger.logAuthEvent('logout_completed', userId, { userId })
-  } catch (error) {
-    logger.logError(error, { userId, action: 'logout' })
-    const response = {
-      type: 'logout',
-      data: {
+      });
+      logger.logAuthEvent('logout_completed', userId, { userId })
+    } catch (error) {
+      logger.logError(error, { userId, action: 'logout' })
+      sendMessage(userId, 'logout', {
         success: false,
         message: 'Logout failed'
-      }
+      });
     }
-    ws.send(JSON.stringify(response))
-  }
+  });
 }
 
 module.exports = {

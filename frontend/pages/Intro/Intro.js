@@ -13,7 +13,7 @@ import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, hideToast, isAuthenticated, isLoadingAuth, sendMessage, toast } = useApp();
+  const { connected, hideToast, isLoadingAuth, sendMessage, toast, user } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
@@ -30,10 +30,10 @@ export default function IntroPage() {
   });
 
   useEffect(() => {
-    console.log('Intro useEffect - isAuthenticated:', isAuthenticated);
-    // Navigate to blackjack when user successfully logs in (development mode)
-    if (isAuthenticated) {
-      console.log('User is authenticated, navigating to Blackjack for development');
+    console.log('Intro useEffect - user:', user);
+    // Navigate to blackjack when user successfully logs in
+    if (user) {
+      console.log('User is authenticated, navigating to Blackjack');
       // Clear form data before navigation
       setShowLoginForm(false);
       setShowRegisterForm(false);
@@ -46,9 +46,7 @@ export default function IntroPage() {
         maxMulti: 5
       });
     }
-  }, [isAuthenticated, navigation]);
-
-
+  }, [user, navigation]);
 
   const onShowLoginForm = () => {
     setShowLoginForm(true);

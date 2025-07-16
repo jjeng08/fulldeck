@@ -29,7 +29,6 @@ export function AppProvider({ children }) {
   const [authState, setAuthState] = useState({
     // User data
     user: null,
-    isAuthenticated: false,
     authToken: null,
     refreshToken: null,
     
@@ -41,8 +40,7 @@ export function AppProvider({ children }) {
   
   // Single ref for async operations
   const pendingOperations = React.useRef({
-    refresh: null,
-    storage: null
+    refresh: null
   });
   
 
@@ -53,11 +51,10 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     // When both connected and authenticated, request fresh data
-    if (connected && authState.isAuthenticated && authState.authToken) {
-      sendMessage('balance');
+    if (connected && authState.user && authState.authToken) {
       sendMessage('availableGames');
     }
-  }, [connected, authState.isAuthenticated, authState.authToken]);
+  }, [connected, authState.user, authState.authToken]);
 
 
   const initiateLogin = (username, password) => {
@@ -90,25 +87,8 @@ export function AppProvider({ children }) {
     });
     
     if (data.success) {
-      // Only handle auth data - balance and games handled by their own handlers
-      const userData = {
-        id: data.userId,
-        username: data.username
-      };
-      
-      // Update auth state directly (same structure as refresh)
-      setAuthState(prev => ({
-        ...prev,
-        user: userData,
-        authToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        isAuthenticated: true,
-        status: 'idle' // Login goes straight to idle (no queue processing)
-      }));
-      
-      saveAuthData(data.accessToken, data.refreshToken, userData);
+      handleAuthSuccess(data, 'idle');
     } else {
-      // Login failure - back to idle, no retries
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       console.log('Login failed:', data.message);
     }
@@ -140,26 +120,9 @@ export function AppProvider({ children }) {
     clearLoadingAction('register');
     
     if (data.success) {
-      // Only handle auth data - balance and games handled by their own handlers
-      const userData = {
-        id: data.userId,
-        username: data.username
-      };
-      
-      // Update auth state directly (same structure as login/refresh)
-      setAuthState(prev => ({
-        ...prev,
-        user: userData,
-        authToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        isAuthenticated: true,
-        status: 'idle' // Registration goes straight to idle (no queue processing)
-      }));
-      
-      saveAuthData(data.accessToken, data.refreshToken, userData);
+      handleAuthSuccess(data, 'idle');
       console.log(`Registration successful! Welcome, ${data.username}!`);
     } else {
-      // Registration failure - back to idle, no retries
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       console.log('Registration failed:', data.message);
     }
@@ -167,27 +130,7 @@ export function AppProvider({ children }) {
 
   const onTokenRefreshed = (data) => {
     if (data.success) {
-      // Only handle auth data - balance and games handled by their own handlers
-      const userData = {
-        id: data.userId,
-        username: data.username
-      };
-      
-      setAuthState(prev => {
-        const newState = {
-          ...prev,
-          user: userData,
-          authToken: data.accessToken,
-          status: 'processing_queue',
-          attempts: 0
-        };
-        
-        // Save auth data with the current refreshToken (not a new one)
-        saveAuthData(data.accessToken, prev.refreshToken, userData);
-        
-        return newState;
-      });
-      
+      handleAuthSuccess(data, 'processing_queue', true);
       processMessageQueue();
       
       // Resolve the pending promise
@@ -216,7 +159,6 @@ export function AppProvider({ children }) {
           
           return { 
             user: null,
-            isAuthenticated: false,
             authToken: null,
             refreshToken: null,
             status: 'idle',
@@ -249,21 +191,30 @@ export function AppProvider({ children }) {
   };
 
   // ONLY place availableGames is updated  
+  // Helper function to consolidate auth success handling
+  const handleAuthSuccess = (data, status, useCurrentRefreshToken = false) => {
+    const userData = {
+      id: data.userId,
+      username: data.username
+    };
+    
+    setAuthState(prev => ({
+      ...prev,
+      user: userData,
+      authToken: data.accessToken,
+      refreshToken: useCurrentRefreshToken ? prev.refreshToken : data.refreshToken,
+      status,
+      attempts: 0
+    }));
+    
+    const refreshToken = useCurrentRefreshToken ? authState.refreshToken : data.refreshToken;
+    saveAuthData(data.accessToken, refreshToken, userData);
+  };
+
   const onAvailableGames = (data) => {
     setAvailableGames(data.availableGames);
   };
 
-  const onBetAccepted = (data) => {
-    clearLoadingAction('placeBet');
-    setPlayerBalance(data.newBalance);
-    logger.logInfo('Bet accepted', { betAmount: data.betAmount, newBalance: data.newBalance });
-  };
-
-  const onBetRejected = (data) => {
-    clearLoadingAction('placeBet');
-    showToast(data.errorMessage || 'Failed to place bet', 'error');
-    logger.logError(new Error('Bet rejected'), { errorMessage: data.errorMessage });
-  };
 
   const onLogout = (data) => {
     clearLoadingAction('logout');
@@ -271,7 +222,6 @@ export function AppProvider({ children }) {
     // Clear all auth data regardless of success/failure
     setAuthState({
       user: null,
-      isAuthenticated: false,
       authToken: null,
       refreshToken: null,
       status: 'idle',
@@ -294,8 +244,6 @@ export function AppProvider({ children }) {
       // Set up incoming message handlers
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
-      WebSocketService.onMessage('betAccepted', onBetAccepted);
-      WebSocketService.onMessage('betRejected', onBetRejected);
       WebSocketService.onMessage('connected', onConnected);
       WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
@@ -312,8 +260,6 @@ export function AppProvider({ children }) {
       try {
         WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
-        WebSocketService.removeMessageHandler('betAccepted');
-        WebSocketService.removeMessageHandler('betRejected');
         WebSocketService.removeMessageHandler('connected');
         WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');
@@ -340,14 +286,8 @@ export function AppProvider({ children }) {
             ...prev,
             user: userData,
             authToken: savedToken,
-            refreshToken: savedRefreshToken,
-            isAuthenticated: true
+            refreshToken: savedRefreshToken
           }));
-          
-          // Set saved balance from cached user data
-          if (userData.balance !== undefined) {
-            setPlayerBalance(userData.balance);
-          }
           
           console.log(`Welcome back, ${userData.username}!`);
         }
@@ -360,30 +300,15 @@ export function AppProvider({ children }) {
   };
 
   const saveAuthData = async (accessToken, refreshToken, userData) => {
-    // Prevent concurrent AsyncStorage operations
-    if (pendingOperations.current.storage) {
-      return;
-    }
-    
-    pendingOperations.current.storage = true;
-    
     try {
-      // Include current balance in cached user data
-      const userDataWithBalance = {
-        ...userData,
-        balance: playerBalance
-      };
-      
       // Atomic write using multiSet
       await AsyncStorage.multiSet([
         ['authToken', accessToken],
         ['refreshToken', refreshToken],
-        ['userData', JSON.stringify(userDataWithBalance)]
+        ['userData', JSON.stringify(userData)]
       ]);
     } catch (error) {
       logger.logError(error, { type: 'authentication_error', action: 'save_auth_data' });
-    } finally {
-      pendingOperations.current.storage = false;
     }
   };
 
@@ -418,7 +343,6 @@ export function AppProvider({ children }) {
         // No refresh token, clear auth state
         setAuthState({
           user: null,
-          isAuthenticated: false,
           authToken: null,
           refreshToken: null,
           status: 'idle',
@@ -440,12 +364,6 @@ export function AppProvider({ children }) {
       // Process all queued messages with fresh token
       currentState.messageQueue.forEach(({ messageType, data }) => {
         // Send queued messages directly with fresh token (skip expiration check)
-        if (messageType === 'placeBet') {
-          if (!currentState.user || data.amount > playerBalance) {
-            console.log('Insufficient balance for this bet');
-            return;
-          }
-        }
         WebSocketService.sendMessage(messageType, {
           ...data,
           token: currentState.authToken
@@ -485,13 +403,6 @@ export function AppProvider({ children }) {
           attemptTokenRefresh();
         }
       } else {
-        // Special validation for placeBet
-        if (messageType === 'placeBet') {
-          if (!authState.user || data.amount > playerBalance) {
-            console.log('Insufficient balance for this bet');
-            return;
-          }
-        }
         // Send with token included in message
         WebSocketService.sendMessage(messageType, {
           ...data,
@@ -534,24 +445,6 @@ export function AppProvider({ children }) {
     setToast(prev => ({ ...prev, visible: false }));
   };
 
-  const setAuthenticatedUser = (userData, accessToken, refreshToken) => {
-    // Prevent concurrent auth operations (but allow login/register operations)
-    if (pendingOperations.current.storage || 
-        (authState.status !== 'idle' && authState.status !== 'logging_in')) {
-      return;
-    }
-    
-    setAuthState(prev => ({
-      ...prev,
-      user: userData,
-      authToken: accessToken,
-      refreshToken: refreshToken,
-      isAuthenticated: true,
-      status: 'idle'
-    }));
-    
-    saveAuthData(accessToken, refreshToken, userData);
-  };
 
   const addLoadingAction = (messageType) => {
     setLoadingActions(prev => new Set([...prev, messageType]));
@@ -569,7 +462,6 @@ export function AppProvider({ children }) {
     // State
     connected,
     user: authState.user,
-    isAuthenticated: authState.isAuthenticated,
     isLoadingAuth,
     availableGames,
     playerBalance,
@@ -582,7 +474,6 @@ export function AppProvider({ children }) {
     clearLoadingAction,
     showToast,
     hideToast,
-    setAuthenticatedUser,
     initiateLogin,
     initiateRegistration
   };

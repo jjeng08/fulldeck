@@ -9,9 +9,19 @@ const prisma = new PrismaClient();
 
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
+
+// Helper function to send centralized messages
+function sendMessage(userId, type, data) {
+  const WebSocketServer = require('../../websocket/server');
+  const wsServer = WebSocketServer.getInstance();
+  if (wsServer) {
+    wsServer.sendMessage(userId, type, data);
+  }
+}
 class Blackjack {
   constructor(deckConfig = { decks: 6 }) {
     this.availableCards = [];
+    this.currentBet = 0; // Store the current bet amount
     // Initialize deck with specified configuration
     this.buildDeck(deckConfig);
   }
@@ -81,6 +91,31 @@ class Blackjack {
     let aces = 0;
 
     for (const card of cards) {
+      if (card.value === 'A') {
+        aces++;
+        value += 11;
+      } else if (['K', 'Q', 'J'].includes(card.value)) {
+        value += 10;
+      } else {
+        value += parseInt(card.value);
+      }
+    }
+
+    // Adjust for aces
+    while (value > 21 && aces > 0) {
+      value -= 10;
+      aces--;
+    }
+
+    return value;
+  }
+
+  // Calculate visible hand value (for display purposes)
+  calculateVisibleHandValue(cards) {
+    let value = 0;
+    let aces = 0;
+
+    for (const card of cards) {
       if (card.hidden) continue; // Skip hidden dealer cards
       
       if (card.value === 'A') {
@@ -102,9 +137,22 @@ class Blackjack {
     return value;
   }
 
-  // Check if hand is blackjack
+  // Check if initial 2-card hand is blackjack (only for initial deal)
   isBlackjack(cards) {
-    return cards.length === 2 && this.calculateHandValue(cards) === 21;
+    if (cards.length !== 2) return false;
+    
+    let hasAce = false;
+    let hasTen = false;
+    
+    for (const card of cards) {
+      if (card.value === 'A') {
+        hasAce = true;
+      } else if (['K', 'Q', 'J'].includes(card.value) || card.value === '10') {
+        hasTen = true;
+      }
+    }
+    
+    return hasAce && hasTen;
   }
 
   // Deal initial cards to a player
@@ -168,6 +216,9 @@ class Blackjack {
 
   // Start new game with bet
   startNewGame(userId, betAmount) {
+    // Store the bet amount for use in double down and insurance
+    this.currentBet = betAmount;
+    
     // Deal initial cards (deck is already fresh from constructor)
     const dealerFaceUp = this.dealCard();
     const dealerHoleCard = this.dealCard();
@@ -175,14 +226,37 @@ class Blackjack {
     
     const playerCards = [this.dealCard(), this.dealCard()];
     
-    // Check for blackjacks
-    const playerBlackjack = this.isBlackjack(playerCards);
-    const dealerBlackjack = this.isBlackjack(dealerCards);
-    
     // Store complete dealer hand for later use
     this.currentDealerCards = dealerCards;
     
-    // Handle immediate blackjack scenarios
+    // Check for insurance opportunity first (dealer shows Ace)
+    const canBuyInsurance = dealerFaceUp.value === 'A';
+    
+    // If dealer shows Ace, always offer insurance first
+    if (canBuyInsurance) {
+      return {
+        success: true,
+        gameState: {
+          dealerCards: [dealerFaceUp], // Only show face-up card
+          playerCards,
+          betAmount,
+          gameStatus: 'insurance_offered',
+          canHit: false,
+          canStand: false,
+          canDoubleDown: false,
+          canSurrender: false,
+          canBuyInsurance: true,
+          insuranceAmount: Math.floor(betAmount / 2)
+        },
+        immediateResult: false
+      };
+    }
+    
+    // No dealer Ace - check for immediate blackjack scenarios
+    const playerBlackjack = this.isBlackjack(playerCards);
+    const dealerBlackjack = this.isBlackjack(dealerCards);
+    
+    // Handle immediate blackjack scenarios (only when dealer doesn't show Ace)
     if (playerBlackjack || dealerBlackjack) {
       let result, payout;
       
@@ -194,6 +268,9 @@ class Blackjack {
         payout = Math.floor(betAmount * 2.5); // 3:2 payout
       } else if (!playerBlackjack && dealerBlackjack) {
         result = 'lose';
+        payout = 0;
+      } else {
+        result = 'unknown';
         payout = 0;
       }
       
@@ -222,22 +299,20 @@ class Blackjack {
       };
     }
     
-    // No blackjacks - check for insurance opportunity
-    const canBuyInsurance = dealerFaceUp.value === 'A';
-    
+    // No dealer Ace and no immediate blackjacks - normal play
     return {
       success: true,
       gameState: {
         dealerCards: [dealerFaceUp], // Only show face-up card
         playerCards,
         betAmount,
-        gameStatus: canBuyInsurance ? 'insurance_offered' : 'playing',
-        canHit: !canBuyInsurance,
-        canStand: !canBuyInsurance,
-        canDoubleDown: !canBuyInsurance,
-        canSurrender: !canBuyInsurance,
-        canBuyInsurance,
-        insuranceAmount: Math.floor(betAmount / 2)
+        gameStatus: 'playing',
+        canHit: true,
+        canStand: true,
+        canDoubleDown: true,
+        canSurrender: true,
+        canBuyInsurance: false,
+        insuranceAmount: 0
       },
       immediateResult: false
     };
@@ -265,18 +340,20 @@ class Blackjack {
 
 
   // Player stands - finish game
-  async stand(userId, playerCards, dealerCards, betAmount) {
+  async stand(userId, playerCards, dealerCards) {
+    // Use stored bet amount from the game instance
+    const betAmount = this.currentBet;
     // Use the complete dealer hand stored during initial deal
     const completeDealerCards = this.currentDealerCards || dealerCards;
     
     // Build dealer hit sequence - dealer hits until 17 or higher
-    const dealerHitSequence = [];
+    const cardsToShow = [];
     
     // First card in sequence is the hole card reveal
-    dealerHitSequence.push({
+    cardsToShow.push({
       card: completeDealerCards[1], // The pre-drawn hole card
       action: 'reveal',
-      targetHandId: 'dealer-hand'
+      target: 'dealer'
     });
     
     // Continue with dealer hits until 17 or higher
@@ -284,10 +361,10 @@ class Blackjack {
     while (this.calculateHandValue(workingDealerCards) < 17) {
       const newCard = this.dealCard();
       workingDealerCards.push(newCard);
-      dealerHitSequence.push({
+      cardsToShow.push({
         card: newCard,
         action: 'deal',
-        targetHandId: 'dealer-hand'
+        target: 'dealer'
       });
     }
     
@@ -300,19 +377,26 @@ class Blackjack {
     return {
       success: true,
       gameStatus: 'finished',
-      finalDealerCards: workingDealerCards,
-      dealerHitSequence,
       playerCards: playerCards,
       dealerCards: workingDealerCards,
       playerValue: result.playerValue,
       dealerValue: result.dealerValue,
       result: result.result,
-      payout: result.payout
+      payout: result.payout,
+      cardsToShow: cardsToShow
     };
   }
 
   // Double down
-  async doubleDown(userId, playerCards, dealerCards, betAmount, handId = 'player-hand-0') {
+  async doubleDown(userId, playerCards, dealerCards, handId = 'player-hand-0') {
+    // Use stored bet amount from the game instance
+    const betAmount = this.currentBet;
+    
+    // Validate stored bet amount
+    if (!betAmount || typeof betAmount !== 'number' || betAmount <= 0) {
+      return { success: false, error: 'Invalid bet amount for double down' };
+    }
+    
     // Validate user has enough balance
     const user = await prisma.player.findUnique({
       where: { id: userId }
@@ -324,6 +408,8 @@ class Blackjack {
     
     // Deduct additional bet amount for double down
     const newBalance = user.balance - betAmount;
+    logger.logInfo('Double down balance update', { userId, currentBalance: user.balance, betAmount, newBalance });
+    
     await updatePlayerBalance(userId, newBalance, 'double_down', { 
       doubleDownAmount: betAmount,
       originalBet: betAmount
@@ -363,36 +449,7 @@ class Blackjack {
       };
     }
     
-    // Player didn't bust - now dealer plays
-    // Use the complete dealer hand stored during initial deal
-    const completeDealerCards = this.currentDealerCards || dealerCards;
-    const dealerHitSequence = [];
-    
-    // First card in sequence is the hole card reveal
-    dealerHitSequence.push({
-      card: completeDealerCards[1], // The pre-drawn hole card
-      action: 'reveal',
-      targetHandId: 'dealer-hand'
-    });
-    
-    // Continue with dealer hits until 17 or higher
-    const workingDealerCards = [...completeDealerCards];
-    while (this.calculateHandValue(workingDealerCards) < 17) {
-      const dealerCard = this.dealCard();
-      workingDealerCards.push(dealerCard);
-      dealerHitSequence.push({
-        card: dealerCard,
-        action: 'deal',
-        targetHandId: 'dealer-hand'
-      });
-    }
-    
-    // Calculate final result with doubled bet
-    const result = this.calculateGameResult(newCards, workingDealerCards, betAmount * 2);
-    
-    // Update player balance with final result
-    await this.updatePlayerBalanceAfterGame(userId, result.payout, result.result, betAmount * 2);
-    
+    // Player didn't bust - return just the player's card, dealer will play separately
     return {
       success: true,
       newCard,
@@ -400,19 +457,61 @@ class Blackjack {
       handValue,
       busted: false,
       targetHandId: handId,
-      finalDealerCards: workingDealerCards,
-      dealerHitSequence,
-      gameResult: {
-        result: result.result,
-        payout: result.payout,
-        playerValue: result.playerValue,
-        dealerValue: result.dealerValue
-      }
+      gameStatus: 'dealer_turn', // Indicates dealer should play next
+      needsDealerPlay: true // Flag to indicate dealer needs to play
+    };
+  }
+
+  // Play dealer hand after double down
+  async playDealerAfterDoubleDown(userId, playerCards, dealerCards) {
+    const betAmount = this.currentBet;
+    
+    // Use the complete dealer hand stored during initial deal
+    const completeDealerCards = this.currentDealerCards || dealerCards;
+    const cardsToShow = [];
+    
+    // First card in sequence is the hole card reveal
+    cardsToShow.push({
+      card: completeDealerCards[1], // The pre-drawn hole card
+      action: 'reveal',
+      target: 'dealer'
+    });
+    
+    // Continue with dealer hits until 17 or higher
+    const workingDealerCards = [...completeDealerCards];
+    while (this.calculateHandValue(workingDealerCards) < 17) {
+      const dealerCard = this.dealCard();
+      workingDealerCards.push(dealerCard);
+      cardsToShow.push({
+        card: dealerCard,
+        action: 'deal',
+        target: 'dealer'
+      });
+    }
+    
+    // Calculate final result with doubled bet
+    const result = this.calculateGameResult(playerCards, workingDealerCards, betAmount * 2);
+    
+    // Update player balance with final result
+    await this.updatePlayerBalanceAfterGame(userId, result.payout, result.result, betAmount * 2);
+    
+    return {
+      success: true,
+      gameStatus: 'finished',
+      playerCards: playerCards,
+      dealerCards: workingDealerCards,
+      playerValue: result.playerValue,
+      dealerValue: result.dealerValue,
+      result: result.result,
+      payout: result.payout,
+      cardsToShow: cardsToShow
     };
   }
 
   // Buy insurance
-  async buyInsurance(userId, playerCards, dealerCards, betAmount, insuranceAmount) {
+  async buyInsurance(userId, playerCards, dealerCards, insuranceAmount) {
+    // Use stored bet amount from the game instance
+    const betAmount = this.currentBet;
     // Validate user has enough balance
     const user = await prisma.player.findUnique({
       where: { id: userId }
@@ -486,10 +585,15 @@ class Blackjack {
         insurancePayout,
         gameResult,
         mainBetPayout,
-        finalDealerCards: completeDealerCards,
+        dealerCards: completeDealerCards,
         gameStatus: 'finished',
         result: gameResult,
-        totalPayout: insurancePayout + mainBetPayout
+        totalPayout: insurancePayout + mainBetPayout,
+        cardsToShow: [{
+          card: completeDealerCards[1], // Reveal hole card
+          target: 'dealer',
+          action: 'reveal'
+        }]
       };
     } else {
       // Insurance lost - this is a LOSS on insurance (0 payout)
@@ -511,7 +615,10 @@ class Blackjack {
   }
   
   // Surrender
-  async surrender(userId, betAmount) {
+  async surrender(userId) {
+    // Use stored bet amount from the game instance
+    const betAmount = this.currentBet;
+    
     // Return half the bet
     const halfBet = Math.floor(betAmount / 2);
     
@@ -527,7 +634,9 @@ class Blackjack {
   }
 
   // Skip insurance
-  async skipInsurance(userId, playerCards, dealerCards, betAmount) {
+  async skipInsurance(userId, playerCards, dealerCards) {
+    // Use stored bet amount from the game instance
+    const betAmount = this.currentBet;
     // Use the stored complete dealer hand to check for blackjack
     const completeDealerCards = this.currentDealerCards || dealerCards;
     const dealerBlackjack = this.isBlackjack(completeDealerCards);
@@ -574,7 +683,12 @@ class Blackjack {
         dealerCards: completeDealerCards,
         playerCards: playerCards,
         playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(completeDealerCards)
+        dealerValue: this.calculateHandValue(completeDealerCards),
+        cardsToShow: [{
+          card: completeDealerCards[1], // Reveal hole card
+          target: 'dealer',
+          action: 'reveal'
+        }]
       };
     } else {
       return {
@@ -698,13 +812,10 @@ async function onStartBlackjackGame(ws, data, userId) {
     
     if (!user) {
       logger.logError(new Error('User not found for blackjack game'), { userId });
-      ws.send(JSON.stringify({
-        type: 'blackjackGameStarted',
-        data: { 
-          success: false, 
-          errorMessage: t.userNotFound 
-        }
-      }));
+      sendMessage(userId, 'blackjackGameStarted', { 
+        success: false, 
+        errorMessage: t.userNotFound 
+      });
       return;
     }
     
@@ -715,13 +826,10 @@ async function onStartBlackjackGame(ws, data, userId) {
         balance: user.balance, 
         betAmount: data.betAmount 
       });
-      ws.send(JSON.stringify({
-        type: 'blackjackGameStarted',
-        data: { 
-          success: false, 
-          errorMessage: t.insufficientBalance 
-        }
-      }));
+      sendMessage(userId, 'blackjackGameStarted', { 
+        success: false, 
+        errorMessage: t.insufficientBalance 
+      });
       return;
     }
     
@@ -782,7 +890,7 @@ async function onStartBlackjackGame(ws, data, userId) {
         payout: gameResult.gameState.payout,
         newBalance: finalBalance
       });
-      ws.send(JSON.stringify(response));
+      sendMessage(userId, 'blackjackGameStarted', response.data);
     } else {
       // Normal game flow
       const response = {
@@ -805,19 +913,15 @@ async function onStartBlackjackGame(ws, data, userId) {
         betAmount: data.betAmount, 
         newBalance: updatedBalance 
       });
-      ws.send(JSON.stringify(response));
+      sendMessage(userId, 'blackjackGameStarted', response.data);
     }
     
   } catch (error) {
     logger.logError(error, { userId, betAmount: data.betAmount, action: 'start_blackjack_game' });
-    const response = {
-      type: 'blackjackGameStarted',
-      data: { 
-        success: false, 
-        errorMessage: t.serverError 
-      }
-    };
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'blackjackGameStarted', { 
+      success: false, 
+      errorMessage: t.serverError 
+    });
   }
 }
 
@@ -925,6 +1029,7 @@ async function onPlayerAction(ws, data, userId) {
       case 'hit':
       case 'stand':
       case 'doubleDown':
+      case 'playDealerAfterDoubleDown':
       case 'buyInsurance':
       case 'surrender':
       case 'newGame':
@@ -942,16 +1047,20 @@ async function onPlayerAction(ws, data, userId) {
             result = blackjack.hit(data.playerCards, data.handId);
             break;
           case 'stand':
-            result = await blackjack.stand(userId, data.playerCards, data.dealerCards, data.betAmount);
+            result = await blackjack.stand(userId, data.playerCards, data.dealerCards);
             break;
           case 'doubleDown':
-            result = await blackjack.doubleDown(userId, data.playerCards, data.dealerCards, data.betAmount, data.handId);
+            logger.logInfo('Double down call params', { userId, playerCards: data.playerCards, dealerCards: data.dealerCards, handId: data.handId });
+            result = await blackjack.doubleDown(userId, data.playerCards, data.dealerCards, data.handId);
+            break;
+          case 'playDealerAfterDoubleDown':
+            result = await blackjack.playDealerAfterDoubleDown(userId, data.playerCards, data.dealerCards);
             break;
           case 'buyInsurance':
-            result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.betAmount, data.insuranceAmount);
+            result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);
             break;
           case 'surrender':
-            result = await blackjack.surrender(userId, data.betAmount);
+            result = await blackjack.surrender(userId);
             break;
           case 'newGame':
             // Clear current game and create new one
@@ -961,7 +1070,7 @@ async function onPlayerAction(ws, data, userId) {
             result = blackjack.startGame(userId);
             break;
           case 'skipInsurance':
-            result = await blackjack.skipInsurance(userId, data.playerCards, data.dealerCards, data.betAmount);
+            result = await blackjack.skipInsurance(userId, data.playerCards, data.dealerCards);
             break;
         }
         break;
@@ -979,62 +1088,31 @@ async function onPlayerAction(ws, data, userId) {
         playerValue: result.playerValue,
         dealerValue: result.dealerValue,
         playerCards: result.playerCards || result.cards,
-        dealerCards: result.dealerCards || result.finalDealerCards,
+        dealerCards: result.dealerCards,
         result: result.result,
         payout: result.payout,
-        // Handle all card dealing scenarios - check for cardsToShow in result first
+        // Handle card dealing scenarios
         ...(result.cardsToShow ? { cardsToShow: result.cardsToShow } : {}),
         
-        // Handle legacy card dealing scenarios if no cardsToShow in result
-        ...(() => {
-          if (result.cardsToShow) return {}; // Skip if already handled above
-          
-          const cardsToShow = [];
-          
-          // Dealer hit sequence (stand/doubleDown)
-          if (result.dealerHitSequence) {
-            cardsToShow.push(...result.dealerHitSequence.map(hit => ({
-              card: hit.card,
-              target: 'dealer',
-              action: hit.action
-            })));
-          }
-          
-          // New card for player (hit)
-          if (result.newCard) {
-            cardsToShow.push({
-              card: result.newCard,
-              target: 'player',
-              action: 'deal'
-            });
-          }
-          
-          // Insurance hole card reveal
-          if (result.dealerCards && data.type === 'skipInsurance' && result.dealerBlackjack) {
-            cardsToShow.push({
-              card: result.dealerCards[1], // Hole card
-              target: 'dealer',
-              action: 'reveal'
-            });
-          }
-          
-          return cardsToShow.length > 0 ? { cardsToShow } : {};
-        })()
+        // Handle hit action - add new card to show
+        ...(result.newCard ? { 
+          cardsToShow: [{
+            card: result.newCard,
+            target: 'player',
+            action: 'deal'
+          }]
+        } : {})
       }
     };
     
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'actionResult', response.data);
   } catch (error) {
     logger.logError(error, { userId, actionType: data.type, action: 'player_action' });
-    const response = {
-      type: 'actionResult',
-      data: {
-        success: false,
-        actionType: data.type,
-        errorMessage: t.serverError
-      }
-    };
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'actionResult', {
+      success: false,
+      actionType: data.type,
+      errorMessage: t.serverError
+    });
   }
 }
 
