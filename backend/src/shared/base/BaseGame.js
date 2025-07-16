@@ -82,7 +82,7 @@ class BaseGame {
 
   broadcastMessage(type, data) {
     console.log(`Broadcasting to ${this.gameType} table ${this.id}: ${type}`, data);
-    const gameManager = require('../../core/managers/GameManager');
+    const gameManager = require('../../games/GameManager');
     gameManager.broadcastToTable(this.id, type, data);
   }
 

@@ -33,6 +33,12 @@ const validateToken = async (token) => {
 
 const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) => {
   try {
+    logger.logInfo('updatePlayerBalance called', { userId, newBalance, reason, metadata });
+    
+    if (newBalance === undefined || newBalance === null) {
+      throw new Error('newBalance cannot be undefined or null');
+    }
+    
     const prisma = new PrismaClient()
     
     const updatedUser = await prisma.player.update({
@@ -42,6 +48,13 @@ const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) =>
     
     logger.logUserAction('balance_updated', userId, { newBalance, reason, metadata })
     await prisma.$disconnect()
+    
+    // Send balance update through centralized message system
+    const WebSocketServer = require('../websocket/server')
+    const wsServer = WebSocketServer.getInstance()
+    if (wsServer) {
+      wsServer.sendMessage(userId, 'balance', { balance: updatedUser.balance })
+    }
     
     return updatedUser.balance
   } catch (error) {
@@ -87,7 +100,9 @@ const processAllInBet = (player) => {
 }
 
 const formatCurrency = (amount) => {
-  return `$${amount.toLocaleString()}`;
+  const numericAmount = Number(amount) || 0;
+  const dollarsAmount = numericAmount / 100;
+  return `$${dollarsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const calculatePayout = (betAmount, multiplier) => {

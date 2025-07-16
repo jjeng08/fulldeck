@@ -29,6 +29,16 @@ const Hand = forwardRef(({
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   
+  // Notify parent when hands change (but not on initial render)
+  const isInitialRender = useRef(true);
+  useEffect(() => {
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      return;
+    }
+    onHandUpdate(internalHands);
+  }, [internalHands]);
+  
   // Helper function to determine effective layout for a hand
   const getEffectiveLayout = (handCards) => {
     if (gameConfig.cardLayout === 'spread' && handCards.length > gameConfig.spreadLimit) {
@@ -60,8 +70,6 @@ const Hand = forwardRef(({
         const newHand = [...targetHand];
         newHand[holeCardIndex] = updatedHoleCard;
         newHands[handIndex] = newHand;
-        
-        onHandUpdate(newHands);
       }
       
       return newHands;
@@ -217,7 +225,6 @@ const Hand = forwardRef(({
         };
         
         newHands[handIndex] = [...targetHand, cardWithId];
-        onHandUpdate(newHands);
         return newHands;
       });
       
@@ -328,7 +335,6 @@ const Hand = forwardRef(({
 
   return (
     <View style={[dynamicStyles.handContainer, {
-      backgroundColor: isDealer ? 'rgba(0, 0, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)',
       left: position.x,
       top: position.y
     }]}>
@@ -493,7 +499,6 @@ const styles = {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     minWidth: 80,
   },
   handLabel: {
@@ -521,7 +526,6 @@ const styles = {
     borderWidth: 3,
     borderColor: '#FFD700',
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
   },
   cardInHand: {
     width: '100%',

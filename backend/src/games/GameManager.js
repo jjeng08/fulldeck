@@ -186,14 +186,13 @@ class GameManager {
     const table = this.tables.get(tableId);
     if (!table) return;
 
-    for (const [userId, player] of table.players) {
-      const ws = this.playerConnections.get(userId);
-      if (ws && ws.readyState === 1) { // WebSocket.OPEN = 1
-        const message = {
-          type: messageType,
-          data: data
-        };
-        ws.send(JSON.stringify(message));
+    // Use centralized messaging instead of direct ws.send
+    const WebSocketServer = require('../websocket/server');
+    const wsServer = WebSocketServer.getInstance();
+    
+    if (wsServer) {
+      for (const [userId, player] of table.players) {
+        wsServer.sendMessage(userId, messageType, data);
       }
     }
   }
