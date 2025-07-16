@@ -145,6 +145,18 @@ export const tableStyles = StyleSheet.create({
     paddingVertical: sc.size.sm,
     paddingHorizontal: sc.size.md
   },
+  actionButtonText: {
+    ...sc.componentStyles.buttonText,
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.md,
+    fontWeight: 'bold'
+  },
+  secondaryActionButtonText: {
+    ...sc.componentStyles.buttonText,
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.sm,
+    fontWeight: 'bold'
+  },
   tableHeader: {
     position: 'absolute',
     top: 0,
@@ -295,6 +307,16 @@ export const tableStyles = StyleSheet.create({
     fontSize: 16,
     color: sc.colors.text,
     textTransform: 'capitalize'
+  },
+  dealingMessage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: sc.size.lg
+  },
+  dealingText: {
+    fontSize: sc.fontSizes.lg,
+    color: sc.colors.text,
+    fontStyle: 'italic'
   },
   bettingArea: {
     alignItems: 'center',
@@ -481,5 +503,85 @@ export const tableStyles = StyleSheet.create({
     minWidth: 80,
     paddingVertical: sc.size.xs,
     paddingHorizontal: sc.size.sm
+  },
+  handTotalContainer: {
+    backgroundColor: sc.colors.surface,
+    borderRadius: sc.borderRadius.base,
+    paddingHorizontal: sc.size.sm,
+    paddingVertical: sc.size.xs,
+    ...sc.shadows.base,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60
+  },
+  handTotalText: {
+    fontSize: sc.fontSizes.lg,
+    fontWeight: 'bold',
+    color: sc.colors.text,
+    textAlign: 'center'
+  },
+  playAgainButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#28a745',
+    marginTop: sc.size.md,
+    paddingVertical: sc.size.sm,
+    paddingHorizontal: sc.size.lg,
+    minWidth: 120
+  },
+  playAgainButtonText: {
+    ...sc.componentStyles.buttonText,
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.md,
+    fontWeight: 'bold'
+  },
+  insuranceQuestion: {
+    fontSize: sc.fontSizes.md,
+    color: sc.colors.text,
+    textAlign: 'center',
+    marginTop: sc.size.sm,
+    fontWeight: '500'
+  },
+  insuranceControlsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: sc.size.md
+  },
+  insuranceButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: sc.size.md,
+    width: '100%'
+  },
+  insuranceButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#FF6B35',
+    paddingVertical: sc.size.md,
+    paddingHorizontal: sc.size.lg,
+    minWidth: 160,
+    flex: 0
+  },
+  insuranceButtonText: {
+    ...sc.componentStyles.buttonText,
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.md,
+    fontWeight: 'bold',
+    textAlign: 'center'
+  },
+  skipInsuranceButton: {
+    ...sc.componentStyles.button,
+    backgroundColor: '#6c757d',
+    paddingVertical: sc.size.md,
+    paddingHorizontal: sc.size.lg,
+    minWidth: 120,
+    flex: 0
+  },
+  skipInsuranceButtonText: {
+    ...sc.componentStyles.buttonText,
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.md,
+    fontWeight: 'bold',
+    textAlign: 'center'
   }
 });

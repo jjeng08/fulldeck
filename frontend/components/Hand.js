@@ -1,40 +1,99 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Dimensions, Animated, Easing } from 'react-native';
 
 import Card from './Card';
 
-const Hand = ({ 
+const Hand = forwardRef(({ 
   hands = [], // Array of hands for split support
   activeHandIndex = 0, // Which hand is currently active
   handLabels = [], // Labels for each hand
   handValues = [], // Values for each hand
   position = { x: 0, y: 0 },
-  cardWidth = 90,
-  cardSpacing = 0.3,
-  style = {},
   deckCoordinates = { x: 0, y: 0 },
-  durations = { cardDeal: 1000, cardFlip: 300 },
+  gameConfig = {
+    cardWidth: 90,
+    cardHeight: 126,
+    cardSpacing: 0.3,
+    cardLayout: 'overlap',
+    spreadLimit: 3,
+    handWidth: 300,
+    durations: { cardDeal: 1000, cardFlip: 300, handUpdate: 200 }
+  },
   cardData = null, // New card data to deal
-  onHandUpdate = () => {} // Callback when hand is updated
-}) => {
+  onHandUpdate = () => {}, // Callback when hand is updated
+  isDealer = false // Flag to distinguish dealer vs player hands
+}, ref) => {
   
-  const previousHandSizes = useRef(hands.map(hand => hand.length));
   const cardAnimations = useRef(new Map());
   const [internalHands, setInternalHands] = useState(hands);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   
+  // Helper function to determine effective layout for a hand
+  const getEffectiveLayout = (handCards) => {
+    if (gameConfig.cardLayout === 'spread' && handCards.length > gameConfig.spreadLimit) {
+      return 'overlap';
+    }
+    return gameConfig.cardLayout;
+  };
+  
+  // Reveal hole card function - updates first hole card found with real card data
+  const revealHoleCard = (cardData, handIndex = 0) => {
+    setInternalHands(prev => {
+      const newHands = [...prev];
+      const targetHand = newHands[handIndex] || [];
+      
+      // Find first hole card in the hand
+      const holeCardIndex = targetHand.findIndex(card => card.isHoleCard);
+      
+      if (holeCardIndex !== -1) {
+        // Update the hole card with revealed data and trigger flip
+        const updatedHoleCard = {
+          ...targetHand[holeCardIndex],
+          suit: cardData.suit,
+          value: cardData.value,
+          isHoleCard: false,
+          faceUp: true, // This will trigger the Card component's flip animation
+        };
+        
+        // Update the card in the hand
+        const newHand = [...targetHand];
+        newHand[holeCardIndex] = updatedHoleCard;
+        newHands[handIndex] = newHand;
+        
+        onHandUpdate(newHands);
+      }
+      
+      return newHands;
+    });
+  };
+  
+  // Expose functions to parent component
+  useImperativeHandle(ref, () => ({
+    revealHoleCard
+  }));
+  
   const repositionCards = () => {
     // Force re-render to trigger new positioning calculations
     displayHands.forEach((handCards, handIndex) => {
       const totalCards = handCards.length + 1; // +1 for the incoming card
-      const overlapWidth = cardWidth * cardSpacing;
-      const totalWidth = cardWidth + (totalCards - 1) * overlapWidth;
-      const centeredStartX = (screenWidth - totalWidth) / 2;
+      const effectiveLayout = getEffectiveLayout(handCards);
+      
+      let cardSpacingValue;
+      if (effectiveLayout === 'spread') {
+        // Spread layout: 20% of card width between cards
+        cardSpacingValue = gameConfig.cardWidth + (gameConfig.cardWidth * 0.2);
+      } else {
+        // Overlap layout: Show portion of previous card
+        cardSpacingValue = gameConfig.cardWidth * gameConfig.cardSpacing;
+      }
+      
+      const totalWidth = gameConfig.cardWidth + (totalCards - 1) * cardSpacingValue;
+      const centeredStartX = (gameConfig.handWidth - totalWidth) / 2; // Center within Hand container
       
       handCards.forEach((card, cardIndex) => {
-        const targetX = centeredStartX + cardIndex * overlapWidth;
-        const targetY = position.y;
+        const targetX = centeredStartX + cardIndex * cardSpacingValue;
+        const targetY = 0; // Relative to Hand container
         
         const animKey = `${handIndex}-${card.id}`;
         if (!cardAnimations.current.has(animKey)) {
@@ -47,13 +106,13 @@ const Hand = ({
         const cardAnim = cardAnimations.current.get(animKey);
         Animated.timing(cardAnim.x, {
           toValue: targetX,
-          duration: 300,
+          duration: gameConfig.durations.handUpdate,
           useNativeDriver: true,
         }).start();
         
         Animated.timing(cardAnim.y, {
           toValue: targetY,
-          duration: 300,
+          duration: gameConfig.durations.handUpdate,
           useNativeDriver: true,
         }).start();
       });
@@ -62,31 +121,40 @@ const Hand = ({
   
   // Calculate card position in hand - updated for split hands and blackjack positioning
   const getCardPosition = (cardIndex, totalCards, handIndex = 0, totalHands = 1) => {
-    const CARD_WIDTH = cardWidth;
-    const CARD_OVERLAP = cardSpacing * CARD_WIDTH; // Show 30% of previous card
+    const CARD_WIDTH = gameConfig.cardWidth;
+    const currentHand = displayHands[handIndex] || [];
+    const effectiveLayout = getEffectiveLayout(currentHand);
+    let cardSpacingValue;
+    
+    if (effectiveLayout === 'spread') {
+      // Spread layout: 20% of card width between cards
+      cardSpacingValue = CARD_WIDTH + (CARD_WIDTH * 0.2);
+    } else {
+      // Overlap layout: Show portion of previous card
+      cardSpacingValue = gameConfig.cardSpacing * CARD_WIDTH;
+    }
     
     if (totalHands === 1) {
       // Single hand - center on screen
       // For blackjack: first two cards use 2-card positioning, then normal shifting
       const positioningCards = totalCards <= 2 ? 2 : totalCards;
-      const totalWidth = CARD_WIDTH + (positioningCards - 1) * CARD_OVERLAP;
-      const centerStart = (screenWidth - totalWidth) / 2;
-      const leftOffset = cardIndex * CARD_OVERLAP;
+      const totalWidth = CARD_WIDTH + (positioningCards - 1) * cardSpacingValue;
+      const leftOffset = cardIndex * cardSpacingValue;
       
       return {
-        x: centerStart + leftOffset,
-        y: position.y,
+        x: (gameConfig.handWidth - totalWidth) / 2 + leftOffset, // Centered within the Hand container
+        y: 0, // Relative to the Hand container top
       };
     } else {
       // Split hands - position side by side
       // For blackjack: first two cards use 2-card positioning, then normal shifting
       const positioningCards = totalCards <= 2 ? 2 : totalCards;
-      const handWidth = CARD_WIDTH + (positioningCards - 1) * CARD_OVERLAP;
+      const handWidth = CARD_WIDTH + (positioningCards - 1) * cardSpacingValue;
       const handGap = 40; // Gap between hands
       const totalWidth = handWidth * totalHands + handGap * (totalHands - 1);
       const startX = (screenWidth - totalWidth) / 2;
       const handStartX = startX + handIndex * (handWidth + handGap);
-      const cardX = handStartX + cardIndex * CARD_OVERLAP;
+      const cardX = handStartX + cardIndex * cardSpacingValue;
       
       return {
         x: cardX,
@@ -100,7 +168,7 @@ const Hand = ({
     const currentCardId = nextCardId;
     setNextCardId(prev => prev + 1);
     
-    const startPos = { x: deckCoordinates.x - 9, y: deckCoordinates.y + 9 };
+    const startPos = { x: deckCoordinates.x - position.x - 9, y: deckCoordinates.y - position.y + 9 };
     // Calculate position based on current hand size plus cards currently animating to this hand
     const currentHandSize = internalHands[handIndex]?.length || 0;
     const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
@@ -112,6 +180,7 @@ const Hand = ({
       id: currentCardId,
       suit: cardData.suit,
       value: cardData.value,
+      isHoleCard: cardData.isHoleCard || false,
       animateX: new Animated.Value(startPos.x),
       animateY: new Animated.Value(startPos.y),
       animateRotateY: new Animated.Value(0),
@@ -125,13 +194,13 @@ const Hand = ({
     Animated.parallel([
       Animated.timing(animatingCard.animateX, {
         toValue: targetPosition.x,
-        duration: durations.cardDeal,
+        duration: gameConfig.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(animatingCard.animateY, {
         toValue: targetPosition.y,
-        duration: durations.cardDeal,
+        duration: gameConfig.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
@@ -143,7 +212,7 @@ const Hand = ({
         const cardWithId = {
           ...cardData,
           id: currentCardId,
-          faceUp: true,
+          faceUp: cardData.isHoleCard ? false : true, // Hole cards start face down
           position: targetPosition,
         };
         
@@ -155,28 +224,40 @@ const Hand = ({
       setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
     });
     
-    // Flip animation
-    setTimeout(() => {
-      Animated.timing(animatingCard.animateRotateY, {
-        toValue: 180,
-        duration: durations.cardFlip,
-        easing: Easing.inOut(Easing.quad),
-        useNativeDriver: true,
-      }).start();
-    }, durations.cardDeal / 2);
-    
-    // Set flipping flag
-    setTimeout(() => {
-      setAnimatingCards(prev => prev.map(c => 
-        c.id === currentCardId ? { ...c, isFlipping: true } : c
-      ));
-    }, durations.cardDeal / 2 + durations.cardFlip / 2);
+    // Flip animation - skip for hole cards
+    if (!cardData.isHoleCard) {
+      // Calculate timing so flip midpoint aligns with deal midpoint
+      // Deal midpoint: gameConfig.durations.cardDeal / 2
+      // Flip should start at: deal_midpoint - flip_duration / 2
+      const dealMidpoint = gameConfig.durations.cardDeal / 2;
+      const flipStartTime = dealMidpoint - (gameConfig.durations.cardFlip / 2);
+      
+      setTimeout(() => {
+        Animated.timing(animatingCard.animateRotateY, {
+          toValue: 180,
+          duration: gameConfig.durations.cardFlip,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+      }, flipStartTime);
+      
+      // Set flipping flag at flip midpoint (when card is fully rotated)
+      setTimeout(() => {
+        setAnimatingCards(prev => prev.map(c => 
+          c.id === currentCardId ? { ...c, isFlipping: true } : c
+        ));
+      }, dealMidpoint);
+    }
   };
   
   // Handle new card data - deal immediately (timing controlled by parent)
   useEffect(() => {
     if (cardData) {
-      dealCard(cardData, activeHandIndex);
+      if (cardData.revealHoleCard) {
+        revealHoleCard(cardData, activeHandIndex);
+      } else {
+        dealCard(cardData, activeHandIndex);
+      }
     }
   }, [cardData]);
   
@@ -206,7 +287,18 @@ const Hand = ({
     }
     
     // For split hands, position them side by side
-    const handWidth = cardWidth + (Math.max(0, (displayHands[handIndex]?.length || 1) - 1) * cardWidth * cardSpacing);
+    const currentHand = displayHands[handIndex] || [];
+    const effectiveLayout = getEffectiveLayout(currentHand);
+    let cardSpacingValue;
+    if (effectiveLayout === 'spread') {
+      // Spread layout: 20% of card width between cards
+      cardSpacingValue = gameConfig.cardWidth + (gameConfig.cardWidth * 0.2);
+    } else {
+      // Overlap layout: Show portion of previous card
+      cardSpacingValue = gameConfig.cardWidth * gameConfig.cardSpacing;
+    }
+    
+    const handWidth = gameConfig.cardWidth + (Math.max(0, (displayHands[handIndex]?.length || 1) - 1) * cardSpacingValue);
     const totalWidth = handWidth * totalHands + (totalHands - 1) * 40; // 40px gap between hands
     const startX = (screenWidth - totalWidth) / 2;
     const handX = startX + handIndex * (handWidth + 40);
@@ -214,8 +306,32 @@ const Hand = ({
     return { x: handX, y: position.y };
   };
   
+  // Dynamic styles using gameConfig
+  const dynamicStyles = {
+    handContainer: {
+      position: 'absolute',
+      width: gameConfig.handWidth,
+      height: gameConfig.cardHeight,
+      pointerEvents: 'none',
+    },
+    handCard: {
+      position: 'absolute',
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+    },
+    animatingCard: {
+      position: 'absolute',
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+    },
+  };
+
   return (
-    <View style={styles.handContainer}>
+    <View style={[dynamicStyles.handContainer, {
+      backgroundColor: isDealer ? 'rgba(0, 0, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)',
+      left: position.x,
+      top: position.y
+    }]}>
       {displayHands.map((handCards, handIndex) => {
         const handPosition = calculateHandPosition(handIndex, displayHands.length);
         const isActive = handIndex === activeHandIndex;
@@ -254,7 +370,16 @@ const Hand = ({
                 {
                   left: handPosition.x - 10,
                   top: handPosition.y - 10,
-                  width: cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardWidth * cardSpacing) + 20,
+                  width: (() => {
+                    const effectiveLayout = getEffectiveLayout(handCards);
+                    let cardSpacingValue;
+                    if (effectiveLayout === 'spread') {
+                      cardSpacingValue = cardWidth + (cardWidth * 0.2);
+                    } else {
+                      cardSpacingValue = cardWidth * cardSpacing;
+                    }
+                    return cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
+                  })(),
                   height: 126 + 20, // card height + padding
                   zIndex: 40
                 }
@@ -268,13 +393,23 @@ const Hand = ({
               // Initialize animation if not present
               if (!cardAnimations.current.has(animKey)) {
                 const totalCards = handCards.length;
-                const overlapWidth = cardWidth * cardSpacing;
-                const totalWidth = cardWidth + (totalCards - 1) * overlapWidth;
-                const centeredStartX = (screenWidth - totalWidth) / 2;
+                const effectiveLayout = getEffectiveLayout(handCards);
+                
+                let cardSpacingValue;
+                if (effectiveLayout === 'spread') {
+                  // Spread layout: 20% of card width between cards
+                  cardSpacingValue = gameConfig.cardWidth + (gameConfig.cardWidth * 0.2);
+                } else {
+                  // Overlap layout: Show portion of previous card
+                  cardSpacingValue = gameConfig.cardWidth * gameConfig.cardSpacing;
+                }
+                
+                const totalWidth = gameConfig.cardWidth + (totalCards - 1) * cardSpacingValue;
+                const centeredStartX = (gameConfig.handWidth - totalWidth) / 2; // Center within Hand container
                 
                 cardAnimations.current.set(animKey, {
-                  x: new Animated.Value(card.position?.x || (centeredStartX + cardIndex * overlapWidth)),
-                  y: new Animated.Value(card.position?.y || handPosition.y)
+                  x: new Animated.Value(card.position?.x !== undefined ? card.position.x : (centeredStartX + cardIndex * cardSpacingValue)),
+                  y: new Animated.Value(card.position?.y !== undefined ? card.position.y : 0) // Relative to Hand container
                 });
               }
               
@@ -284,13 +419,13 @@ const Hand = ({
                 <Animated.View
                   key={card.id}
                   style={[
-                    styles.handCard,
+                    dynamicStyles.handCard,
                     {
                       transform: [
                         { translateX: cardAnim.x },
                         { translateY: cardAnim.y }
                       ],
-                      zIndex: 1 + cardIndex,
+                      zIndex: 100 + cardIndex,
                     }
                   ]}
                 >
@@ -299,6 +434,7 @@ const Hand = ({
                     suit={card.suit}
                     value={card.value}
                     faceUp={card.faceUp}
+                    gameConfig={gameConfig}
                     style={styles.cardInHand}
                   />
                 </Animated.View>
@@ -319,12 +455,12 @@ const Hand = ({
           <Animated.View
             key={card.id}
             style={[
-              styles.animatingCard,
+              dynamicStyles.animatingCard,
               {
                 transform: [
                   { translateX: card.animateX },
                   { translateY: card.animateY },
-                  { rotateY },
+                  ...(card.isHoleCard ? [] : [{ rotateY }]), // Don't apply rotation to hole cards
                 ],
                 zIndex: 1000,
               }
@@ -334,6 +470,8 @@ const Hand = ({
               suit={card.suit}
               value={card.value}
               faceUp={card.isFlipping}
+              animateFlip={false}
+              gameConfig={gameConfig}
               style={styles.cardInHand}
             />
           </Animated.View>
@@ -341,17 +479,11 @@ const Hand = ({
       })}
     </View>
   );
-};
+});
+
+Hand.displayName = 'Hand';
 
 const styles = {
-  handContainer: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    pointerEvents: 'none',
-  },
   singleHandContainer: {
     position: 'relative',
   },
@@ -391,19 +523,9 @@ const styles = {
     borderRadius: 12,
     backgroundColor: 'rgba(255, 215, 0, 0.1)',
   },
-  handCard: {
-    position: 'absolute',
-    width: 90,
-    height: 126,
-  },
   cardInHand: {
     width: '100%',
     height: '100%',
-  },
-  animatingCard: {
-    position: 'absolute',
-    width: 90,
-    height: 126,
   },
 };
 

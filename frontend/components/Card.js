@@ -13,10 +13,15 @@ const Card = ({
   suit, 
   value, 
   faceUp = true, 
-  animateFlip = false,
+  animateFlip = true,
   position = { x: 0, y: 0 },
   animatePosition = false,
   onAnimationComplete = () => {},
+  gameConfig = { 
+    cardWidth: 90,
+    cardHeight: 126,
+    durations: { cardFlip: 300 }
+  },
   style = {}
 }) => {
   const flipProgress = useSharedValue(faceUp ? 1 : 0);
@@ -41,7 +46,7 @@ const Card = ({
   // Animate flip when faceUp changes
   useEffect(() => {
     if (animateFlip) {
-      flipProgress.value = withTiming(faceUp ? 1 : 0, { duration: 300 }, (finished) => {
+      flipProgress.value = withTiming(faceUp ? 1 : 0, { duration: gameConfig.durations.cardFlip }, (finished) => {
         if (finished) {
           runOnJS(onAnimationComplete)();
         }
@@ -151,10 +156,19 @@ const Card = ({
     </Animated.View>
   );
 
+  // Dynamic styles using gameConfig
+  const dynamicStyles = {
+    cardContainer: {
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+      position: 'absolute',
+    },
+  };
+
   return (
     <Animated.View 
       style={[
-        styles.cardContainer,
+        dynamicStyles.cardContainer,
         containerAnimatedStyle,
         style
       ]}
@@ -166,11 +180,6 @@ const Card = ({
 };
 
 const styles = {
-  cardContainer: {
-    width: 60,
-    height: 84,
-    position: 'absolute',
-  },
   cardFace: {
     position: 'absolute',
     width: '100%',

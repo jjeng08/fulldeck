@@ -1,8 +1,8 @@
-const { text: t } = require('../shared/text')
 const jwt = require('jsonwebtoken')
-const { PrismaClient } = require('@prisma/client')
 const gameManager = require('../games/GameManager');
 const logger = require('../shared/utils/logger');
+const { PrismaClient } = require('@prisma/client')
+const { text: t } = require('../shared/text')
 const { getAllGames } = require('../shared/gameConfigs');
 const { updatePlayerBalance } = require('../shared/utils');
 const { blackjackMessages } = require('../games/blackjack/Blackjack');

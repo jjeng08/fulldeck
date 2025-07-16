@@ -191,10 +191,12 @@ export function AppProvider({ children }) {
       processMessageQueue();
       
       // Resolve the pending promise
-      if (pendingOperations.current.refresh?.resolve) {
-        pendingOperations.current.refresh.resolve(data.accessToken);
+      if (pendingOperations.current.refreshResolve) {
+        pendingOperations.current.refreshResolve(data.accessToken);
       }
       pendingOperations.current.refresh = null;
+      pendingOperations.current.refreshResolve = null;
+      pendingOperations.current.refreshReject = null;
     } else {
       setAuthState(prev => {
         const newAttempts = prev.attempts + 1;
@@ -205,10 +207,12 @@ export function AppProvider({ children }) {
           clearAuthData();
           
           // Reject the pending promise
-          if (pendingOperations.current.refresh?.reject) {
-            pendingOperations.current.refresh.reject(new Error('Token refresh failed'));
+          if (pendingOperations.current.refreshReject) {
+            pendingOperations.current.refreshReject(new Error('Token refresh failed'));
           }
           pendingOperations.current.refresh = null;
+          pendingOperations.current.refreshResolve = null;
+          pendingOperations.current.refreshReject = null;
           
           return { 
             user: null,
@@ -222,6 +226,8 @@ export function AppProvider({ children }) {
         } else {
           // Retry after a short delay - reset status to idle for retry
           pendingOperations.current.refresh = null; // Clear current promise
+          pendingOperations.current.refreshResolve = null;
+          pendingOperations.current.refreshReject = null;
           setTimeout(() => {
             attemptTokenRefresh();
           }, 1000 * newAttempts); // Exponential backoff
@@ -244,7 +250,6 @@ export function AppProvider({ children }) {
 
   // ONLY place availableGames is updated  
   const onAvailableGames = (data) => {
-    console.log('GOT GAMES')
     setAvailableGames(data.availableGames);
   };
 
@@ -402,8 +407,8 @@ export function AppProvider({ children }) {
         setAuthState(prev => ({ ...prev, status: 'refreshing' }));
         
         // Store resolve/reject for later use in onTokenRefreshed
-        pendingOperations.current.refresh.resolve = resolve;
-        pendingOperations.current.refresh.reject = reject;
+        pendingOperations.current.refreshResolve = resolve;
+        pendingOperations.current.refreshReject = reject;
         
         // Send refresh request with refresh token (not access token)
         WebSocketService.sendMessage('refreshToken', { 

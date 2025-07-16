@@ -12,7 +12,11 @@ const Deck = forwardRef(({
   portalCards = [],
   isShuffling = false,
   shuffleTimes = 0,
-  durations = { deckShuffle: 800, cardDeal: 1000, cardFlip: 300 },
+  gameConfig = { 
+    cardWidth: 90,
+    cardHeight: 126,
+    durations: { deckShuffle: 800, cardDeal: 1000, cardFlip: 300 }
+  },
   onDeckCoordinatesChange = () => {}
 }, ref) => {
   // Animated values for shuffle animations
@@ -103,12 +107,12 @@ const Deck = forwardRef(({
           right: newZIndex 
         };
       }));
-    }, durations.deckShuffle / 2); // At peak of animation when cards are most separated
+    }, gameConfig.durations.deckShuffle / 2); // At peak of animation when cards are most separated
     
     // Start 3-phase arc animation: up -> right with rotation -> back down
     Animated.timing(shuffleProgress, {
       toValue: 1,
-      duration: durations.deckShuffle,
+      duration: gameConfig.durations.deckShuffle,
       easing: Easing.inOut(Easing.quad),
       useNativeDriver: true,
     }).start(() => {
@@ -267,7 +271,7 @@ const Deck = forwardRef(({
         <Animated.View
           key={card.id}
           style={[
-            styles.deckCardContainer,
+            dynamicStyles.deckCardContainer,
             {
               top: card.top,
               right: card.right,
@@ -277,6 +281,7 @@ const Deck = forwardRef(({
         >
           <Card
             faceUp={false}
+            gameConfig={gameConfig}
             style={styles.deckCard}
           />
         </Animated.View>
@@ -299,6 +304,29 @@ const Deck = forwardRef(({
     // setDealtCards(prev => prev.filter(card => card.id !== cardId));
   };
 
+  // Dynamic styles using gameConfig
+  const dynamicStyles = {
+    deckContainer: {
+      position: 'relative',
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+    },
+    deckCardContainer: {
+      position: 'absolute',
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: '#333',
+      overflow: 'hidden',
+    },
+    portalCard: {
+      position: 'absolute',
+      width: gameConfig.cardWidth,
+      height: gameConfig.cardHeight,
+    },
+  };
+
   return (
     <>
       {/* Deck Stack */}
@@ -306,7 +334,7 @@ const Deck = forwardRef(({
         ref={deckContainerRef}
         onLayout={onDeckLayout}
         style={[
-          styles.deckContainer,
+          dynamicStyles.deckContainer,
           style
         ]}
       >
@@ -329,7 +357,7 @@ const Deck = forwardRef(({
             <Animated.View
               key={card.id}
               style={[
-                styles.portalCard,
+                dynamicStyles.portalCard,
                 {
                   transform: [
                     { translateX: card.animateX },
@@ -345,6 +373,7 @@ const Deck = forwardRef(({
                   suit={card.suit}
                   value={card.value}
                   faceUp={true}
+                  gameConfig={gameConfig}
                   style={{
                     width: '100%',
                     height: '100%',
@@ -355,6 +384,7 @@ const Deck = forwardRef(({
                   suit={card.suit}
                   value={card.value}
                   faceUp={false}
+                  gameConfig={gameConfig}
                   style={styles.cardInPortal}
                 />
               )}
@@ -378,6 +408,7 @@ const Deck = forwardRef(({
             animateFlip={true}
             position={targetPosition}
             animatePosition={true}
+            gameConfig={gameConfig}
             onAnimationComplete={() => {
               // Flip the card after it reaches target position
               if (!card.faceUp) {
@@ -405,20 +436,6 @@ const Deck = forwardRef(({
 });
 
 const styles = {
-  deckContainer: {
-    position: 'relative',  // Reference point for absolute children
-    width: 90,  // 60 * 1.5
-    height: 126, // 84 * 1.5
-  },
-  deckCardContainer: {
-    position: 'absolute',
-    width: 90,  // 60 * 1.5
-    height: 126, // 84 * 1.5
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-    overflow: 'hidden',
-  },
   deckCard: {
     width: '100%',
     height: '100%',
@@ -434,11 +451,6 @@ const styles = {
     right: 0,
     bottom: 0,
     pointerEvents: 'none',
-  },
-  portalCard: {
-    position: 'absolute',
-    width: 90,
-    height: 126,
   },
   cardInPortal: {
     width: '100%',
