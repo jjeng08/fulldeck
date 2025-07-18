@@ -13,14 +13,15 @@ const Hand = forwardRef(({
   gameConfig = {
     cardWidth: 90,
     cardHeight: 126,
-    cardSpacing: 0.3,
-    cardLayout: 'overlap',
-    spreadLimit: 3,
+    cardSpacing: 0.3, // Overlap spacing multiplier
+    spreadLimit: 3, // Switch from spread to overlap when more than this many cards
     handWidth: 300,
     durations: { cardDeal: 1000, cardFlip: 300, handUpdate: 200 }
   },
+  cardLayout = null, // Override for card layout (spread, overlap)
   cardData = null, // New card data to deal
   onHandUpdate = () => {}, // Callback when hand is updated
+  onAnimationCallback = () => {}, // Callback when individual card animation completes
   isDealer = false // Flag to distinguish dealer vs player hands
 }, ref) => {
   
@@ -44,19 +45,22 @@ const Hand = forwardRef(({
   
   // Helper function to determine effective layout for a hand
   const getEffectiveLayout = (handCards) => {
-    if (gameConfig.cardLayout === 'spread' && handCards.length > gameConfig.spreadLimit) {
+    const layout = cardLayout || 'overlap'; // Default to overlap if no prop specified
+    if (layout === 'spread' && handCards.length > gameConfig.spreadLimit) {
       return 'overlap';
     }
-    return gameConfig.cardLayout;
+    return layout;
   };
   
   // Single source of truth for card positioning - calculates all positions at once
   const calculateAllCardPositions = (handIndex, totalCards) => {
     const currentHand = displayHands[handIndex] || [];
     const cardSpacingValue = getCardSpacingValue(currentHand);
+    const effectiveLayout = getEffectiveLayout(currentHand);
     
-    // For blackjack initial deal: use 2-card positioning for first two cards
-    const positioningCards = totalCards <= 2 ? 2 : totalCards;
+    // For overlap layout: use 2-card positioning for first two cards
+    // For spread layout: always use actual card count for positioning
+    const positioningCards = (effectiveLayout === 'overlap' && totalCards <= 2) ? 2 : totalCards;
     const totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
     const centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
     
@@ -109,9 +113,10 @@ const Hand = forwardRef(({
     displayHands.forEach((handCards, handIndex) => {
       const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
       const totalCards = handCards.length + animatingToThisHand;
+      const effectiveLayout = getEffectiveLayout(handCards);
       
-      // Skip repositioning for first two cards
-      if (totalCards <= 2) {
+      // Skip repositioning for first two cards in overlap layout only
+      if (effectiveLayout === 'overlap' && totalCards <= 2) {
         return;
       }
       
@@ -213,6 +218,11 @@ const Hand = forwardRef(({
             value: cardData.value
           } : card
         ));
+        
+        // Trigger animation callback after the flip animation completes
+        setTimeout(() => {
+          onAnimationCallback(cardData.suit, cardData.value, handIndex, currentCardId);
+        }, gameConfig.durations.cardFlip);
       }, gameConfig.durations.cardDeal / 2 - gameConfig.durations.cardFlip / 2);
     }
     
@@ -403,6 +413,11 @@ const Hand = forwardRef(({
               newHands[animation.handIndex] = targetHand;
               return newHands;
             });
+            
+            // Trigger animation callback after the flip animation completes
+            setTimeout(() => {
+              onAnimationCallback(animation.newCardData.suit, animation.newCardData.value, animation.handIndex, animation.currentCardId);
+            }, gameConfig.durations.cardFlip);
             
             // Decrement pending animations immediately for updates
             setPendingAnimations(prev => prev - 1);

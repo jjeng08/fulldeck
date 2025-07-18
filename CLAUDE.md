@@ -50,6 +50,10 @@ This file contains coding conventions and rules for this project that Claude sho
   - **Use structured logging**: `logger.logInfo('User action', { userId, action })`
   - **Log all user actions, errors, and significant events**
   - **Never develop backend features without logging - no functionality should be invisible**
+- **DATABASE OPERATIONS**: ALL database interactions MUST go through centralized functions
+  - **NEVER use direct Prisma queries in game files**
+  - **ALWAYS import and use functions from `src/shared/utils/DBUtils.js`**
+  - **ALL database operations must be centralized for consistency and maintainability**
 
 ## Project-Specific Rules
 
@@ -222,3 +226,8 @@ Claude is authorized to run ALL system commands necessary for project developmen
 - **Test menu is positioned absolutely on the right side of the screen**
 - **Only production buttons (Lobby, etc.) belong in headers**
 - **Test menu uses testMenu and testMenuButton styles**
+```
+
+### Project Rules
+- **don't run bash tests**
+- **stop trying to test with Bash. look at the session logs for what happened at various steps. That's why they're there.**

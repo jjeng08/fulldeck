@@ -15,6 +15,7 @@ const Card = ({
   position = { x: 0, y: 0 },
   animatePosition = false,
   onAnimationComplete = () => {},
+  onAnimationCallback = () => {},
   gameConfig = { 
     cardWidth: 90,
     cardHeight: 126,
@@ -47,6 +48,10 @@ const Card = ({
   useEffect(() => {
     flipProgress.value = withTiming(shouldBeFaceUp ? 1 : 0, { duration: gameConfig.durations.cardFlip }, (finished) => {
       if (finished) {
+        // Fire animation callback with card value when flip completes
+        if (shouldBeFaceUp && suit && value) {
+          runOnJS(onAnimationCallback)(suit, value);
+        }
         runOnJS(onAnimationComplete)();
       }
     });

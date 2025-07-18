@@ -29,21 +29,20 @@ export default function Blackjack({ route }) {
     
     // Timing
     durations: {
-      cardDeal: 2500,
-      cardFlip: 1500,
-      deckShuffle: 2000,
-      handUpdate: 1000
+      cardDeal: 500,
+      cardFlip: 300,
+      deckShuffle: 400,
+      handUpdate: 200
     },
     buffers: {
-      initialDeal: 2500,
-      dealerTurn: 5000
+      initialDeal: 500,
+      dealerTurn: 1000
     },
     
     // Layout
     handWidth: screenWidth * 0.4,
-    cardSpacing: 0.3,
-    cardLayout: 'overlap',
-    spreadLimit: 3,
+    cardSpacing: 0.3, // Overlap spacing multiplier
+    spreadLimit: 3, // Switch from spread to overlap when more than this many cards
     
     // Hand positioning
     dealerAreaOffset: 64 + 100 + 126 + 50, // deck paddingTop + half minHeight + deck height + spacing
@@ -64,6 +63,10 @@ export default function Blackjack({ route }) {
   // Track when hand totals should be visible (after card flip animations complete)
   const [showPlayerTotal, setShowPlayerTotal] = useState(false);
   const [showDealerTotal, setShowDealerTotal] = useState(false);
+  
+  // Track animated totals that update as each card animation completes
+  const [animatedPlayerTotal, setAnimatedPlayerTotal] = useState(0);
+  const [animatedDealerTotal, setAnimatedDealerTotal] = useState(0);
   
   // Track when final animations are complete for finished games
   const [finalAnimationsComplete, setFinalAnimationsComplete] = useState(false);
@@ -93,6 +96,30 @@ export default function Blackjack({ route }) {
   // Function to clear all temporary disables (when game state changes)
   const clearTemporaryDisables = () => {
     setTemporarilyDisabledButtons(new Set());
+  };
+  
+  // Calculate single card value for progressive totals
+  const calculateCardValue = (card) => {
+    if (card.value === 'A') {
+      return 11; // We'll handle soft aces in the progressive calculation
+    } else if (['K', 'Q', 'J'].includes(card.value)) {
+      return 10;
+    } else {
+      return parseInt(card.value);
+    }
+  };
+  
+  // Handle individual card animation completion for progressive totals
+  const onCardAnimationComplete = (suit, value, handIndex, cardId, isDealer) => {
+    const cardValue = calculateCardValue({ suit, value });
+    
+    if (isDealer) {
+      setAnimatedDealerTotal(prev => prev + cardValue);
+      setShowDealerTotal(true);
+    } else {
+      setAnimatedPlayerTotal(prev => prev + cardValue);
+      setShowPlayerTotal(true);
+    }
   };
   
   // Build deck with specified number of cards
@@ -158,6 +185,11 @@ export default function Blackjack({ route }) {
       setDealerHands([pendingDealerCards]);
       setPendingDealerCards([]);
     }
+    
+    // Check if game is finished and show results after player animations complete
+    if (gameState.gameStatus === 'finished' && !finalAnimationsComplete) {
+      setFinalAnimationsComplete(true);
+    }
   };
   
   // Handle dealer hand updates
@@ -178,6 +210,11 @@ export default function Blackjack({ route }) {
         ...prev,
         dealerCards: newHands[0] || []
       }));
+    }
+    
+    // Check if game is finished and show results after dealer animations complete
+    if (gameState.gameStatus === 'finished' && !finalAnimationsComplete) {
+      setFinalAnimationsComplete(true);
     }
   };
 
@@ -368,12 +405,14 @@ export default function Blackjack({ route }) {
 
   // Generate detailed game result message
   const getGameResultMessage = () => {
-    const { result, payout, dealerValue, dealerCards } = gameState;
-    const playerValue = getActivePlayerValue();
+    const { result, payout } = gameState;
+    // Use the properly calculated hand values that are displayed
+    const playerValue = parseInt(calculateHandValue(getActivePlayerCards()));
+    const dealerValue = parseInt(calculateHandValue(dealerHands[0] || []));
     const playerCards = getActivePlayerCards();
     
     // Test logging
-    testLogger.testLog('GAME_RESULT_MESSAGE', { result, payout, playerValue, dealerValue, playerCards, dealerCards });
+    testLogger.testLog('GAME_RESULT_MESSAGE', { result, payout, playerValue, dealerValue, playerCards });
     
     if (result === 'lose') {
       // Player busted
@@ -381,7 +420,7 @@ export default function Blackjack({ route }) {
         return `You busted with ${playerValue}! You lose.`;
       }
       // Dealer blackjack - check this first
-      if (dealerCards?.length === 2 && dealerValue === 21) {
+      if (playerCards?.length === 2 && dealerValue === 21) {
         return `Dealer has blackjack! You lose.`;
       }
       // Dealer won with regular hand
@@ -563,15 +602,17 @@ export default function Blackjack({ route }) {
           // Double down now returns complete game state like initial bet - no automatic stand needed
         }
         
-        // Handle finished games
+        // Handle finished games - don't show results until animations complete
         if (data.gameStatus === 'finished') {
-          setFinalAnimationsComplete(true);
+          // Results will be shown when Hand animations complete
         }
         
-        // Reset hand total visibility for new game
+        // Reset hand total visibility and animated totals for new game
         if (actionType === 'bet') {
           setShowPlayerTotal(false);
           setShowDealerTotal(false);
+          setAnimatedPlayerTotal(0);
+          setAnimatedDealerTotal(0);
         }
         
         // Clear temporary disables if game state changes to non-playing
@@ -795,6 +836,7 @@ export default function Blackjack({ route }) {
           gameConfig={gameConfig}
           cardLayout='spread'
           onHandUpdate={onDealerHandUpdate}
+          onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, true)}
           isDealer={true}
         />
         
@@ -807,7 +849,7 @@ export default function Blackjack({ route }) {
             zIndex: 1001
           }]}>
             <Text style={s.handTotalText}>
-              {calculateHandValue(dealerHands[0])}
+              {animatedDealerTotal}
             </Text>
           </View>
         )}
@@ -821,7 +863,7 @@ export default function Blackjack({ route }) {
             zIndex: 1001
           }]}>
             <Text style={s.handTotalText}>
-              {calculateHandValue(getActivePlayerCards())}
+              {animatedPlayerTotal}
             </Text>
           </View>
         )}
@@ -836,6 +878,7 @@ export default function Blackjack({ route }) {
           deckCoordinates={deckCoordinates}
           gameConfig={gameConfig}
           onHandUpdate={onHandUpdate}
+          onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
           isDealer={false}
         />
       </View>
@@ -866,9 +909,11 @@ export default function Blackjack({ route }) {
                 }));
                 setDealerHands([[]]);
                 
-                // Reset hand total visibility
+                // Reset hand total visibility and animated totals
                 setShowPlayerTotal(false);
                 setShowDealerTotal(false);
+                setAnimatedPlayerTotal(0);
+                setAnimatedDealerTotal(0);
                 
                 // Reset final animations complete flag
                 setFinalAnimationsComplete(false);
