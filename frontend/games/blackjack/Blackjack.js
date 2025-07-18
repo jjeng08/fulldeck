@@ -49,12 +49,6 @@ export default function Blackjack({ route }) {
     playerAreaOffset: 400 // from bottom of screen
   };
   
-  // Player hand state - supports multiple hands for splits
-  const [playerHands, setPlayerHands] = useState([[]]);
-  const [activeHandIndex, setActiveHandIndex] = useState(0);
-  const [handValues, setHandValues] = useState([0]);
-  const [handLabels, setHandLabels] = useState(['Player Hand']);
-  
   // Dealer hand state
   const [dealerHands, setDealerHands] = useState([[]]);
   const [dealerCardToDeal, setDealerCardToDeal] = useState(null);
@@ -131,7 +125,11 @@ export default function Blackjack({ route }) {
   
   // Handle hand updates from Hand component
   const onHandUpdate = (newHands) => {
-    setPlayerHands(newHands);
+    setGameState(prev => ({
+      ...prev,
+      playerHands: newHands,
+      playerValues: newHands.map(hand => calculateBlackjackValue(hand))
+    }));
   };
   
   // Handle dealer hand updates
@@ -152,22 +150,65 @@ export default function Blackjack({ route }) {
   // Get selected tier configuration
   const tierConfig = selectedTier !== undefined && tiers ? tiers[selectedTier] : [100, 200, 500];
 
-  // Simplified game state
+  // Multi-hand game state with backward compatibility
   const [gameState, setGameState] = useState({
-    playerCards: [],
+    // Multi-hand internal structure
+    playerHands: [[]], // Array of hands - index 0 for single-hand mode
+    playerValues: [0], // Array of hand values
+    currentBets: [0], // Array of bets per hand
+    activeHandIndex: 0, // Currently active hand (0 for single-hand)
+    totalHands: 1, // Total number of hands (1 or 2)
+    
+    // Existing single properties
     dealerCards: [],
-    playerValue: 0,
     dealerValue: 0,
-    currentBet: 0,
     gameStatus: 'betting', // 'betting', 'dealing', 'playing', 'dealer_turn', 'finished'
     result: null, // 'win', 'lose', 'push', 'blackjack'
     payout: 0,
     handsCompleted: [] // Track which hands are completed
   });
 
+  // Compatibility layer - maintains existing API for single-hand access
+  const getActivePlayerCards = () => gameState.playerHands[gameState.activeHandIndex] || [];
+  const getActivePlayerValue = () => gameState.playerValues[gameState.activeHandIndex] || 0;
+  const getActiveCurrentBet = () => gameState.currentBets[gameState.activeHandIndex] || 0;
+  
+  // Helper functions for multi-hand state management
+  const updateActiveHand = (cards, value) => {
+    setGameState(prev => ({
+      ...prev,
+      playerHands: prev.playerHands.map((hand, index) => 
+        index === prev.activeHandIndex ? cards : hand
+      ),
+      playerValues: prev.playerValues.map((val, index) => 
+        index === prev.activeHandIndex ? value : val
+      )
+    }));
+  };
+  
+  const updateActiveHandCards = (cards) => {
+    setGameState(prev => ({
+      ...prev,
+      playerHands: prev.playerHands.map((hand, index) => 
+        index === prev.activeHandIndex ? cards : hand
+      )
+    }));
+  };
+  
+  const updateActiveHandValue = (value) => {
+    setGameState(prev => ({
+      ...prev,
+      playerValues: prev.playerValues.map((val, index) => 
+        index === prev.activeHandIndex ? value : val
+      )
+    }));
+  };
+
   // Frontend logic to determine button states based on game data
   const getButtonStates = () => {
-    const { gameStatus, playerValue, playerCards, dealerCards } = gameState;
+    const { gameStatus, dealerCards } = gameState;
+    const playerCards = getActivePlayerCards();
+    const playerValue = getActivePlayerValue();
     
     // Only show buttons during player's turn (not during insurance phase)
     if (gameStatus !== 'playing') {
@@ -184,7 +225,7 @@ export default function Blackjack({ route }) {
     const canHitBasic = playerValue < 21;
     const canStandBasic = true; // Can always stand while playing
     const canDoubleDownBasic = playerCards.length === 2 && playerValue < 21; // Only on first 2 cards
-    const canSplitBasic = playerCards.length === 2 && playerCards[0].value === playerCards[1].value;
+    const canSplitBasic = playerCards.length === 2 && playerCards[0].value === playerCards[1].value && gameState.totalHands === 1; // Only on first hand
     const buyInsuranceBasic = dealerCards.length > 0 && dealerCards[0].value === 'A'; // If dealer shows Ace
     
     // Apply temporary disable logic
@@ -209,7 +250,7 @@ export default function Blackjack({ route }) {
   
   // Check if insurance is available
   const canBuyInsurance = gameState.gameStatus === 'insurance_offered';
-  const insuranceAmount = Math.floor(gameState.currentBet / 2);
+  const insuranceAmount = Math.floor(getActiveCurrentBet() / 2);
 
   // Calculate blackjack hand value with Ace flexibility
   const calculateBlackjackValue = (cards) => {
@@ -284,7 +325,12 @@ export default function Blackjack({ route }) {
 
   // Generate detailed game result message
   const getGameResultMessage = () => {
-    const { result, payout, playerValue, dealerValue, playerCards, dealerCards } = gameState;
+    const { result, payout, dealerValue, dealerCards } = gameState;
+    const playerValue = getActivePlayerValue();
+    const playerCards = getActivePlayerCards();
+    
+    // Debug logging
+    console.log('Game result data:', { result, payout, playerValue, dealerValue, playerCards, dealerCards });
     
     if (result === 'lose') {
       // Player busted
@@ -331,13 +377,16 @@ export default function Blackjack({ route }) {
     if (gameState.gameStatus === 'betting') {
       const highestTierValue = Math.max(...tierConfig);
       const maxBetLimit = (maxMulti || 5) * highestTierValue;
-      const newBet = gameState.currentBet + betAmount;
+      const currentBet = getActiveCurrentBet();
+      const newBet = currentBet + betAmount;
       
       // Check if new bet would exceed limits
       if (newBet <= playerBalance && newBet <= maxBetLimit) {
         setGameState(prev => ({
           ...prev,
-          currentBet: newBet
+          currentBets: prev.currentBets.map((bet, index) => 
+            index === prev.activeHandIndex ? newBet : bet
+          )
         }));
       }
     }
@@ -345,10 +394,13 @@ export default function Blackjack({ route }) {
 
   const onSubtractBet = (betAmount) => {
     if (gameState.gameStatus === 'betting') {
-      const newBet = Math.max(0, gameState.currentBet - betAmount);
+      const currentBet = getActiveCurrentBet();
+      const newBet = Math.max(0, currentBet - betAmount);
       setGameState(prev => ({
         ...prev,
-        currentBet: newBet
+        currentBets: prev.currentBets.map((bet, index) => 
+          index === prev.activeHandIndex ? newBet : bet
+        )
       }));
     }
   };
@@ -412,7 +464,8 @@ export default function Blackjack({ route }) {
   };
 
   const onPlaceBet = (addLoadingCallback) => {
-    if (gameState.currentBet > 0) {
+    const currentBet = getActiveCurrentBet();
+    if (currentBet > 0) {
       // Immediately switch to dealing state to hide betting controls
       setGameState(prev => ({
         ...prev,
@@ -425,7 +478,7 @@ export default function Blackjack({ route }) {
       addLoadingCallback();
       sendMessage('playerAction', {
         type: 'bet',
-        betAmount: gameState.currentBet
+        betAmount: currentBet
       });
     }
   };
@@ -566,10 +619,6 @@ export default function Blackjack({ route }) {
         
         // Special handling for bet action (game start)
         if (actionType === 'bet') {
-          // Clear existing hands and set up new game
-          setPlayerHands([[]]);
-          setDealerHands([[]]);
-          
           // Reset hand total visibility for new game
           setShowPlayerTotal(false);
           setShowDealerTotal(false);
@@ -578,12 +627,12 @@ export default function Blackjack({ route }) {
           if (data.immediateResult) {
             setGameState(prev => ({
               ...prev,
-              currentBet: data.betAmount,
+              currentBets: [data.betAmount],
               gameStatus: data.gameStatus,
-              playerCards: data.playerCards,
-              dealerCards: data.dealerCards,
-              playerValue: data.playerValue,
-              dealerValue: data.dealerValue,
+              playerHands: [[]],  // Start with empty hands for card dealing animation
+              dealerCards: [],
+              playerValues: [0],
+              dealerValue: 0,
               result: data.result,
               payout: data.payout
             }));
@@ -592,19 +641,24 @@ export default function Blackjack({ route }) {
             setTimeout(() => {
               setGameState(prev => ({
                 ...prev,
-                gameStatus: 'finished'
+                gameStatus: 'finished',
+                playerHands: [data.playerCards],
+                dealerCards: data.dealerCards,
+                playerValues: [data.playerValue],
+                dealerValue: data.dealerValue
               }));
+              setFinalAnimationsComplete(true);
             }, data.cardsToShow.length * gameConfig.buffers.initialDeal + gameConfig.durations.handUpdate);
           } else {
             // Normal game flow
             setGameState(prev => ({
               ...prev,
-              currentBet: data.betAmount,
+              currentBets: [data.betAmount],
               gameStatus: data.gameStatus,
-              playerCards: data.playerCards,
-              dealerCards: data.dealerCards,
-              playerValue: data.playerValue,
-              dealerValue: data.dealerValue,
+              playerHands: [[]],  // Start with empty hands for card dealing animation
+              dealerCards: [],
+              playerValues: [0],
+              dealerValue: 0,
               result: null,
               payout: 0
             }));
@@ -617,9 +671,9 @@ export default function Blackjack({ route }) {
           setGameState(prev => ({
             ...prev,
             gameStatus: data.gameStatus,
-            playerValue: data.playerValue || prev.playerValue,
+            playerValues: data.playerValue ? [data.playerValue] : prev.playerValues,
             dealerValue: data.dealerValue || prev.dealerValue,
-            playerCards: data.playerCards || prev.playerCards,
+            playerHands: data.playerCards ? [data.playerCards] : prev.playerHands,
             dealerCards: data.dealerCards || prev.dealerCards,
             result: data.result || prev.result,
             payout: data.payout || prev.payout
@@ -631,8 +685,8 @@ export default function Blackjack({ route }) {
           // Update player cards state immediately
           setGameState(prev => ({
             ...prev,
-            playerCards: data.cards,
-            playerValue: data.handValue,
+            playerHands: [data.cards],
+            playerValues: [data.handValue],
             gameStatus: 'dealer_turn'
           }));
           
@@ -764,9 +818,9 @@ export default function Blackjack({ route }) {
           onPress={onPlaceBet}
           style={[
             s.placeBetButton,
-            gameState.currentBet === 0 && s.placeBetButtonDisabled
+            getActiveCurrentBet() === 0 && s.placeBetButtonDisabled
           ]}
-          disabled={gameState.currentBet === 0}
+          disabled={getActiveCurrentBet() === 0}
           testID="placeBetButton"
           messageType="bet"
         />
@@ -786,7 +840,7 @@ export default function Blackjack({ route }) {
               temporarilyDisableButton('hit');
               sendMessage('playerAction', {
                 type: 'hit',
-                playerCards: gameState.playerCards,
+                playerCards: getActivePlayerCards(),
                 handId: 'player-hand-0'
               });
             }}
@@ -806,7 +860,7 @@ export default function Blackjack({ route }) {
             onPress={() => {
               sendMessage('playerAction', {
                 type: 'stand',
-                playerCards: gameState.playerCards,
+                playerCards: getActivePlayerCards(),
                 dealerCards: gameState.dealerCards
               });
             }}
@@ -849,7 +903,7 @@ export default function Blackjack({ route }) {
               onPress={() => {
                 sendMessage('playerAction', {
                   type: 'doubleDown',
-                  playerCards: gameState.playerCards,
+                  playerCards: getActivePlayerCards(),
                   dealerCards: gameState.dealerCards,
                   handId: 'player-hand-0'
                 });
@@ -878,7 +932,7 @@ export default function Blackjack({ route }) {
       <View style={s.topBanner}>
         <Text style={s.title}>Blackjack</Text>
         <Text style={s.balanceHeader}>
-          {t.balance.replace('{balance}', formatCurrency(playerBalance - (gameState.currentBet || 0)))}
+          {t.balance.replace('{balance}', formatCurrency(playerBalance - (getActiveCurrentBet() || 0)))}
         </Text>
         <Button 
           label="Lobby"
@@ -919,9 +973,9 @@ export default function Blackjack({ route }) {
           )}
           
           {/* Current Bet Display */}
-          {(gameState.currentBet > 0 || gameState.gameStatus === 'dealing') && (
+          {(getActiveCurrentBet() > 0 || gameState.gameStatus === 'dealing') && (
             <Text style={s.currentBet}>
-              Current Bet: {formatCurrency(gameState.currentBet)}
+              Current Bet: {formatCurrency(getActiveCurrentBet())}
             </Text>
           )}
         </View>
@@ -956,7 +1010,7 @@ export default function Blackjack({ route }) {
         )}
         
         {/* Player Hand Total - Above player cards */}
-        {showPlayerTotal && gameState.playerCards && gameState.playerCards.length > 0 && (
+        {showPlayerTotal && getActivePlayerCards().length > 0 && (
           <View style={[s.handTotalContainer, { 
             position: 'absolute',
             left: playerPosition.x + (gameConfig.handWidth / 2) - 30,
@@ -964,17 +1018,17 @@ export default function Blackjack({ route }) {
             zIndex: 1001
           }]}>
             <Text style={s.handTotalText}>
-              {calculateBlackjackValue(gameState.playerCards)}
+              {calculateBlackjackValue(getActivePlayerCards())}
             </Text>
           </View>
         )}
         
         {/* Player Hand(s) */}
         <Hand
-          hands={playerHands}
-          activeHandIndex={activeHandIndex}
-          handLabels={handLabels}
-          handValues={handValues}
+          hands={gameState.playerHands}
+          activeHandIndex={gameState.activeHandIndex}
+          handLabels={['Player Hand']}
+          handValues={gameState.playerValues}
           position={playerPosition}
           deckCoordinates={deckCoordinates}
           gameConfig={gameConfig}
@@ -997,18 +1051,17 @@ export default function Blackjack({ route }) {
                 setGameState(prev => ({
                   ...prev,
                   gameStatus: 'betting',
-                  playerCards: [],
+                  playerHands: [[]],
                   dealerCards: [],
-                  playerValue: 0,
+                  playerValues: [0],
                   dealerValue: 0,
-                  currentBet: 0,
+                  currentBets: [0],
+                  activeHandIndex: 0,
+                  totalHands: 1,
                   result: null,
                   payout: 0,
                   handsCompleted: []
                 }));
-                
-                // Clear hands for visual reset
-                setPlayerHands([[]]);
                 setDealerHands([[]]);
                 
                 // Reset hand total visibility
@@ -1038,7 +1091,7 @@ export default function Blackjack({ route }) {
                 onPress={() => {
                   sendMessage('playerAction', {
                     type: 'buyInsurance',
-                    playerCards: gameState.playerCards,
+                    playerCards: getActivePlayerCards(),
                     dealerCards: gameState.dealerCards,
                     insuranceAmount: insuranceAmount
                   });
@@ -1055,7 +1108,7 @@ export default function Blackjack({ route }) {
                 onPress={() => {
                   sendMessage('playerAction', {
                     type: 'skipInsurance',
-                    playerCards: gameState.playerCards,
+                    playerCards: getActivePlayerCards(),
                     dealerCards: gameState.dealerCards
                   });
                 }}

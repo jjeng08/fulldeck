@@ -21,9 +21,63 @@ function sendMessage(userId, type, data) {
 class Blackjack {
   constructor(deckConfig = { decks: 6 }) {
     this.availableCards = [];
-    this.currentBet = 0; // Store the current bet amount
+    
+    // Multi-hand state with backward compatibility
+    this.playerHands = [[]]; // Array of hands - index 0 for single-hand mode
+    this.playerValues = [0]; // Array of hand values
+    this.currentBets = [0]; // Array of bets per hand
+    this.activeHandIndex = 0; // Currently active hand (0 for single-hand)
+    this.totalHands = 1; // Total number of hands (1 or 2)
+    
+    // Existing single properties
+    this.dealerCards = [];
+    this.dealerValue = 0;
+    this.currentDealerCards = [];
+    this.immediateGameResult = null;
+    
     // Initialize deck with specified configuration
     this.buildDeck(deckConfig);
+  }
+  
+  // Compatibility layer - maintains existing API for single-hand access
+  get playerCards() { return this.playerHands[this.activeHandIndex] || []; }
+  set playerCards(cards) { 
+    this.playerHands[this.activeHandIndex] = cards;
+    this.playerValues[this.activeHandIndex] = this.calculateHandValue(cards);
+  }
+  
+  get playerValue() { return this.playerValues[this.activeHandIndex] || 0; }
+  set playerValue(value) { this.playerValues[this.activeHandIndex] = value; }
+  
+  get currentBet() { return this.currentBets[this.activeHandIndex] || 0; }
+  set currentBet(bet) { this.currentBets[this.activeHandIndex] = bet; }
+  
+  // Helper functions for multi-hand state management
+  updateActiveHand(cards, value) {
+    this.playerHands[this.activeHandIndex] = cards;
+    this.playerValues[this.activeHandIndex] = value;
+  }
+  
+  updateActiveHandCards(cards) {
+    this.playerHands[this.activeHandIndex] = cards;
+    this.playerValues[this.activeHandIndex] = this.calculateHandValue(cards);
+  }
+  
+  updateActiveHandValue(value) {
+    this.playerValues[this.activeHandIndex] = value;
+  }
+  
+  // Initialize new game state
+  initializeNewGame(betAmount = 0) {
+    this.playerHands = [[]];
+    this.playerValues = [0];
+    this.currentBets = [betAmount];
+    this.activeHandIndex = 0;
+    this.totalHands = 1;
+    this.dealerCards = [];
+    this.dealerValue = 0;
+    this.currentDealerCards = [];
+    this.immediateGameResult = null;
   }
 
   // Build deck with specified configuration
@@ -216,8 +270,8 @@ class Blackjack {
 
   // Start new game with bet
   startNewGame(userId, betAmount) {
-    // Store the bet amount for use in double down and insurance
-    this.currentBet = betAmount;
+    // Initialize new game state with bet amount
+    this.initializeNewGame(betAmount);
     
     // Deal initial cards (deck is already fresh from constructor)
     const dealerFaceUp = this.dealCard();
@@ -226,8 +280,10 @@ class Blackjack {
     
     const playerCards = [this.dealCard(), this.dealCard()];
     
-    // Store complete dealer hand for later use
+    // Store cards in new structure
+    this.dealerCards = dealerCards;
     this.currentDealerCards = dealerCards;
+    this.playerCards = playerCards; // Uses setter to update both hands and values
     
     // Check for insurance opportunity first (dealer shows Ace)
     const canBuyInsurance = dealerFaceUp.value === 'A';
@@ -238,7 +294,9 @@ class Blackjack {
         success: true,
         gameState: {
           dealerCards: [dealerFaceUp], // Only show face-up card
-          playerCards,
+          playerCards: this.playerCards,
+          playerHands: this.playerHands,
+          playerValues: this.playerValues,
           betAmount,
           gameStatus: 'insurance_offered',
           canHit: false,
@@ -287,12 +345,14 @@ class Blackjack {
         success: true,
         gameState: {
           dealerCards: dealerCards, // Reveal both cards
-          playerCards,
+          playerCards: this.playerCards,
+          playerHands: this.playerHands,
+          playerValues: this.playerValues,
           betAmount,
           gameStatus: 'finished',
           result,
           payout,
-          playerValue: this.calculateHandValue(playerCards),
+          playerValue: this.playerValue,
           dealerValue: this.calculateHandValue(dealerCards)
         },
         immediateResult: true
@@ -304,7 +364,9 @@ class Blackjack {
       success: true,
       gameState: {
         dealerCards: [dealerFaceUp], // Only show face-up card
-        playerCards,
+        playerCards: this.playerCards,
+        playerHands: this.playerHands,
+        playerValues: this.playerValues,
         betAmount,
         gameStatus: 'playing',
         canHit: true,
@@ -326,6 +388,9 @@ class Blackjack {
     const handValue = this.calculateHandValue(newCards);
     const busted = handValue > 21;
     
+    // Update the active hand state
+    this.updateActiveHandCards(newCards);
+    
     return {
       success: true,
       newCard,
@@ -343,6 +408,9 @@ class Blackjack {
   async stand(userId, playerCards, dealerCards) {
     // Use stored bet amount from the game instance
     const betAmount = this.currentBet;
+    
+    // Update the active hand state
+    this.updateActiveHandCards(playerCards);
     // Use the complete dealer hand stored during initial deal
     const completeDealerCards = this.currentDealerCards || dealerCards;
     
@@ -391,6 +459,9 @@ class Blackjack {
   async doubleDown(userId, playerCards, dealerCards, handId = 'player-hand-0') {
     // Use stored bet amount from the game instance
     const betAmount = this.currentBet;
+    
+    // Update the active hand state
+    this.updateActiveHandCards(playerCards);
     
     // Validate stored bet amount
     if (!betAmount || typeof betAmount !== 'number' || betAmount <= 0) {
