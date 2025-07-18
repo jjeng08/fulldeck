@@ -29,14 +29,14 @@ export default function Blackjack({ route }) {
     
     // Timing
     durations: {
-      cardDeal: 500,
-      cardFlip: 300,
-      deckShuffle: 400,
-      handUpdate: 200
+      cardDeal: 2500,
+      cardFlip: 1500,
+      deckShuffle: 2000,
+      handUpdate: 1000
     },
     buffers: {
-      initialDeal: 500,
-      dealerTurn: 1000
+      initialDeal: 2500,
+      dealerTurn: 5000
     },
     
     // Layout
@@ -113,9 +113,9 @@ export default function Blackjack({ route }) {
   // Initialize deck and shuffle when game starts
   useEffect(() => {
     setDeckCards(buildDeck(10));
-    // Shuffle deck 3 times when game first loads
+    // Shuffle deck 2 times when game first loads
     setTimeout(() => {
-      shuffleDeck(3);
+      shuffleDeck(2);
     }, 500); // Small delay to ensure deck is rendered
   }, []);
   
@@ -510,11 +510,14 @@ export default function Blackjack({ route }) {
         // Clear loading state for this action
         clearLoadingAction(actionType);
         
-        // Handle sequenced dealing for initial cards (bet action)
-        if (actionType === 'bet' && data.playerCards && data.dealerCards) {
+        // Handle sequenced dealing for initial cards (bet action) and double down
+        if ((actionType === 'bet' || actionType === 'doubleDown') && data.playerCards && data.dealerCards) {
           // Store dealer cards for later, start player animation first
           setPendingDealerCards(data.dealerCards);
           setDealingSequence('player');
+          
+          // Calculate player card values in frontend
+          const newPlayerValues = [parseInt(calculateHandValue(data.playerCards))];
           
           // Update game state with player cards only
           setGameState(prev => ({
@@ -523,8 +526,8 @@ export default function Blackjack({ route }) {
             gameStatus: data.gameStatus,
             playerHands: [data.playerCards],
             dealerCards: [], // Keep dealer cards empty until player finishes
-            playerValues: data.playerValue ? [data.playerValue] : prev.playerValues,
-            dealerValue: data.dealerValue || prev.dealerValue,
+            playerValues: newPlayerValues,
+            dealerValue: 0, // No dealer cards shown yet
             result: data.result || prev.result,
             payout: data.payout || prev.payout
           }));
@@ -535,6 +538,10 @@ export default function Blackjack({ route }) {
           const newPlayerHands = data.playerCards ? [data.playerCards] : gameState.playerHands;
           const newDealerCards = data.dealerCards || gameState.dealerCards;
           
+          // Calculate card values in frontend instead of using backend values
+          const newPlayerValues = newPlayerHands.map(hand => parseInt(calculateHandValue(hand)));
+          const newDealerValue = parseInt(calculateHandValue(newDealerCards));
+          
           // Update game state immediately - Hand components will handle animations
           setGameState(prev => ({
             ...prev,
@@ -542,8 +549,8 @@ export default function Blackjack({ route }) {
             gameStatus: data.gameStatus,
             playerHands: newPlayerHands,
             dealerCards: newDealerCards,
-            playerValues: data.playerValue ? [data.playerValue] : prev.playerValues,
-            dealerValue: data.dealerValue || prev.dealerValue,
+            playerValues: newPlayerValues,
+            dealerValue: newDealerValue,
             result: data.result || prev.result,
             payout: data.payout || prev.payout
           }));
@@ -552,6 +559,8 @@ export default function Blackjack({ route }) {
           if (newDealerCards.length > 0) {
             setDealerHands([newDealerCards]);
           }
+          
+          // Double down now returns complete game state like initial bet - no automatic stand needed
         }
         
         // Handle finished games
@@ -868,9 +877,9 @@ export default function Blackjack({ route }) {
                 clearTemporaryDisables();
                 
                 
-                // Shuffle deck 3 times when starting new game
+                // Shuffle deck 2 times when starting new game
                 setTimeout(() => {
-                  shuffleDeck(3);
+                  shuffleDeck(2);
                 }, 100); // Small delay to ensure state is reset
               }}
               testID="playAgainButton"

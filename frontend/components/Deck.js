@@ -113,8 +113,8 @@ const Deck = forwardRef(({
     Animated.timing(shuffleProgress, {
       toValue: 1,
       duration: gameConfig.durations.deckShuffle,
-      easing: Easing.inOut(Easing.quad),
-      useNativeDriver: true,
+      easing: Easing.linear,
+      useNativeDriver: false,
     }).start(() => {
       // Animation complete - remove animation flag and complete shuffle
       setInternalCards(prev => prev.map(card => ({ ...card, animating: false })));
@@ -145,8 +145,13 @@ const Deck = forwardRef(({
 
   // Measure deck position on screen
   const onDeckLayout = (event) => {
-    deckContainerRef.current?.measureInWindow((x, y, width, height) => {
-      onDeckCoordinatesChange({ x, y });
+    // Use requestAnimationFrame to ensure measurement happens after layout is complete
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        deckContainerRef.current?.measureInWindow((x, y, width, height) => {
+          onDeckCoordinatesChange({ x, y });
+        });
+      });
     });
   };
 
@@ -219,17 +224,17 @@ const Deck = forwardRef(({
           
           const translateY = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: [0, -120, 0],
+            outputRange: [0, -((gameConfig.cardHeight / 2 + 20) * 1.25), 0], // 25% more vertical separation
           });
           
           const translateX = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1], 
-            outputRange: [0, 60, 0],
+            outputRange: [0, gameConfig.cardWidth * 0.6 * 0.75, 0], // 25% less horizontal movement
           });
           
           const rotate = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: ['0deg', '35deg', '0deg'],
+            outputRange: ['0deg', '20deg', '0deg'],
           });
           
           animatedStyle = {
@@ -244,17 +249,17 @@ const Deck = forwardRef(({
           
           const translateY = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: [0, 120, 0],
+            outputRange: [0, (gameConfig.cardHeight / 2 + 20) * 1.25, 0], // 25% more vertical separation
           });
           
           const translateX = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1], 
-            outputRange: [0, -60, 0],
+            outputRange: [0, -(gameConfig.cardWidth * 0.6 * 0.75), 0], // 25% less horizontal movement
           });
           
           const rotate = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: ['0deg', '35deg', '0deg'],
+            outputRange: ['0deg', '20deg', '0deg'],
           });
           
           animatedStyle = {
@@ -280,7 +285,8 @@ const Deck = forwardRef(({
           ]}
         >
           <Card
-            faceUp={false}
+            suit={null}
+            value={null}
             gameConfig={gameConfig}
             style={styles.deckCard}
           />
@@ -368,26 +374,15 @@ const Deck = forwardRef(({
                 }
               ]}
             >
-              {card.isFlipping ? (
-                <Card
-                  suit={card.suit}
-                  value={card.value}
-                  faceUp={true}
-                  gameConfig={gameConfig}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                  }}
-                />
-              ) : (
-                <Card
-                  suit={card.suit}
-                  value={card.value}
-                  faceUp={false}
-                  gameConfig={gameConfig}
-                  style={styles.cardInPortal}
-                />
-              )}
+              <Card
+                suit={card.isFlipping ? card.suit : null}
+                value={card.isFlipping ? card.value : null}
+                gameConfig={gameConfig}
+                style={card.isFlipping ? {
+                  width: '100%',
+                  height: '100%',
+                } : styles.cardInPortal}
+              />
             </Animated.View>
           );
         })}
@@ -402,10 +397,8 @@ const Deck = forwardRef(({
           <Card
             testID={'deck-card-'+ card.id}
             key={card.id}
-            suit={card.suit}
-            value={card.value}
-            faceUp={card.faceUp || false}
-            animateFlip={true}
+            suit={card.faceUp ? card.suit : null}
+            value={card.faceUp ? card.value : null}
             position={targetPosition}
             animatePosition={true}
             gameConfig={gameConfig}

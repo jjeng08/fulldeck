@@ -12,8 +12,6 @@ import { styleConstants as sc } from 'shared/styleConstants';
 const Card = ({ 
   suit, 
   value, 
-  faceUp = true, 
-  animateFlip = true,
   position = { x: 0, y: 0 },
   animatePosition = false,
   onAnimationComplete = () => {},
@@ -24,7 +22,9 @@ const Card = ({
   },
   style = {}
 }) => {
-  const flipProgress = useSharedValue(faceUp ? 1 : 0);
+  // Determine flip state based on data presence
+  const shouldBeFaceUp = suit !== null && value !== null;
+  const flipProgress = useSharedValue(shouldBeFaceUp ? 1 : 0);
   const positionX = useSharedValue(position?.x || 0);
   const positionY = useSharedValue(position?.y || 0);
 
@@ -43,18 +43,14 @@ const Card = ({
     spades: '#000000'
   };
 
-  // Animate flip when faceUp changes
+  // Animate flip when card data changes
   useEffect(() => {
-    if (animateFlip) {
-      flipProgress.value = withTiming(faceUp ? 1 : 0, { duration: gameConfig.durations.cardFlip }, (finished) => {
-        if (finished) {
-          runOnJS(onAnimationComplete)();
-        }
-      });
-    } else {
-      flipProgress.value = faceUp ? 1 : 0;
-    }
-  }, [faceUp, animateFlip]);
+    flipProgress.value = withTiming(shouldBeFaceUp ? 1 : 0, { duration: gameConfig.durations.cardFlip }, (finished) => {
+      if (finished) {
+        runOnJS(onAnimationComplete)();
+      }
+    });
+  }, [shouldBeFaceUp, gameConfig.durations.cardFlip]);
 
   // Animate position when position changes
   useEffect(() => {
@@ -74,21 +70,19 @@ const Card = ({
   // Create animated styles for flip effect
   const frontAnimatedStyle = useAnimatedStyle(() => {
     const rotateY = interpolate(flipProgress.value, [0, 1], [180, 0]);
-    const opacity = interpolate(flipProgress.value, [0, 0.5, 1], [0, 0, 1]);
+    const scaleX = interpolate(flipProgress.value, [0, 0.5, 1], [0, 0, 1]);
     
     return {
-      transform: [{ rotateY: `${rotateY}deg` }],
-      opacity,
+      transform: [{ rotateY: `${rotateY}deg` }, { scaleX }],
     };
   });
 
   const backAnimatedStyle = useAnimatedStyle(() => {
     const rotateY = interpolate(flipProgress.value, [0, 1], [0, 180]);
-    const opacity = interpolate(flipProgress.value, [0, 0.5, 1], [1, 0, 0]);
+    const scaleX = interpolate(flipProgress.value, [0, 0.5, 1], [1, 0, 0]);
     
     return {
-      transform: [{ rotateY: `${rotateY}deg` }],
-      opacity,
+      transform: [{ rotateY: `${rotateY}deg` }, { scaleX }],
     };
   });
 

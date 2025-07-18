@@ -1,12 +1,9 @@
 const BettingUtils = require('../../shared/utils/BettingUtils');
-const { updatePlayerBalance } = require('../../shared/utils');
+const DBUtils = require('../../shared/utils/DBUtils');
 const logger = require('../../shared/utils/logger');
 const testLogger = require('../../shared/testLogger');
 const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
 
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
@@ -244,9 +241,7 @@ class Blackjack {
   async placeBet(userId, amount) {
     try {
       // Get user from database
-      const user = await prisma.player.findUnique({
-        where: { id: userId }
-      });
+      const user = await DBUtils.getPlayerById(userId);
       
       if (!user) {
         return { success: false, error: 'User not found' };
@@ -407,10 +402,10 @@ class Blackjack {
       success: true,
       newCard,
       cards: newCards,
-      handValue,
       busted,
       gameStatus: busted ? 'finished' : 'playing',
       result: busted ? 'lose' : null,
+      payout: busted ? 0 : null,
       targetHandId: handId
     };
   }
@@ -444,14 +439,12 @@ class Blackjack {
       gameStatus: 'finished',
       playerCards: playerCards,
       dealerCards: workingDealerCards,
-      playerValue: result.playerValue,
-      dealerValue: result.dealerValue,
       result: result.result,
       payout: result.payout,
     };
   }
 
-  // Double down
+  // Double down - deal one card to player, then immediately play dealer hand
   async doubleDown(userId, playerCards, dealerCards, handId = 'player-hand-0') {
     // Use stored bet amount from the game instance
     const betAmount = this.currentBet;
@@ -464,100 +457,60 @@ class Blackjack {
       return { success: false, error: 'Invalid bet amount for double down' };
     }
     
-    // Validate user has enough balance
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
+    // Validate user has enough balance and deduct double down amount
+    const user = await DBUtils.getPlayerById(userId);
     
     if (!user || user.balance < betAmount) {
       return { success: false, error: 'Insufficient balance to double down' };
     }
     
     // Deduct additional bet amount for double down
-    const newBalance = user.balance - betAmount;
-    logger.logInfo('Double down balance update', { userId, currentBalance: user.balance, betAmount, newBalance });
+    logger.logInfo('Double down balance update', { userId, currentBalance: user.balance, betAmount, newBalance: user.balance - betAmount });
     
-    await updatePlayerBalance(userId, newBalance, 'double_down', { 
+    const updatedPlayer = await DBUtils.debitPlayerAccount(userId, betAmount, 'double_down', { 
       doubleDownAmount: betAmount,
       originalBet: betAmount
     });
     
     // Log double down activity separately
-    const { logActivity } = require('../../websocket/messages');
-    await logActivity(userId, user.username, 'double_down', {
+    await DBUtils.logPlayerActivity(userId, user.username, 'double_down', {
       debit: betAmount,
-      balance: newBalance,
+      balance: updatedPlayer.balance,
       totalBetAmount: betAmount * 2
     });
     
     // Deal one card to player
     const newCard = this.dealCard();
-    const newCards = [...playerCards, newCard];
-    const handValue = this.calculateHandValue(newCards);
-    const busted = handValue > 21;
+    const newPlayerCards = [...playerCards, newCard];
+    const playerHandValue = this.calculateHandValue(newPlayerCards);
+    const playerBusted = playerHandValue > 21;
     
     // If player busted, game ends immediately
-    if (busted) {
+    if (playerBusted) {
       await this.updatePlayerBalanceAfterGame(userId, 0, 'lose', betAmount * 2);
       return {
         success: true,
-        newCard,
-        cards: newCards,
-        handValue,
-        busted: true,
         gameStatus: 'finished',
-        targetHandId: handId,
-        gameResult: {
-          result: 'lose',
-          payout: 0,
-          playerValue: handValue,
-          dealerValue: this.calculateHandValue(this.currentDealerCards || dealerCards)
-        }
+        playerCards: newPlayerCards,
+        dealerCards: this.currentDealerCards || dealerCards,
+        result: 'lose',
+        payout: 0,
+        betAmount: betAmount * 2
       };
     }
     
-    // Player didn't bust - return the player's card, game stays in playing state until card is dealt
-    return {
-      success: true,
-      newCard,
-      cards: newCards,
-      handValue,
-      busted: false,
-      targetHandId: handId,
-      gameStatus: 'playing', // Keep in playing state until card is dealt
-      doubleDownComplete: true // Flag to indicate this completes the double down
-    };
-  }
-
-  // Play dealer hand after double down
-  async playDealerAfterDoubleDown(userId, playerCards, dealerCards) {
-    const betAmount = this.currentBet;
-    
-    // Use the complete dealer hand stored during initial deal
+    // Player didn't bust - play dealer hand immediately
     const completeDealerCards = this.currentDealerCards || dealerCards;
-    const cardsToShow = [];
-    
-    // First card in sequence is the hole card reveal
-    cardsToShow.push({
-      card: completeDealerCards[1], // The pre-drawn hole card
-      action: 'reveal',
-      target: 'dealer'
-    });
-    
-    // Continue with dealer hits until 17 or higher
     const workingDealerCards = [...completeDealerCards];
+    
+    // Dealer hits until 17 or higher
     while (this.calculateHandValue(workingDealerCards) < 17) {
       const dealerCard = this.dealCard();
       workingDealerCards.push(dealerCard);
-      cardsToShow.push({
-        card: dealerCard,
-        action: 'deal',
-        target: 'dealer'
-      });
     }
     
     // Calculate final result with doubled bet
-    const result = this.calculateGameResult(playerCards, workingDealerCards, betAmount * 2);
+    const result = this.calculateGameResult(newPlayerCards, workingDealerCards, betAmount * 2);
     
     // Update player balance with final result
     await this.updatePlayerBalanceAfterGame(userId, result.payout, result.result, betAmount * 2);
@@ -565,40 +518,36 @@ class Blackjack {
     return {
       success: true,
       gameStatus: 'finished',
-      playerCards: playerCards,
+      playerCards: newPlayerCards,
       dealerCards: workingDealerCards,
-      playerValue: result.playerValue,
-      dealerValue: result.dealerValue,
       result: result.result,
       payout: result.payout,
+      betAmount: betAmount * 2
     };
   }
+
 
   // Buy insurance
   async buyInsurance(userId, playerCards, dealerCards, insuranceAmount) {
     // Use stored bet amount from the game instance
     const betAmount = this.currentBet;
     // Validate user has enough balance
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
+    const user = await DBUtils.getPlayerById(userId);
     
     if (!user || user.balance < insuranceAmount) {
       return { success: false, error: 'Insufficient balance to buy insurance' };
     }
     
     // Deduct insurance amount
-    const newBalance = user.balance - insuranceAmount;
-    await updatePlayerBalance(userId, newBalance, 'insurance', { 
+    const updatedPlayer = await DBUtils.debitPlayerAccount(userId, insuranceAmount, 'insurance', { 
       insuranceAmount,
       originalBet: betAmount
     });
     
     // Log insurance activity separately
-    const { logActivity } = require('../../websocket/messages');
-    await logActivity(userId, user.username, 'insurance', {
+    await DBUtils.logPlayerActivity(userId, user.username, 'insurance', {
       debit: insuranceAmount,
-      balance: newBalance,
+      balance: updatedPlayer.balance,
       insuranceAmount
     });
     
@@ -612,15 +561,15 @@ class Blackjack {
       const balanceAfterInsuranceWin = newBalance + insurancePayout;
       
       // Update balance with insurance WIN
-      await updatePlayerBalance(userId, balanceAfterInsuranceWin, 'insurance_win', {
+      const insuranceWinPlayer = await DBUtils.creditPlayerAccount(userId, insurancePayout, 'insurance_win', {
         insuranceWin: insurancePayout,
         originalInsurance: insuranceAmount
       });
       
       // Log insurance WIN activity
-      await logActivity(userId, user.username, 'insurance_win', {
+      await DBUtils.logPlayerActivity(userId, user.username, 'insurance_win', {
         credit: insurancePayout,
-        balance: balanceAfterInsuranceWin,
+        balance: insuranceWinPlayer.balance,
         winAmount: insurancePayout
       });
       
@@ -630,18 +579,18 @@ class Blackjack {
       const mainBetPayout = playerBlackjack ? betAmount : 0; // Push returns bet, lose returns 0
       
       // Update balance for main bet result
-      const absoluteFinalBalance = balanceAfterInsuranceWin + mainBetPayout;
       const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-      await updatePlayerBalance(userId, absoluteFinalBalance, transactionType, {
-        result: gameResult,
-        payout: mainBetPayout,
-        originalBet: betAmount
-      });
+      const finalPlayer = mainBetPayout > 0 ? 
+        await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
+          result: gameResult,
+          payout: mainBetPayout,
+          originalBet: betAmount
+        }) : insuranceWinPlayer;
       
       // Log main bet result activity
-      await logActivity(userId, user.username, transactionType, {
+      await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
         credit: mainBetPayout,
-        balance: absoluteFinalBalance,
+        balance: finalPlayer.balance,
         winAmount: mainBetPayout
       });
       
@@ -660,9 +609,9 @@ class Blackjack {
     } else {
       // Insurance lost - this is a LOSS on insurance (0 payout)
       // Log insurance LOSS activity with 0 win amount
-      await logActivity(userId, user.username, 'insurance_lose', {
+      await DBUtils.logPlayerActivity(userId, user.username, 'insurance_lose', {
         credit: 0,
-        balance: newBalance,
+        balance: updatedPlayer.balance,
         winAmount: 0
       });
       
@@ -710,28 +659,24 @@ class Blackjack {
       
       // Update player balance for main bet result
       if (mainBetPayout > 0) {
-        const user = await prisma.player.findUnique({ where: { id: userId } });
-        const finalBalance = user.balance + mainBetPayout;
         const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        await updatePlayerBalance(userId, finalBalance, transactionType, {
+        await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
           result: gameResult,
           payout: mainBetPayout,
           originalBet: betAmount
         });
         
         // Log activity
-        const { logActivity } = require('../../websocket/messages');
-        await logActivity(userId, user.username, transactionType, {
+        await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
           credit: mainBetPayout,
-          balance: finalBalance,
+          balance: finalPlayer.balance,
           winAmount: mainBetPayout
         });
       } else {
         // Log loss with 0 payout
-        const user = await prisma.player.findUnique({ where: { id: userId } });
-        const { logActivity } = require('../../websocket/messages');
+        const user = await DBUtils.getPlayerById(userId);
         const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        await logActivity(userId, user.username, transactionType, {
+        await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
           credit: 0,
           balance: user.balance,
           winAmount: 0
@@ -745,9 +690,7 @@ class Blackjack {
         result: gameResult,
         payout: mainBetPayout,
         dealerCards: completeDealerCards,
-        playerCards: playerCards,
-        playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(completeDealerCards)
+        playerCards: playerCards
       };
     } else {
       return {
@@ -755,9 +698,7 @@ class Blackjack {
         dealerBlackjack: false,
         gameStatus: 'playing',
         playerCards: playerCards,
-        dealerCards: dealerCards,
-        playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(dealerCards)
+        dealerCards: dealerCards
       };
     }
   }
@@ -816,9 +757,7 @@ class Blackjack {
   async updatePlayerBalanceAfterGame(userId, payout, result, betAmount) {
     try {
       // Get current balance
-      const user = await prisma.player.findUnique({
-        where: { id: userId }
-      });
+      const user = await DBUtils.getPlayerById(userId);
       
       if (!user) {
         logger.logError(new Error('User not found for balance update'), { userId });
@@ -831,17 +770,17 @@ class Blackjack {
       const transactionType = `hand_${result === 'dealer_blackjack' ? 'lose' : result}`;
       
       // Update database balance
-      await updatePlayerBalance(userId, newBalance, transactionType, { 
-        result, 
-        payout, 
-        originalBet: betAmount 
-      });
+      const finalPlayer = payout > 0 ? 
+        await DBUtils.creditPlayerAccount(userId, payout, transactionType, { 
+          result, 
+          payout, 
+          originalBet: betAmount 
+        }) : user;
       
       // Log activity with consistent type
-      const { logActivity } = require('../../websocket/messages');
-      await logActivity(userId, user.username, transactionType, {
+      await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
         credit: payout,
-        balance: newBalance,
+        balance: finalPlayer.balance,
         winAmount: payout // This will be 0 for losses, >0 for wins
       });
       
@@ -876,10 +815,8 @@ async function onPlayerAction(ws, data, userId) {
         blackjack = new Blackjack();
         activeGames.set(userId, blackjack);
         
-        // Get current user balance from database
-        const user = await prisma.player.findUnique({
-          where: { id: userId }
-        });
+        // Get current user and debit balance
+        const user = await DBUtils.getPlayerById(userId);
         
         if (!user) {
           result = { success: false, errorMessage: t.userNotFound };
@@ -893,14 +830,12 @@ async function onPlayerAction(ws, data, userId) {
         }
         
         // Debit user balance
-        const updatedBalance = user.balance - data.betAmount;
-        await updatePlayerBalance(userId, updatedBalance, 'bet_placed', { betAmount: data.betAmount });
+        const updatedPlayer = await DBUtils.debitPlayerAccount(userId, data.betAmount, 'bet_placed', { betAmount: data.betAmount });
         
         // Log activity to database
-        const { logActivity } = require('../../websocket/messages');
-        await logActivity(userId, user.username, 'bet_placed', {
+        await DBUtils.logPlayerActivity(userId, user.username, 'bet_placed', {
           debit: data.betAmount,
-          balance: updatedBalance
+          balance: updatedPlayer.balance
         });
         
         // Start new blackjack game with the stored instance
@@ -908,18 +843,17 @@ async function onPlayerAction(ws, data, userId) {
         
         if (gameResult.immediateResult) {
           // Update player balance for immediate result
-          const finalBalance = updatedBalance + gameResult.gameState.payout;
           const transactionType = `hand_${gameResult.gameState.result}`;
           
-          await updatePlayerBalance(userId, finalBalance, transactionType, {
+          const finalPlayer = await DBUtils.creditPlayerAccount(userId, gameResult.gameState.payout, transactionType, {
             result: gameResult.gameState.result,
             payout: gameResult.gameState.payout,
             originalBet: data.betAmount
           });
           
-          await logActivity(userId, user.username, transactionType, {
+          await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
             credit: gameResult.gameState.payout,
-            balance: finalBalance,
+            balance: finalPlayer.balance,
             winAmount: gameResult.gameState.payout
           });
           
@@ -934,7 +868,7 @@ async function onPlayerAction(ws, data, userId) {
             result: gameResult.gameState.result,
             payout: gameResult.gameState.payout,
             betAmount: data.betAmount,
-            newBalance: finalBalance
+            newBalance: finalPlayer.balance
           };
           
           // Test logging
@@ -949,14 +883,13 @@ async function onPlayerAction(ws, data, userId) {
             playerValue: blackjack.calculateHandValue(gameResult.gameState.playerCards),
             dealerValue: blackjack.calculateHandValue(gameResult.gameState.dealerCards),
             betAmount: data.betAmount,
-            newBalance: updatedBalance
+            newBalance: updatedPlayer.balance
           };
         }
         break;
       case 'hit':
       case 'stand':
       case 'doubleDown':
-      case 'playDealerAfterDoubleDown':
       case 'buyInsurance':
       case 'surrender':
       case 'newGame':
@@ -979,9 +912,6 @@ async function onPlayerAction(ws, data, userId) {
           case 'doubleDown':
             logger.logInfo('Double down call params', { userId, playerCards: data.playerCards, dealerCards: data.dealerCards, handId: data.handId });
             result = await blackjack.doubleDown(userId, data.playerCards, data.dealerCards, data.handId);
-            break;
-          case 'playDealerAfterDoubleDown':
-            result = await blackjack.playDealerAfterDoubleDown(userId, data.playerCards, data.dealerCards);
             break;
           case 'buyInsurance':
             result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);
