@@ -33,6 +33,10 @@ export default function Blackjack({ route }) {
       deckShuffle: 800,
       handUpdate: 200
     },
+    buffers: {
+      initialDeal: 500,
+      dealerTurn: 1000
+    },
     
     // Layout
     handWidth: screenWidth * 0.4,
@@ -79,9 +83,9 @@ export default function Blackjack({ route }) {
     setTemporarilyDisabledButtons(prev => new Set(prev).add(buttonType));
     
     // Calculate timeout: card dealing duration + buffer
-    const dealingDuration = gameConfig.durations.cardDeal; // 1000ms
-    const bufferTime = dealingDuration * 0.5; // 500ms buffer
-    const totalTimeout = dealingDuration + bufferTime; // 1500ms
+    const dealingDuration = gameConfig.durations.cardDeal; // 500ms
+    const bufferTime = gameConfig.buffers.initialDeal; // 500ms buffer
+    const totalTimeout = dealingDuration + bufferTime; // 1000ms
     
     setTimeout(() => {
       setTemporarilyDisabledButtons(prev => {
@@ -468,8 +472,8 @@ export default function Blackjack({ route }) {
       // Remove processed card from queue
       setCardQueue(prev => prev.slice(1));
       
-      // Different timing for dealer vs player cards
-      const delay = nextCard.isDealerCard ? gameConfig.durations.cardDeal : gameConfig.durations.cardDeal;
+      // Use dealer turn buffer for cards marked as dealer turn, otherwise use initial deal buffer
+      const delay = nextCard.dealerTurn ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal;
       
       // Wait appropriate time before processing next card
       setTimeout(() => {
@@ -590,7 +594,7 @@ export default function Blackjack({ route }) {
                 ...prev,
                 gameStatus: 'finished'
               }));
-            }, data.cardsToShow.length * gameConfig.durations.cardDeal + gameConfig.durations.handUpdate);
+            }, data.cardsToShow.length * gameConfig.buffers.initialDeal + gameConfig.durations.handUpdate);
           } else {
             // Normal game flow
             setGameState(prev => ({
@@ -647,7 +651,7 @@ export default function Blackjack({ route }) {
                 playerCards: data.cards,
                 dealerCards: gameState.dealerCards
               });
-            }, gameConfig.durations.cardDeal + gameConfig.durations.handUpdate);
+            }, gameConfig.buffers.initialDeal + gameConfig.durations.handUpdate);
           }
         }
         // Process any cards that need to be dealt
@@ -655,12 +659,18 @@ export default function Blackjack({ route }) {
           const cardQueue = data.cardsToShow.map(cardData => ({
             ...cardData.card,
             target: cardData.target,
-            revealHoleCard: cardData.action === 'reveal'
+            revealHoleCard: cardData.action === 'reveal',
+            dealerTurn: gameState.gameStatus === 'dealer_turn' || data.gameStatus === 'dealer_turn'
           }));
           setCardQueue(cardQueue);
           
           // For finished games, ensure the finished state persists after all cards are dealt
           if (data.gameStatus === 'finished') {
+            // Calculate total time based on card types in queue
+            const totalTime = cardQueue.reduce((total, card) => {
+              return total + (card.dealerTurn ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal);
+            }, 0) + gameConfig.durations.handUpdate;
+            
             setTimeout(() => {
               setGameState(prev => ({
                 ...prev,
@@ -668,7 +678,7 @@ export default function Blackjack({ route }) {
               }));
               // Set final animations complete flag after all cards are dealt
               setFinalAnimationsComplete(true);
-            }, cardQueue.length * gameConfig.durations.cardDeal + gameConfig.durations.handUpdate);
+            }, totalTime);
           }
         }
         // Handle finished games with no cards to show (immediate results)
