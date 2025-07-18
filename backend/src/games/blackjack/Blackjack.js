@@ -294,7 +294,7 @@ class Blackjack {
       return {
         success: true,
         gameState: {
-          dealerCards: [dealerFaceUp], // Only show face-up card
+          dealerCards: [dealerFaceUp, { suit: null, value: null, isHoleCard: true }], // Face-up card + hole card placeholder
           playerCards: this.playerCards,
           playerHands: this.playerHands,
           playerValues: this.playerValues,
@@ -326,7 +326,7 @@ class Blackjack {
         result = 'blackjack';
         payout = Math.floor(betAmount * 2.5); // 3:2 payout
       } else if (!playerBlackjack && dealerBlackjack) {
-        result = 'lose';
+        result = 'dealer_blackjack';
         payout = 0;
       } else {
         result = 'unknown';
@@ -343,7 +343,7 @@ class Blackjack {
       };
       
       // Test logging
-      testLogger.logBackend('IMMEDIATE_BLACKJACK_RESULT', {
+      testLogger.testLog('BACKEND', 'IMMEDIATE_BLACKJACK_RESULT', {
         result,
         payout,
         betAmount,
@@ -375,7 +375,7 @@ class Blackjack {
     return {
       success: true,
       gameState: {
-        dealerCards: [dealerFaceUp], // Only show face-up card
+        dealerCards: [dealerFaceUp, { suit: null, value: null, isHoleCard: true }], // Face-up card + hole card placeholder
         playerCards: this.playerCards,
         playerHands: this.playerHands,
         playerValues: this.playerValues,
@@ -426,26 +426,11 @@ class Blackjack {
     // Use the complete dealer hand stored during initial deal
     const completeDealerCards = this.currentDealerCards || dealerCards;
     
-    // Build dealer hit sequence - dealer hits until 17 or higher
-    const cardsToShow = [];
-    
-    // First card in sequence is the hole card reveal
-    cardsToShow.push({
-      card: completeDealerCards[1], // The pre-drawn hole card
-      action: 'reveal',
-      target: 'dealer'
-    });
-    
     // Continue with dealer hits until 17 or higher
     const workingDealerCards = [...completeDealerCards];
     while (this.calculateHandValue(workingDealerCards) < 17) {
       const newCard = this.dealCard();
       workingDealerCards.push(newCard);
-      cardsToShow.push({
-        card: newCard,
-        action: 'deal',
-        target: 'dealer'
-      });
     }
     
     // Calculate final result
@@ -463,7 +448,6 @@ class Blackjack {
       dealerValue: result.dealerValue,
       result: result.result,
       payout: result.payout,
-      cardsToShow: cardsToShow
     };
   }
 
@@ -532,7 +516,7 @@ class Blackjack {
       };
     }
     
-    // Player didn't bust - return just the player's card, dealer will play separately
+    // Player didn't bust - return the player's card, game stays in playing state until card is dealt
     return {
       success: true,
       newCard,
@@ -540,8 +524,8 @@ class Blackjack {
       handValue,
       busted: false,
       targetHandId: handId,
-      gameStatus: 'dealer_turn', // Indicates dealer should play next
-      needsDealerPlay: true // Flag to indicate dealer needs to play
+      gameStatus: 'playing', // Keep in playing state until card is dealt
+      doubleDownComplete: true // Flag to indicate this completes the double down
     };
   }
 
@@ -587,7 +571,6 @@ class Blackjack {
       dealerValue: result.dealerValue,
       result: result.result,
       payout: result.payout,
-      cardsToShow: cardsToShow
     };
   }
 
@@ -643,19 +626,20 @@ class Blackjack {
       
       // Now handle main bet separately - dealer has blackjack
       const playerBlackjack = this.isBlackjack(playerCards);
-      const gameResult = playerBlackjack ? 'push' : 'lose';
+      const gameResult = playerBlackjack ? 'push' : 'dealer_blackjack';
       const mainBetPayout = playerBlackjack ? betAmount : 0; // Push returns bet, lose returns 0
       
       // Update balance for main bet result
       const absoluteFinalBalance = balanceAfterInsuranceWin + mainBetPayout;
-      await updatePlayerBalance(userId, absoluteFinalBalance, `hand_${gameResult}`, {
+      const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
+      await updatePlayerBalance(userId, absoluteFinalBalance, transactionType, {
         result: gameResult,
         payout: mainBetPayout,
         originalBet: betAmount
       });
       
       // Log main bet result activity
-      await logActivity(userId, user.username, `hand_${gameResult}`, {
+      await logActivity(userId, user.username, transactionType, {
         credit: mainBetPayout,
         balance: absoluteFinalBalance,
         winAmount: mainBetPayout
@@ -671,12 +655,7 @@ class Blackjack {
         dealerCards: completeDealerCards,
         gameStatus: 'finished',
         result: gameResult,
-        totalPayout: insurancePayout + mainBetPayout,
-        cardsToShow: [{
-          card: completeDealerCards[1], // Reveal hole card
-          target: 'dealer',
-          action: 'reveal'
-        }]
+        totalPayout: insurancePayout + mainBetPayout
       };
     } else {
       // Insurance lost - this is a LOSS on insurance (0 payout)
@@ -726,14 +705,15 @@ class Blackjack {
     
     if (dealerBlackjack) {
       const playerBlackjack = this.isBlackjack(playerCards);
-      const gameResult = playerBlackjack ? 'push' : 'lose';
+      const gameResult = playerBlackjack ? 'push' : 'dealer_blackjack';
       const mainBetPayout = playerBlackjack ? betAmount : 0;
       
       // Update player balance for main bet result
       if (mainBetPayout > 0) {
         const user = await prisma.player.findUnique({ where: { id: userId } });
         const finalBalance = user.balance + mainBetPayout;
-        await updatePlayerBalance(userId, finalBalance, `hand_${gameResult}`, {
+        const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
+        await updatePlayerBalance(userId, finalBalance, transactionType, {
           result: gameResult,
           payout: mainBetPayout,
           originalBet: betAmount
@@ -741,7 +721,7 @@ class Blackjack {
         
         // Log activity
         const { logActivity } = require('../../websocket/messages');
-        await logActivity(userId, user.username, `hand_${gameResult}`, {
+        await logActivity(userId, user.username, transactionType, {
           credit: mainBetPayout,
           balance: finalBalance,
           winAmount: mainBetPayout
@@ -750,7 +730,8 @@ class Blackjack {
         // Log loss with 0 payout
         const user = await prisma.player.findUnique({ where: { id: userId } });
         const { logActivity } = require('../../websocket/messages');
-        await logActivity(userId, user.username, `hand_${gameResult}`, {
+        const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
+        await logActivity(userId, user.username, transactionType, {
           credit: 0,
           balance: user.balance,
           winAmount: 0
@@ -766,12 +747,7 @@ class Blackjack {
         dealerCards: completeDealerCards,
         playerCards: playerCards,
         playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(completeDealerCards),
-        cardsToShow: [{
-          card: completeDealerCards[1], // Reveal hole card
-          target: 'dealer',
-          action: 'reveal'
-        }]
+        dealerValue: this.calculateHandValue(completeDealerCards)
       };
     } else {
       return {
@@ -852,7 +828,7 @@ class Blackjack {
       const newBalance = user.balance + payout;
       
       // Use consistent transaction type based on result
-      const transactionType = `hand_${result}`;
+      const transactionType = `hand_${result === 'dealer_blackjack' ? 'lose' : result}`;
       
       // Update database balance
       await updatePlayerBalance(userId, newBalance, transactionType, { 
@@ -884,129 +860,6 @@ class Blackjack {
 
 
 
-async function onStartBlackjackGame(ws, data, userId) {
-  logger.logGameEvent('start_blackjack_game', null, { userId, betAmount: data.betAmount });
-  
-  try {
-    // Get current user balance from database
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
-    
-    if (!user) {
-      logger.logError(new Error('User not found for blackjack game'), { userId });
-      sendMessage(userId, 'blackjackGameStarted', { 
-        success: false, 
-        errorMessage: t.userNotFound 
-      });
-      return;
-    }
-    
-    // Check if user has enough balance
-    if (user.balance < data.betAmount) {
-      logger.logInfo('Blackjack game rejected - insufficient balance', { 
-        userId, 
-        balance: user.balance, 
-        betAmount: data.betAmount 
-      });
-      sendMessage(userId, 'blackjackGameStarted', { 
-        success: false, 
-        errorMessage: t.insufficientBalance 
-      });
-      return;
-    }
-    
-    // Debit user balance
-    const updatedBalance = user.balance - data.betAmount;
-    await updatePlayerBalance(userId, updatedBalance, 'bet_placed', { betAmount: data.betAmount });
-    
-    // Log activity to database
-    const { logActivity } = require('../../websocket/messages');
-    await logActivity(userId, user.username, 'bet_placed', {
-      debit: data.betAmount,
-      balance: updatedBalance
-    });
-    
-    // Create new blackjack game instance
-    const blackjack = new Blackjack();
-    const gameResult = blackjack.startNewGame(userId, data.betAmount);
-    
-    // Handle immediate blackjack results
-    if (gameResult.immediateResult) {
-      // Update player balance for immediate result using consistent transaction type
-      const finalBalance = updatedBalance + gameResult.gameState.payout;
-      const transactionType = `hand_${gameResult.gameState.result}`;
-      
-      await updatePlayerBalance(userId, finalBalance, transactionType, {
-        result: gameResult.gameState.result,
-        payout: gameResult.gameState.payout,
-        originalBet: data.betAmount
-      });
-      
-      // Log activity with consistent type
-      const { logActivity } = require('../../websocket/messages');
-      await logActivity(userId, user.username, transactionType, {
-        credit: gameResult.gameState.payout,
-        balance: finalBalance,
-        winAmount: gameResult.gameState.payout // This will be 0 for losses, >0 for wins
-      });
-      
-      // Send response with immediate result
-      const response = {
-        type: 'blackjackGameStarted',
-        data: {
-          success: true,
-          immediateResult: true,
-          gameState: {
-            ...gameResult.gameState,
-            playerValue: gameResult.gameState.playerValue,
-            dealerValue: gameResult.gameState.dealerValue
-          },
-          betAmount: data.betAmount,
-          newBalance: finalBalance
-        }
-      };
-      
-      logger.logInfo('Blackjack game ended immediately', { 
-        userId, 
-        result: gameResult.gameState.result,
-        payout: gameResult.gameState.payout,
-        newBalance: finalBalance
-      });
-      sendMessage(userId, 'blackjackGameStarted', response.data);
-    } else {
-      // Normal game flow
-      const response = {
-        type: 'blackjackGameStarted',
-        data: {
-          success: true,
-          immediateResult: false,
-          gameState: {
-            ...gameResult.gameState,
-            playerValue: blackjack.calculateHandValue(gameResult.gameState.playerCards),
-            dealerValue: blackjack.calculateHandValue(gameResult.gameState.dealerCards)
-          },
-          betAmount: data.betAmount,
-          newBalance: updatedBalance
-        }
-      };
-      
-      logger.logInfo('Blackjack game started successfully', { 
-        userId, 
-        betAmount: data.betAmount, 
-        newBalance: updatedBalance 
-      });
-      sendMessage(userId, 'blackjackGameStarted', response.data);
-    }
-    
-  } catch (error) {
-    logger.logError(error, { userId, betAmount: data.betAmount, action: 'start_blackjack_game' });
-    sendMessage(userId, 'blackjackGameStarted', { 
-      success: false, 
-      errorMessage: t.serverError 
-    });
-  }
-}
 
 
 // Unified player action handler
@@ -1081,17 +934,11 @@ async function onPlayerAction(ws, data, userId) {
             result: gameResult.gameState.result,
             payout: gameResult.gameState.payout,
             betAmount: data.betAmount,
-            newBalance: finalBalance,
-            cardsToShow: [
-              { card: gameResult.gameState.playerCards[0], target: 'player', action: 'deal' },
-              { card: gameResult.gameState.playerCards[1], target: 'player', action: 'deal' },
-              { card: gameResult.gameState.dealerCards[0], target: 'dealer', action: 'deal' },
-              { card: gameResult.gameState.dealerCards[1], target: 'dealer', action: 'deal' }
-            ]
+            newBalance: finalBalance
           };
           
           // Test logging
-          testLogger.logBackend('BET_IMMEDIATE_RESULT', result);
+          testLogger.testLog('BACKEND', 'BET_IMMEDIATE_RESULT', result);
         } else {
           result = {
             success: true,
@@ -1102,13 +949,7 @@ async function onPlayerAction(ws, data, userId) {
             playerValue: blackjack.calculateHandValue(gameResult.gameState.playerCards),
             dealerValue: blackjack.calculateHandValue(gameResult.gameState.dealerCards),
             betAmount: data.betAmount,
-            newBalance: updatedBalance,
-            cardsToShow: [
-              { card: gameResult.gameState.playerCards[0], target: 'player', action: 'deal' },
-              { card: gameResult.gameState.playerCards[1], target: 'player', action: 'deal' },
-              { card: gameResult.gameState.dealerCards[0], target: 'dealer', action: 'deal' },
-              { card: { suit: null, value: null, isHoleCard: true }, target: 'dealer', action: 'deal' }
-            ]
+            newBalance: updatedBalance
           };
         }
         break;
@@ -1177,24 +1018,16 @@ async function onPlayerAction(ws, data, userId) {
         dealerCards: result.dealerCards,
         result: result.result,
         payout: result.payout,
-        // Handle card dealing scenarios
-        ...(result.cardsToShow ? { cardsToShow: result.cardsToShow } : {}),
-        
-        // Handle hit action - add new card to show
-        ...(result.newCard ? { 
-          cardsToShow: [{
-            card: result.newCard,
-            target: 'player',
-            action: 'deal'
-          }]
-        } : {})
+        betAmount: result.betAmount || data.betAmount,
+        // Handle double down completion flag
+        ...(result.doubleDownComplete ? { doubleDownComplete: true } : {})
       }
     };
     
-    sendMessage(userId, 'actionResult', response.data);
+    sendMessage(userId, 'blackJackChannel', response.data);
   } catch (error) {
     logger.logError(error, { userId, actionType: data.type, action: 'player_action' });
-    sendMessage(userId, 'actionResult', {
+    sendMessage(userId, 'blackJackChannel', {
       success: false,
       actionType: data.type,
       errorMessage: t.serverError

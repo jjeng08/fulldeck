@@ -28,16 +28,19 @@ const Hand = forwardRef(({
   const [internalHands, setInternalHands] = useState(hands);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
+  const [pendingAnimations, setPendingAnimations] = useState(0);
   
-  // Notify parent when hands change (but not on initial render)
+  // Track initial render and when we should notify parent
   const isInitialRender = useRef(true);
+  const shouldNotifyParent = useRef(false);
+  
+  // Notify parent only when all animations are complete
   useEffect(() => {
-    if (isInitialRender.current) {
-      isInitialRender.current = false;
-      return;
+    if (pendingAnimations === 0 && shouldNotifyParent.current) {
+      shouldNotifyParent.current = false;
+      onHandUpdate(internalHands);
     }
-    onHandUpdate(internalHands);
-  }, [internalHands]);
+  }, [pendingAnimations, internalHands]);
   
   // Helper function to determine effective layout for a hand
   const getEffectiveLayout = (handCards) => {
@@ -82,9 +85,15 @@ const Hand = forwardRef(({
   }));
   
   const repositionCards = () => {
-    // Force re-render to trigger new positioning calculations
+    // Only reposition if we have more than 2 cards - first two cards should stay in place
     displayHands.forEach((handCards, handIndex) => {
-      const totalCards = handCards.length + 1; // +1 for the incoming card
+      const totalCards = handCards.length + animatingCards.filter(card => card.targetHandIndex === handIndex).length;
+      
+      // Skip repositioning for first two cards
+      if (totalCards <= 2) {
+        return;
+      }
+      
       const effectiveLayout = getEffectiveLayout(handCards);
       
       let cardSpacingValue;
@@ -115,13 +124,13 @@ const Hand = forwardRef(({
         Animated.timing(cardAnim.x, {
           toValue: targetX,
           duration: gameConfig.durations.handUpdate,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }).start();
         
         Animated.timing(cardAnim.y, {
           toValue: targetY,
           duration: gameConfig.durations.handUpdate,
-          useNativeDriver: true,
+          useNativeDriver: false,
         }).start();
       });
     });
@@ -144,7 +153,7 @@ const Hand = forwardRef(({
     
     if (totalHands === 1) {
       // Single hand - center on screen
-      // For blackjack: first two cards use 2-card positioning, then normal shifting
+      // For blackjack initial deal: use 2-card positioning for first two cards
       const positioningCards = totalCards <= 2 ? 2 : totalCards;
       const totalWidth = CARD_WIDTH + (positioningCards - 1) * cardSpacingValue;
       const leftOffset = cardIndex * cardSpacingValue;
@@ -155,7 +164,7 @@ const Hand = forwardRef(({
       };
     } else {
       // Split hands - position side by side
-      // For blackjack: first two cards use 2-card positioning, then normal shifting
+      // For blackjack initial deal: use 2-card positioning for first two cards
       const positioningCards = totalCards <= 2 ? 2 : totalCards;
       const handWidth = CARD_WIDTH + (positioningCards - 1) * cardSpacingValue;
       const handGap = 40; // Gap between hands
@@ -172,16 +181,30 @@ const Hand = forwardRef(({
   };
   
   // Deal card function - with animation
-  const dealCard = (cardData, handIndex = 0) => {
-    const currentCardId = nextCardId;
-    setNextCardId(prev => prev + 1);
+  const dealCard = (cardData, handIndex = 0, specificCardIndex = null) => {
+    // Use existing ID if available, otherwise generate new one
+    const currentCardId = cardData.id || nextCardId;
+    if (!cardData.id) {
+      setNextCardId(prev => prev + 1);
+    }
     
     const startPos = { x: deckCoordinates.x - position.x - 9, y: deckCoordinates.y - position.y + 9 };
-    // Calculate position based on current hand size plus cards currently animating to this hand
-    const currentHandSize = internalHands[handIndex]?.length || 0;
-    const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
-    const effectiveHandSize = currentHandSize + animatingToThisHand;
-    const targetPosition = getCardPosition(effectiveHandSize, effectiveHandSize + 1, handIndex, internalHands.length);
+    
+    // Use specific card index if provided, otherwise calculate dynamically
+    let cardIndex, totalCards;
+    if (specificCardIndex !== null) {
+      cardIndex = specificCardIndex;
+      // For initial deal, we know we're dealing exactly 2 cards total
+      totalCards = 2;
+    } else {
+      // Calculate position based on current hand size plus cards currently animating to this hand
+      const currentHandSize = internalHands[handIndex]?.length || 0;
+      const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
+      cardIndex = currentHandSize + animatingToThisHand;
+      totalCards = cardIndex + 1;
+    }
+    
+    const targetPosition = getCardPosition(cardIndex, totalCards, handIndex, internalHands.length);
     
     // Create animating card
     const animatingCard = {
@@ -204,13 +227,13 @@ const Hand = forwardRef(({
         toValue: targetPosition.x,
         duration: gameConfig.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
       Animated.timing(animatingCard.animateY, {
         toValue: targetPosition.y,
         duration: gameConfig.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ]).start(() => {
       // Animation complete - add to hand and remove from animating
@@ -229,6 +252,9 @@ const Hand = forwardRef(({
       });
       
       setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
+      
+      // Decrement pending animations counter
+      setPendingAnimations(prev => prev - 1);
     });
     
     // Flip animation - skip for hole cards
@@ -244,7 +270,7 @@ const Hand = forwardRef(({
           toValue: 180,
           duration: gameConfig.durations.cardFlip,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
+          useNativeDriver: false,
         }).start();
       }, flipStartTime);
       
@@ -257,16 +283,6 @@ const Hand = forwardRef(({
     }
   };
   
-  // Handle new card data - deal immediately (timing controlled by parent)
-  useEffect(() => {
-    if (cardData) {
-      if (cardData.revealHoleCard) {
-        revealHoleCard(cardData, activeHandIndex);
-      } else {
-        dealCard(cardData, activeHandIndex);
-      }
-    }
-  }, [cardData]);
   
   // Detect when cards are being dealt and reposition immediately
   useEffect(() => {
@@ -280,9 +296,87 @@ const Hand = forwardRef(({
   const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
   const displayValues = handValues.length > 0 ? handValues : [0];
   
-  // Sync internal hands with prop changes
+  // Diff incoming hands with current hands and animate differences
   useEffect(() => {
-    setInternalHands(hands);
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      // Initial render - just set the hands with IDs
+      let currentId = nextCardId;
+      const handsWithIds = hands.map(hand => 
+        hand.map(card => {
+          if (!card.id) {
+            const newId = currentId;
+            currentId++;
+            return { ...card, id: newId };
+          }
+          return card;
+        })
+      );
+      if (currentId !== nextCardId) {
+        setNextCardId(currentId);
+      }
+      setInternalHands(handsWithIds);
+      return;
+    }
+
+    // Find differences between current and new hands
+    const newCardsToAnimate = [];
+    
+    hands.forEach((newHand, handIndex) => {
+      const currentHand = internalHands[handIndex] || [];
+      
+      // If new hand has more cards than current, animate the difference
+      if (newHand.length > currentHand.length) {
+        for (let i = currentHand.length; i < newHand.length; i++) {
+          // Ensure each card has a unique ID
+          const cardData = newHand[i];
+          const cardWithId = {
+            ...cardData,
+            id: cardData.id || `${handIndex}-${i}-${Date.now()}-${Math.random()}`
+          };
+          
+          // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
+          const useInitialTiming = (currentHand.length + (i - currentHand.length)) <= 2;
+          const delayBuffer = (isDealer && !useInitialTiming) ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal;
+          
+          newCardsToAnimate.push({
+            cardData: cardWithId,
+            handIndex: handIndex,
+            cardIndex: i,
+            delay: (i - currentHand.length) * delayBuffer
+          });
+        }
+      }
+    });
+
+    if (newCardsToAnimate.length > 0) {
+      shouldNotifyParent.current = true;
+      setPendingAnimations(newCardsToAnimate.length);
+      
+      // Animate each new card in sequence
+      newCardsToAnimate.forEach(({ cardData, handIndex, cardIndex, delay }) => {
+        setTimeout(() => {
+          dealCard(cardData, handIndex, cardIndex);
+        }, delay);
+      });
+    } else {
+      // No new cards to animate, just update hands with IDs
+      let currentId = nextCardId;
+      const handsWithIds = hands.map(hand => 
+        hand.map(card => {
+          if (!card.id) {
+            const newId = currentId;
+            currentId++;
+            return { ...card, id: newId };
+          }
+          return card;
+        })
+      );
+      if (currentId !== nextCardId) {
+        setNextCardId(currentId);
+      }
+      setInternalHands(handsWithIds);
+    }
   }, [hands]);
   
   const { width: screenWidth } = Dimensions.get('window');
@@ -380,11 +474,11 @@ const Hand = forwardRef(({
                     const effectiveLayout = getEffectiveLayout(handCards);
                     let cardSpacingValue;
                     if (effectiveLayout === 'spread') {
-                      cardSpacingValue = cardWidth + (cardWidth * 0.2);
+                      cardSpacingValue = gameConfig.cardWidth + (gameConfig.cardWidth * 0.2);
                     } else {
-                      cardSpacingValue = cardWidth * cardSpacing;
+                      cardSpacingValue = gameConfig.cardWidth * gameConfig.cardSpacing;
                     }
-                    return cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
+                    return gameConfig.cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
                   })(),
                   height: 126 + 20, // card height + padding
                   zIndex: 40
