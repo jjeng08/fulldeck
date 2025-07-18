@@ -119,6 +119,7 @@ setGameMessage("Insufficient balance for this bet!");
 - **STOP and WAIT for user instruction after completing each requested task**
 - **Planning Mode**: If user starts message with "Question:", do NOT execute any code - only provide analysis and recommendations
 - **CRITICAL: IF USER ASKS FOR SOMETHING THAT WON'T WORK DUE TO TECHNICAL LIMITATIONS, IMMEDIATELY TELL THEM WHY IT'S IMPOSSIBLE BEFORE ATTEMPTING ANYTHING**
+- **ALWAYS CHECK TEST LOGS FIRST**: Before diagnosing issues, ALWAYS read test-session.log to see actual error messages and data flow
 
 ## CRITICAL FUCKING RULES TO PREVENT DISASTERS
 - **PLACEHOLDERS ARE EVIL**: Any hardcoded values, colors, or symbols are placeholders that must be removed

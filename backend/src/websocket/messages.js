@@ -192,7 +192,10 @@ const messages = {
   'leaveTable': onLeaveTable,
   
   // User actions
-  'logout': onLogout
+  'logout': onLogout,
+  
+  // Testing
+  'testLog': onTestLog
 }
 
 async function onLogin(ws, data) {
@@ -573,7 +576,7 @@ function onMessage(ws, message, connectionUserId) {
     logger.logWebSocketEvent('message_parsed', null, { messageType: type, hasData: !!data });
     
     // Messages that don't require authentication
-    const unauthenticatedMessages = ['login', 'register', 'refreshToken']
+    const unauthenticatedMessages = ['login', 'register', 'refreshToken', 'testLog']
     // Check for handler in main messages first
     if (messages[type]) {
       logger.logWebSocketEvent('handler_called', null, { messageType: type, handlerName: messages[type].name });
@@ -626,6 +629,17 @@ async function onLogout(ws, data) {
       });
     }
   });
+}
+
+function onTestLog(ws, data) {
+  const testLogger = require('../shared/testLogger');
+  
+  try {
+    const { source, event, logData } = data;
+    testLogger.testLog(source, event, logData);
+  } catch (error) {
+    logger.logError(error, { action: 'test_log' });
+  }
 }
 
 module.exports = {

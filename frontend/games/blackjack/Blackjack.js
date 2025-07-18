@@ -11,6 +11,7 @@ import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
 import WebSocketService from 'systems/websocket';
+import testLogger from 'shared/testLogger';
 
 export default function Blackjack({ route }) {
   const navigation = useNavigation();
@@ -115,6 +116,11 @@ export default function Blackjack({ route }) {
   useEffect(() => {
     setDeckCards(buildDeck(10));
   }, []);
+  
+  // Initialize test logger with sendMessage function
+  useEffect(() => {
+    testLogger.setSendMessage(sendMessage);
+  }, [sendMessage]);
   
   // Shuffle deck function
   const shuffleDeck = (times = 1) => {
@@ -329,8 +335,8 @@ export default function Blackjack({ route }) {
     const playerValue = getActivePlayerValue();
     const playerCards = getActivePlayerCards();
     
-    // Debug logging
-    console.log('Game result data:', { result, payout, playerValue, dealerValue, playerCards, dealerCards });
+    // Test logging
+    testLogger.testLog('GAME_RESULT_MESSAGE', { result, payout, playerValue, dealerValue, playerCards, dealerCards });
     
     if (result === 'lose') {
       // Player busted
@@ -466,6 +472,9 @@ export default function Blackjack({ route }) {
   const onPlaceBet = (addLoadingCallback) => {
     const currentBet = getActiveCurrentBet();
     if (currentBet > 0) {
+      // Test logging
+      testLogger.testLog('BET_PLACED', { betAmount: currentBet, currentBets: gameState.currentBets, gameStatus: gameState.gameStatus });
+      
       // Immediately switch to dealing state to hide betting controls
       setGameState(prev => ({
         ...prev,
@@ -611,6 +620,9 @@ export default function Blackjack({ route }) {
 
     const onActionResult = (data) => {
       if (data.success) {
+        // Test logging
+        testLogger.testLog('ACTION_RESULT', { actionType: data.actionType, success: data.success, gameStatus: data.gameStatus, playerCards: data.playerCards, playerValue: data.playerValue, dealerCards: data.dealerCards, dealerValue: data.dealerValue, result: data.result, payout: data.payout, immediateResult: data.immediateResult, cardsToShow: data.cardsToShow });
+        
         // Handle ALL player actions through this single handler
         const actionType = data.actionType;
         
@@ -648,6 +660,15 @@ export default function Blackjack({ route }) {
                 dealerValue: data.dealerValue
               }));
               setFinalAnimationsComplete(true);
+              
+              // Test logging
+              testLogger.testLog('GAME_RESULT', {
+                result: data.result,
+                payout: data.payout,
+                playerValues: [data.playerValue],
+                dealerValue: data.dealerValue,
+                activeHandIndex: 0
+              });
             }, data.cardsToShow.length * gameConfig.buffers.initialDeal + gameConfig.durations.handUpdate);
           } else {
             // Normal game flow

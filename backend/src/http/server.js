@@ -40,6 +40,7 @@ class HttpServer {
       })
     })
 
+
     // Protected routes - require authentication
     this.app.use('/api/*', this.authenticateToken.bind(this))
 

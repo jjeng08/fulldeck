@@ -183,6 +183,10 @@ export function AppProvider({ children }) {
   const onConnected = (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
     setConnected(true);
+    
+    // Initialize test logger now that WebSocket is connected
+    const testLogger = require('../shared/testLogger').default;
+    testLogger.onWebSocketConnected();
   };
 
   // ONLY place playerBalance is updated

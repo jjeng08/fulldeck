@@ -1,6 +1,7 @@
 const BettingUtils = require('../../shared/utils/BettingUtils');
 const { updatePlayerBalance } = require('../../shared/utils');
 const logger = require('../../shared/utils/logger');
+const testLogger = require('../../shared/testLogger');
 const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
 const { PrismaClient } = require('@prisma/client');
@@ -340,6 +341,17 @@ class Blackjack {
         playerValue: this.calculateHandValue(playerCards),
         dealerValue: this.calculateHandValue(dealerCards)
       };
+      
+      // Test logging
+      testLogger.logBackend('IMMEDIATE_BLACKJACK_RESULT', {
+        result,
+        payout,
+        betAmount,
+        playerValue: this.calculateHandValue(playerCards),
+        dealerValue: this.calculateHandValue(dealerCards),
+        playerCards,
+        dealerCards
+      });
       
       return {
         success: true,
@@ -1077,6 +1089,9 @@ async function onPlayerAction(ws, data, userId) {
               { card: gameResult.gameState.dealerCards[1], target: 'dealer', action: 'deal' }
             ]
           };
+          
+          // Test logging
+          testLogger.logBackend('BET_IMMEDIATE_RESULT', result);
         } else {
           result = {
             success: true,
