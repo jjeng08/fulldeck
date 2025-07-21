@@ -984,6 +984,13 @@ async function onPlayerAction(ws, data, userId) {
         result: result.result,
         payout: result.profit || result.payout, // Send profit for frontend display
         betAmount: result.betAmount || data.betAmount,
+        // Handle split-specific data
+        ...(result.playerHands ? { 
+          playerHands: result.playerHands,
+          playerValues: result.playerValues,
+          currentBets: result.currentBets,
+          totalHands: result.totalHands
+        } : {}),
         // Handle double down completion flag
         ...(result.doubleDownComplete ? { doubleDownComplete: true } : {})
       }
