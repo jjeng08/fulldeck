@@ -36,7 +36,9 @@ export default function Blackjack({ route }) {
     },
     buffers: {
       initialDeal: 500,
-      dealerTurn: 1000
+      dealerTurn: 1000,
+      splitSpread: 400,
+      splitDeal: 500
     },
     
     // Layout
@@ -65,7 +67,7 @@ export default function Blackjack({ route }) {
   const [showDealerTotal, setShowDealerTotal] = useState(false);
   
   // Track animated totals that update as each card animation completes
-  const [animatedPlayerTotal, setAnimatedPlayerTotal] = useState(0);
+  const [animatedPlayerTotals, setAnimatedPlayerTotals] = useState([0]); // Array for split hands
   const [animatedDealerTotal, setAnimatedDealerTotal] = useState(0);
   
   // Track when final animations are complete for finished games
@@ -73,6 +75,14 @@ export default function Blackjack({ route }) {
   
   // Track when deck shuffle animation is running
   const [isDeckShuffling, setIsDeckShuffling] = useState(false);
+  
+  // Split animation state management
+  const [isSplitting, setIsSplitting] = useState(false);
+  const [splitSequence, setSplitSequence] = useState('idle'); // 'idle', 'handoff', 'spread', 'deal_first', 'deal_second'
+  const [handPositions, setHandPositions] = useState([]);
+  
+  // Track when dealer animations are complete for insurance display
+  const [dealerAnimationsComplete, setDealerAnimationsComplete] = useState(false);
   
   // Function to temporarily disable a button
   const temporarilyDisableButton = (buttonType) => {
@@ -117,7 +127,11 @@ export default function Blackjack({ route }) {
       setAnimatedDealerTotal(prev => prev + cardValue);
       setShowDealerTotal(true);
     } else {
-      setAnimatedPlayerTotal(prev => prev + cardValue);
+      setAnimatedPlayerTotals(prev => 
+        prev.map((total, index) => 
+          index === handIndex ? total + cardValue : total
+        )
+      );
       setShowPlayerTotal(true);
     }
   };
@@ -166,6 +180,76 @@ export default function Blackjack({ route }) {
     }
   };
   
+  // Split animation flow function
+  const performSplitHandoff = (splitHands) => {
+    // Step 1: Handoff - silently update hands with no animations
+    // Second card of first hand becomes first card of second hand
+    setSplitSequence('handoff');
+    
+    // Update hands immediately with first card only (no animations)
+    setGameState(prev => ({
+      ...prev,
+      playerHands: [
+        [splitHands[0][0]], // First hand gets only first card
+        [splitHands[1][0]]  // Second hand gets only first card (was second card)
+      ],
+      playerValues: [
+        parseInt(calculateHandValue([splitHands[0][0]])),
+        parseInt(calculateHandValue([splitHands[1][0]]))
+      ]
+    }));
+    
+    // Step 2: Spread hands apart horizontally
+    setTimeout(() => {
+      setSplitSequence('spread');
+      
+      // Step 3: Deal second card to first hand after spread completes
+      setTimeout(() => {
+        setSplitSequence('deal_first');
+        
+        // Update first hand with second card (with animation)
+        setGameState(prev => ({
+          ...prev,
+          playerHands: [
+            splitHands[0], // Complete first hand
+            prev.playerHands[1] // Keep second hand as is
+          ],
+          playerValues: [
+            parseInt(calculateHandValue(splitHands[0])),
+            prev.playerValues[1]
+          ]
+        }));
+        
+        // Step 4: Deal second card to second hand after buffer
+        setTimeout(() => {
+          setSplitSequence('deal_second');
+          
+          // Update second hand with second card (with animation)
+          setGameState(prev => ({
+            ...prev,
+            playerHands: [
+              prev.playerHands[0], // Keep first hand as is
+              splitHands[1] // Complete second hand
+            ],
+            playerValues: [
+              prev.playerValues[0],
+              parseInt(calculateHandValue(splitHands[1]))
+            ]
+          }));
+          
+          // Step 5: Complete split sequence
+          setTimeout(() => {
+            setSplitSequence('idle');
+            setIsSplitting(false);
+          }, gameConfig.durations.cardDeal + 100);
+          
+        }, gameConfig.buffers.splitDeal);
+        
+      }, gameConfig.durations.cardDeal + 100);
+      
+    }, gameConfig.buffers.splitSpread);
+  };
+  
   // Handle hand updates from Hand component
   const onHandUpdate = (newHands) => {
     setGameState(prev => ({
@@ -183,17 +267,28 @@ export default function Blackjack({ route }) {
     if (dealingSequence === 'player' && pendingDealerCards.length > 0) {
       setDealingSequence('dealer');
       
-      // Wait for the configured delay before dealing to dealer
-      setTimeout(() => {
-        setDealerHands([pendingDealerCards]);
-        setPendingDealerCards([]);
-      }, gameConfig.buffers.initialDeal); // 500ms delay from config
+      // Immediately start dealer animation - player cards are already finished
+      setDealerHands([pendingDealerCards]);
+      setPendingDealerCards([]);
     }
     
     // Check if game is finished and show results after player animations complete
     if (gameState.gameStatus === 'finished' && !finalAnimationsComplete) {
       setFinalAnimationsComplete(true);
     }
+  };
+  
+  // Handle individual hand updates for split hands
+  const onSingleHandUpdate = (handIndex, newHand) => {
+    setGameState(prev => ({
+      ...prev,
+      playerHands: prev.playerHands.map((hand, index) => 
+        index === handIndex ? newHand : hand
+      ),
+      playerValues: prev.playerHands.map((hand, index) => 
+        index === handIndex ? parseInt(calculateHandValue(newHand)) : prev.playerValues[index]
+      )
+    }));
   };
   
   // Handle dealer hand updates
@@ -208,6 +303,9 @@ export default function Blackjack({ route }) {
     // Complete the dealing sequence when dealer animation finishes
     if (dealingSequence === 'dealer') {
       setDealingSequence('idle');
+      
+      // Mark dealer animations as complete for insurance display
+      setDealerAnimationsComplete(true);
       
       // Update game state with dealer cards now that animation is complete
       setGameState(prev => ({
@@ -226,11 +324,33 @@ export default function Blackjack({ route }) {
   const [pendingDealerCards, setPendingDealerCards] = useState([]);
   const [dealingSequence, setDealingSequence] = useState('idle'); // 'idle', 'player', 'dealer'
   
+  // Split hand management
+  const [pendingSplitCards, setPendingSplitCards] = useState([[], []]); // [hand1, hand2] for split
+  
   const playerAreaY = screenHeight - gameConfig.playerAreaOffset;
   const dealerAreaY = gameConfig.dealerAreaOffset;
   
+  // Calculate split hand positions
+  const calculateSplitHandPositions = () => {
+    const handSeparation = screenWidth * 0.25; // Distance between split hands
+    const leftHandX = (screenWidth / 2) - handSeparation - (gameConfig.handWidth / 2);
+    const rightHandX = (screenWidth / 2) + handSeparation - (gameConfig.handWidth / 2);
+    
+    return [
+      { x: leftHandX, y: playerAreaY }, // Left hand position
+      { x: rightHandX, y: playerAreaY } // Right hand position
+    ];
+  };
+  
   // Hand positions for proper card placement (Hand component uses these internally)
-  const playerPosition = { x: (screenWidth / 2) - (gameConfig.handWidth / 2), y: playerAreaY };
+  const singlePlayerPosition = { x: (screenWidth / 2) - (gameConfig.handWidth / 2), y: playerAreaY };
+  const splitPositions = calculateSplitHandPositions();
+  
+  // Use split positions when totalHands > 1, otherwise use single position
+  const getPlayerPositions = () => {
+    return gameState.totalHands > 1 ? splitPositions : [singlePlayerPosition];
+  };
+  
   const dealerPosition = { x: (screenWidth / 2) - (gameConfig.handWidth / 2), y: dealerAreaY };
   
   // Get navigation params
@@ -372,8 +492,8 @@ export default function Blackjack({ route }) {
   // Get current button states
   const buttonStates = getButtonStates();
   
-  // Check if insurance is available
-  const canBuyInsurance = gameState.gameStatus === 'insurance_offered';
+  // Check if insurance is available - only after dealer animations complete
+  const canBuyInsurance = gameState.gameStatus === 'insurance_offered' && dealerAnimationsComplete;
   const insuranceAmount = Math.floor(getActiveCurrentBet() / 2);
 
   
@@ -553,8 +673,27 @@ export default function Blackjack({ route }) {
         // Clear loading state for this action
         clearLoadingAction(actionType);
         
-        // Handle sequenced dealing for initial cards (bet action) and double down
-        if ((actionType === 'bet' || actionType === 'doubleDown') && data.playerCards && data.dealerCards) {
+        // Handle split action with special animation sequence
+        if (actionType === 'split' && data.playerHands) {
+          // Store the split hands for animation coordination
+          setPendingSplitCards(data.playerHands);
+          
+          // Update state to show we now have 2 hands
+          setGameState(prev => ({
+            ...prev,
+            totalHands: 2,
+            playerHands: [prev.playerHands[0], []], // Keep original first hand, add empty second
+            playerValues: [prev.playerValues[0], 0],
+            currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]], // Duplicate bet
+            gameStatus: data.gameStatus
+          }));
+          
+          // Start the split handoff sequence
+          setTimeout(() => {
+            performSplitHandoff(data.playerHands);
+          }, 100);
+          
+        } else if ((actionType === 'bet' || actionType === 'doubleDown') && data.playerCards && data.dealerCards) {
           // Store dealer cards for later, start player animation first
           setPendingDealerCards(data.dealerCards);
           setDealingSequence('player');
@@ -578,7 +717,8 @@ export default function Blackjack({ route }) {
           // Don't update dealer hands yet - wait for player animation to complete
         } else {
           // For all other actions, update normally (no sequencing needed)
-          const newPlayerHands = data.playerCards ? [data.playerCards] : gameState.playerHands;
+          const newPlayerHands = data.playerCards ? [data.playerCards] : 
+                                data.playerHands ? data.playerHands : gameState.playerHands;
           const newDealerCards = data.dealerCards || gameState.dealerCards;
           
           // Calculate card values in frontend instead of using backend values
@@ -588,12 +728,14 @@ export default function Blackjack({ route }) {
           // Update game state immediately - Hand components will handle animations
           setGameState(prev => ({
             ...prev,
-            currentBets: data.betAmount ? [data.betAmount] : prev.currentBets,
+            currentBets: data.betAmount ? [data.betAmount] : 
+                        data.currentBets ? data.currentBets : prev.currentBets,
             gameStatus: data.gameStatus,
             playerHands: newPlayerHands,
             dealerCards: newDealerCards,
             playerValues: newPlayerValues,
             dealerValue: newDealerValue,
+            totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
             result: data.result || prev.result,
             payout: data.payout || prev.payout
           }));
@@ -615,8 +757,14 @@ export default function Blackjack({ route }) {
         if (actionType === 'bet') {
           setShowPlayerTotal(false);
           setShowDealerTotal(false);
-          setAnimatedPlayerTotal(0);
+          setAnimatedPlayerTotals([0]);
           setAnimatedDealerTotal(0);
+          setDealerAnimationsComplete(false);
+        }
+        
+        // Reset totals for split
+        if (actionType === 'split') {
+          setAnimatedPlayerTotals([0, 0]);
         }
         
         // Clear temporary disables if game state changes to non-playing
@@ -731,7 +879,16 @@ export default function Blackjack({ route }) {
               label="Split"
               onPress={() => {
                 temporarilyDisableButton('split');
-                // TODO: Implement split logic
+                // Start split animation sequence
+                setIsSplitting(true);
+                setSplitSequence('handoff');
+                
+                // Send split action to backend
+                sendMessage('playerAction', {
+                  type: 'split',
+                  playerCards: getActivePlayerCards(),
+                  currentBet: getActiveCurrentBet()
+                });
               }}
               disabled={!buttonStates.canSplit}
               testID="splitButton"
@@ -781,7 +938,11 @@ export default function Blackjack({ route }) {
       <View style={s.topBanner}>
         <Text style={s.title}>Blackjack</Text>
         <Text style={s.balanceHeader}>
-          {t.balance.replace('{balance}', formatCurrency(playerBalance - (getActiveCurrentBet() || 0)))}
+          {t.balance.replace('{balance}', formatCurrency(
+            gameState.gameStatus === 'betting' 
+              ? playerBalance - (getActiveCurrentBet() || 0)
+              : playerBalance
+          ))}
         </Text>
         <Button 
           label="Lobby"
@@ -814,7 +975,7 @@ export default function Blackjack({ route }) {
              'Make your move'}
           </Text>
           
-          {/* Insurance Question */}
+          {/* Insurance Question - only after dealer animations complete */}
           {canBuyInsurance && (
             <Text style={s.insuranceQuestion}>
               Buy insurance against dealer blackjack?
@@ -822,10 +983,21 @@ export default function Blackjack({ route }) {
           )}
           
           {/* Current Bet Display */}
-          {(getActiveCurrentBet() > 0 || gameState.gameStatus === 'dealing') && (
+          {gameState.totalHands === 1 && (getActiveCurrentBet() > 0 || gameState.gameStatus === 'dealing') && (
             <Text style={s.currentBet}>
               Current Bet: {formatCurrency(getActiveCurrentBet())}
             </Text>
+          )}
+          
+          {/* Split Hands Bet Display */}
+          {gameState.totalHands > 1 && gameState.currentBets.some(bet => bet > 0) && (
+            <View style={s.splitBetsContainer}>
+              <Text style={s.splitBetsTitle}>Hand Bets:</Text>
+              <View style={s.splitBetsRow}>
+                <Text style={s.splitBetText}>Hand 1: {formatCurrency(gameState.currentBets[0] || 0)}</Text>
+                <Text style={s.splitBetText}>Hand 2: {formatCurrency(gameState.currentBets[1] || 0)}</Text>
+              </View>
+            </View>
           )}
         </View>
         
@@ -858,33 +1030,71 @@ export default function Blackjack({ route }) {
           </View>
         )}
         
-        {/* Player Hand Total - Above player cards */}
-        {showPlayerTotal && getActivePlayerCards().length > 0 && (
+        {/* Player Hand Totals - Above player cards */}
+        {showPlayerTotal && gameState.totalHands === 1 && getActivePlayerCards().length > 0 && (
           <View style={[s.handTotalContainer, { 
             position: 'absolute',
-            left: playerPosition.x + (gameConfig.handWidth / 2) - 30,
-            top: playerPosition.y - 50,
+            left: singlePlayerPosition.x + (gameConfig.handWidth / 2) - 30,
+            top: singlePlayerPosition.y - 50,
             zIndex: 1001
           }]}>
             <Text style={s.handTotalText}>
-              {animatedPlayerTotal}
+              {animatedPlayerTotals[0]}
             </Text>
           </View>
         )}
         
+        {/* Split Hand Totals */}
+        {showPlayerTotal && gameState.totalHands > 1 && 
+          getPlayerPositions().map((position, handIndex) => (
+            gameState.playerHands[handIndex] && gameState.playerHands[handIndex].length > 0 && (
+              <View key={`total-${handIndex}`} style={[s.handTotalContainer, { 
+                position: 'absolute',
+                left: position.x + (gameConfig.handWidth / 2) - 30,
+                top: position.y - 50,
+                zIndex: 1001
+              }]}>
+                <Text style={s.handTotalText}>
+                  {animatedPlayerTotals[handIndex] || 0}
+                </Text>
+              </View>
+            )
+          ))
+        }
+        
         {/* Player Hand(s) */}
-        <Hand
-          hands={gameState.playerHands}
-          activeHandIndex={gameState.activeHandIndex}
-          handLabels={['Player Hand']}
-          handValues={gameState.playerValues}
-          position={playerPosition}
-          deckCoordinates={deckCoordinates}
-          gameConfig={gameConfig}
-          onHandUpdate={onHandUpdate}
-          onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
-          isDealer={false}
-        />
+        {gameState.totalHands === 1 ? (
+          <Hand
+            hands={gameState.playerHands}
+            activeHandIndex={gameState.activeHandIndex}
+            handLabels={['Player Hand']}
+            handValues={gameState.playerValues}
+            position={singlePlayerPosition}
+            deckCoordinates={deckCoordinates}
+            gameConfig={gameConfig}
+            onHandUpdate={onHandUpdate}
+            onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
+            isDealer={false}
+          />
+        ) : (
+          getPlayerPositions().map((position, handIndex) => (
+            <Hand
+              key={`hand-${handIndex}`}
+              hands={[gameState.playerHands[handIndex] || []]}
+              activeHandIndex={0}
+              handLabels={[`Hand ${handIndex + 1}`]}
+              handValues={[gameState.playerValues[handIndex] || 0]}
+              position={position}
+              deckCoordinates={deckCoordinates}
+              gameConfig={gameConfig}
+              onHandUpdate={(newHands) => onSingleHandUpdate(handIndex, newHands[0])}
+              onAnimationCallback={(suit, value, _, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
+              isDealer={false}
+              disableAnimation={splitSequence === 'handoff'}
+              style={{ zIndex: handIndex === 1 ? 1002 : 1001 }}
+            />
+          ))
+        )}
       </View>
 
       {/* BOTTOM SECTION - Dark Green Controls */}
@@ -916,8 +1126,9 @@ export default function Blackjack({ route }) {
                 // Reset hand total visibility and animated totals
                 setShowPlayerTotal(false);
                 setShowDealerTotal(false);
-                setAnimatedPlayerTotal(0);
+                setAnimatedPlayerTotals([0]);
                 setAnimatedDealerTotal(0);
+                setDealerAnimationsComplete(false);
                 
                 // Reset final animations complete flag
                 setFinalAnimationsComplete(false);
@@ -937,7 +1148,7 @@ export default function Blackjack({ route }) {
             </TouchableOpacity>
           </View>
         )}
-        {gameState.gameStatus === 'insurance_offered' && (
+        {gameState.gameStatus === 'insurance_offered' && dealerAnimationsComplete && (
           <View style={s.insuranceControlsContainer}>
             <View style={s.insuranceButtonsRow}>
               <TouchableOpacity

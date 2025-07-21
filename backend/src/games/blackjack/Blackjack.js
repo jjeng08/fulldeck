@@ -139,21 +139,31 @@ class Blackjack {
 
   // Calculate the value of a hand
   calculateHandValue(cards) {
+    if (!cards || cards.length === 0) return 0;
+    
     let value = 0;
     let aces = 0;
 
     for (const card of cards) {
+      // Skip cards with null/undefined values (hole cards)
+      if (!card || card.value === null || card.value === undefined) {
+        continue;
+      }
+      
       if (card.value === 'A') {
         aces++;
         value += 11;
       } else if (['K', 'Q', 'J'].includes(card.value)) {
         value += 10;
       } else {
-        value += parseInt(card.value);
+        const numValue = parseInt(card.value);
+        if (!isNaN(numValue)) {
+          value += numValue;
+        }
       }
     }
 
-    // Adjust for aces
+    // Adjust for aces - convert 11s to 1s when busting
     while (value > 21 && aces > 0) {
       value -= 10;
       aces--;
@@ -312,26 +322,31 @@ class Blackjack {
     
     // Handle immediate blackjack scenarios (only when dealer doesn't show Ace)
     if (playerBlackjack || dealerBlackjack) {
-      let result, payout;
+      let result, payout, profit;
       
       if (playerBlackjack && dealerBlackjack) {
         result = 'push';
         payout = betAmount; // Return bet
+        profit = 0; // No profit or loss
       } else if (playerBlackjack && !dealerBlackjack) {
         result = 'blackjack';
         payout = Math.floor(betAmount * 2.5); // 3:2 payout
+        profit = Math.floor(betAmount * 1.5); // 1.5x bet profit
       } else if (!playerBlackjack && dealerBlackjack) {
         result = 'dealer_blackjack';
         payout = 0;
+        profit = -betAmount; // Loss
       } else {
         result = 'unknown';
         payout = 0;
+        profit = -betAmount; // Loss
       }
       
       // Store the result data for the message handler to process
       this.immediateGameResult = {
         result,
         payout,
+        profit,
         betAmount,
         playerValue: this.calculateHandValue(playerCards),
         dealerValue: this.calculateHandValue(dealerCards)
@@ -359,6 +374,7 @@ class Blackjack {
           gameStatus: 'finished',
           result,
           payout,
+          profit,
           playerValue: this.playerValue,
           dealerValue: this.calculateHandValue(dealerCards)
         },
@@ -441,6 +457,7 @@ class Blackjack {
       dealerCards: workingDealerCards,
       result: result.result,
       payout: result.payout,
+      profit: result.profit,
     };
   }
 
@@ -495,6 +512,7 @@ class Blackjack {
         dealerCards: this.currentDealerCards || dealerCards,
         result: 'lose',
         payout: 0,
+        profit: -(betAmount * 2),
         betAmount: betAmount * 2
       };
     }
@@ -522,6 +540,7 @@ class Blackjack {
       dealerCards: workingDealerCards,
       result: result.result,
       payout: result.payout,
+      profit: result.profit,
       betAmount: betAmount * 2
     };
   }
@@ -660,16 +679,16 @@ class Blackjack {
       // Update player balance for main bet result
       if (mainBetPayout > 0) {
         const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
+        const player = await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
           result: gameResult,
           payout: mainBetPayout,
           originalBet: betAmount
         });
         
         // Log activity
-        await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
+        await DBUtils.logPlayerActivity(userId, player.username, transactionType, {
           credit: mainBetPayout,
-          balance: finalPlayer.balance,
+          balance: player.balance,
           winAmount: mainBetPayout
         });
       } else {
@@ -720,34 +739,42 @@ class Blackjack {
     const dealerBlackjack = this.isBlackjack(dealerCards);
 
     let result = 'lose';
-    let payoutMultiplier = 0;
+    let totalPayout = 0;
+    let profit = 0;
 
     if (playerBusted) {
       result = 'lose';
-      payoutMultiplier = 0;
+      totalPayout = 0;
+      profit = -betAmount; // Loss
     } else if (playerBlackjack && !dealerBlackjack) {
       result = 'blackjack';
-      payoutMultiplier = 2.5; // Bet + 1.5x bet
+      totalPayout = Math.floor(betAmount * 2.5); // Bet + 1.5x bet
+      profit = Math.floor(betAmount * 1.5); // 1.5x bet profit
     } else if (dealerBusted) {
       result = 'win';
-      payoutMultiplier = 2; // Bet + bet
+      totalPayout = betAmount * 2; // Bet + bet
+      profit = betAmount; // 1x bet profit
     } else if (playerValue > dealerValue) {
       result = 'win';
-      payoutMultiplier = 2;
+      totalPayout = betAmount * 2;
+      profit = betAmount; // 1x bet profit
     } else if (playerValue === dealerValue) {
       result = 'push';
-      payoutMultiplier = 1; // Return bet only
+      totalPayout = betAmount; // Return bet only
+      profit = 0; // No profit or loss
     } else {
       result = 'lose';
-      payoutMultiplier = 0;
+      totalPayout = 0;
+      profit = -betAmount; // Loss
     }
 
     return {
       result,
       playerValue,
       dealerValue,
-      payout: Math.floor(betAmount * payoutMultiplier),
-      payoutMultiplier
+      payout: totalPayout, // Total amount returned (for balance updates)
+      profit: profit, // Profit/loss amount (for frontend display)
+      payoutMultiplier: totalPayout / betAmount
     };
   }
 
@@ -867,6 +894,7 @@ async function onPlayerAction(ws, data, userId) {
             dealerValue: gameResult.gameState.dealerValue,
             result: gameResult.gameState.result,
             payout: gameResult.gameState.payout,
+            profit: gameResult.gameState.profit,
             betAmount: data.betAmount,
             newBalance: finalPlayer.balance
           };
@@ -947,7 +975,7 @@ async function onPlayerAction(ws, data, userId) {
         playerCards: result.playerCards || result.cards,
         dealerCards: result.dealerCards,
         result: result.result,
-        payout: result.payout,
+        payout: result.profit || result.payout, // Send profit for frontend display
         betAmount: result.betAmount || data.betAmount,
         // Handle double down completion flag
         ...(result.doubleDownComplete ? { doubleDownComplete: true } : {})

@@ -116,7 +116,8 @@ const Hand = forwardRef(({
       const effectiveLayout = getEffectiveLayout(handCards);
       
       // Skip repositioning for first two cards in overlap layout only
-      if (effectiveLayout === 'overlap' && totalCards <= 2) {
+      // BUT only if we currently have exactly 2 cards or fewer
+      if (effectiveLayout === 'overlap' && handCards.length <= 2 && totalCards <= 2) {
         return;
       }
       
