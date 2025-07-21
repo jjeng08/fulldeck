@@ -133,8 +133,14 @@ class Blackjack {
     // Remove the selected card from available cards
     const selectedCard = this.availableCards.splice(randomIndex, 1)[0];
     
+    // Add unique ID and position to the card
+    const cardWithId = {
+      ...selectedCard,
+      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      position: { x: 0, y: 0 }
+    };
     
-    return selectedCard;
+    return cardWithId;
   }
 
   // Calculate the value of a hand
@@ -644,14 +650,17 @@ class Blackjack {
       totalBetAmount: betAmount * 2
     });
     
-    // Create two hands from the split - only split the pair, don't deal new cards yet
-    // The frontend animation system will handle dealing the second cards
-    const hand1 = [playerCards[0]]; // Just the first card
-    const hand2 = [playerCards[1]]; // Just the second card
+    // Create two hands from the split - only first cards for now
+    const hand1 = [playerCards[0]]; // Just first card
+    const hand2 = [playerCards[1]]; // Just second card
     
-    // Update multi-hand state
-    this.playerHands = [hand1, hand2];
-    this.playerValues = [this.calculateHandValue(hand1), this.calculateHandValue(hand2)];
+    // Store the complete hands for later (with second cards)
+    const completeHand1 = [playerCards[0], this.dealCard()];
+    const completeHand2 = [playerCards[1], this.dealCard()];
+    
+    // Update multi-hand state with complete hands (for internal tracking)
+    this.playerHands = [completeHand1, completeHand2];
+    this.playerValues = [this.calculateHandValue(completeHand1), this.calculateHandValue(completeHand2)];
     this.currentBets = [betAmount, betAmount];
     this.totalHands = 2;
     this.activeHandIndex = 0; // Start with first hand
@@ -659,11 +668,25 @@ class Blackjack {
     return {
       success: true,
       gameStatus: 'playing',
-      playerHands: [hand1, hand2],
-      playerValues: this.playerValues,
+      playerHands: [hand1, hand2], // Send only first cards to trigger animation
+      playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
       currentBets: this.currentBets,
       totalHands: 2,
       dealerCards: this.dealerCards // Keep existing dealer cards
+    };
+  }
+
+  // Deal second cards to split hands
+  async splitDeal(userId) {
+    // Return the complete hands that were stored during split
+    return {
+      success: true,
+      gameStatus: 'playing',
+      playerHands: this.playerHands, // Complete hands with second cards
+      playerValues: this.playerValues,
+      currentBets: this.currentBets,
+      totalHands: 2,
+      dealerCards: this.dealerCards
     };
   }
 
@@ -923,6 +946,7 @@ async function onPlayerAction(ws, data, userId) {
       case 'stand':
       case 'doubleDown':
       case 'split':
+      case 'splitDeal':
       case 'buyInsurance':
       case 'surrender':
       case 'newGame':
@@ -948,6 +972,9 @@ async function onPlayerAction(ws, data, userId) {
             break;
           case 'split':
             result = await blackjack.split(userId, data.playerCards, data.currentBet);
+            break;
+          case 'splitDeal':
+            result = await blackjack.splitDeal(userId);
             break;
           case 'buyInsurance':
             result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);

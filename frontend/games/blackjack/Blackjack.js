@@ -620,24 +620,56 @@ export default function Blackjack({ route }) {
         // Clear loading state for this action
         clearLoadingAction(actionType);
         
-        // Handle split action with special animation sequence
+        // Handle split action - backend sends only first cards to trigger separation
         if (actionType === 'split' && data.playerHands) {
-          // Store the split hands for animation coordination
-          setPendingSplitCards(data.playerHands);
-          
-          // Update state to show we now have 2 hands
+          // Update state to show we now have 2 hands with single cards
           setGameState(prev => ({
             ...prev,
             totalHands: 2,
-            playerHands: data.playerHands, // Use the split hands from backend
+            playerHands: data.playerHands, // First cards only
             playerValues: data.playerHands.map(hand => parseInt(calculateHandValue(hand))),
-            currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]], // Duplicate bet
+            currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
             gameStatus: data.gameStatus
           }));
           
-          // Start the split handoff sequence
+          // Start separation animation
+          setSplitSequence('spread');
+          setIsSplitting(true);
+          
+          // After separation animation, request the second cards
           setTimeout(() => {
-            performSplitHandoff(data.playerHands);
+            sendMessage('playerAction', {
+              type: 'splitDeal'
+            });
+          }, gameConfig.buffers.splitSpread);
+          
+        } else if (actionType === 'splitDeal' && data.playerHands) {
+          // Handle the complete hands - deal second card to hand 1 first
+          const completeHands = data.playerHands;
+          
+          setTimeout(() => {
+            // Deal second card to hand 1
+            setGameState(prev => ({
+              ...prev,
+              playerHands: [completeHands[0], prev.playerHands[1]], // Update hand 1
+              playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1]]
+            }));
+            
+            // Then deal second card to hand 2 after delay
+            setTimeout(() => {
+              setGameState(prev => ({
+                ...prev,
+                playerHands: [prev.playerHands[0], completeHands[1]], // Update hand 2
+                playerValues: [prev.playerValues[0], parseInt(calculateHandValue(completeHands[1]))]
+              }));
+              
+              // Complete split sequence
+              setTimeout(() => {
+                setSplitSequence('idle');
+                setIsSplitting(false);
+              }, gameConfig.durations.cardDeal + 100);
+              
+            }, gameConfig.buffers.splitDeal);
           }, 100);
           
         } else if ((actionType === 'bet' || actionType === 'doubleDown') && data.playerCards && data.dealerCards) {
