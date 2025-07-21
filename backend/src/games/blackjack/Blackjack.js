@@ -172,32 +172,6 @@ class Blackjack {
     return value;
   }
 
-  // Calculate visible hand value (for display purposes)
-  calculateVisibleHandValue(cards) {
-    let value = 0;
-    let aces = 0;
-
-    for (const card of cards) {
-      if (card.hidden) continue; // Skip hidden dealer cards
-      
-      if (card.value === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.value)) {
-        value += 10;
-      } else {
-        value += parseInt(card.value);
-      }
-    }
-
-    // Adjust for aces
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
-    }
-
-    return value;
-  }
 
   // Check if initial 2-card hand is blackjack (only for initial deal)
   isBlackjack(cards) {
@@ -217,33 +191,7 @@ class Blackjack {
     return hasAce && hasTen;
   }
 
-  // Deal initial cards to a player
-  dealPlayerCards(userId) {
-    const cards = [this.dealCard(), this.dealCard()];
-    this.playerHands.set(userId, cards);
-    return cards;
-  }
 
-  // Get player cards
-  getPlayerCards(userId) {
-    return this.playerHands.get(userId) || [];
-  }
-
-  // Dealer plays their hand
-  playDealerHand() {
-    // Reveal hidden card
-    this.dealerCards = this.dealerCards.map(card => ({ ...card, hidden: false }));
-    
-    // Dealer hits on 16, stands on 17
-    while (this.calculateHandValue(this.dealerCards) < 17) {
-      this.dealerCards.push(this.dealCard());
-    }
-
-    return {
-      cards: this.dealerCards,
-      value: this.calculateHandValue(this.dealerCards)
-    };
-  }
 
 
 
@@ -284,7 +232,8 @@ class Blackjack {
     const dealerHoleCard = this.dealCard();
     const dealerCards = [dealerFaceUp, dealerHoleCard];
     
-    const playerCards = [this.dealCard(), this.dealCard()];
+    // const playerCards = [this.dealCard(), this.dealCard()];
+    const playerCards = [{ suit: 'spades', value: '8' }, { suit: 'hearts', value: '8' }];
     
     // Store cards in new structure
     this.dealerCards = dealerCards;
@@ -663,6 +612,60 @@ class Blackjack {
     };
   }
 
+  // Split hand - create two hands from pair
+  async split(userId, playerCards, currentBet) {
+    // Validate split conditions
+    if (!playerCards || playerCards.length !== 2) {
+      return { success: false, error: 'Can only split with exactly 2 cards' };
+    }
+    
+    if (playerCards[0].value !== playerCards[1].value) {
+      return { success: false, error: 'Can only split cards of the same value' };
+    }
+    
+    const betAmount = this.currentBet || currentBet;
+    
+    // Validate user has enough balance for second bet
+    const user = await DBUtils.getPlayerById(userId);
+    if (!user || user.balance < betAmount) {
+      return { success: false, error: 'Insufficient balance to split hand' };
+    }
+    
+    // Deduct additional bet amount for second hand
+    const updatedPlayer = await DBUtils.debitPlayerAccount(userId, betAmount, 'split_bet', { 
+      splitAmount: betAmount,
+      originalBet: betAmount
+    });
+    
+    // Log split activity
+    await DBUtils.logPlayerActivity(userId, user.username, 'split_bet', {
+      debit: betAmount,
+      balance: updatedPlayer.balance,
+      totalBetAmount: betAmount * 2
+    });
+    
+    // Create two hands from the split
+    const hand1 = [playerCards[0], this.dealCard()]; // First card + new card
+    const hand2 = [playerCards[1], this.dealCard()]; // Second card + new card
+    
+    // Update multi-hand state
+    this.playerHands = [hand1, hand2];
+    this.playerValues = [this.calculateHandValue(hand1), this.calculateHandValue(hand2)];
+    this.currentBets = [betAmount, betAmount];
+    this.totalHands = 2;
+    this.activeHandIndex = 0; // Start with first hand
+    
+    return {
+      success: true,
+      gameStatus: 'playing',
+      playerHands: [hand1, hand2],
+      playerValues: this.playerValues,
+      currentBets: this.currentBets,
+      totalHands: 2,
+      dealerCards: this.dealerCards // Keep existing dealer cards
+    };
+  }
+
   // Skip insurance
   async skipInsurance(userId, playerCards, dealerCards) {
     // Use stored bet amount from the game instance
@@ -918,6 +921,7 @@ async function onPlayerAction(ws, data, userId) {
       case 'hit':
       case 'stand':
       case 'doubleDown':
+      case 'split':
       case 'buyInsurance':
       case 'surrender':
       case 'newGame':
@@ -940,6 +944,9 @@ async function onPlayerAction(ws, data, userId) {
           case 'doubleDown':
             logger.logInfo('Double down call params', { userId, playerCards: data.playerCards, dealerCards: data.dealerCards, handId: data.handId });
             result = await blackjack.doubleDown(userId, data.playerCards, data.dealerCards, data.handId);
+            break;
+          case 'split':
+            result = await blackjack.split(userId, data.playerCards, data.currentBet);
             break;
           case 'buyInsurance':
             result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);

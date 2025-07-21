@@ -379,39 +379,8 @@ export default function Blackjack({ route }) {
 
   // Compatibility layer - maintains existing API for single-hand access
   const getActivePlayerCards = () => gameState.playerHands[gameState.activeHandIndex] || [];
-  const getActivePlayerValue = () => gameState.playerValues[gameState.activeHandIndex] || 0;
   const getActiveCurrentBet = () => gameState.currentBets[gameState.activeHandIndex] || 0;
   
-  // Helper functions for multi-hand state management
-  const updateActiveHand = (cards, value) => {
-    setGameState(prev => ({
-      ...prev,
-      playerHands: prev.playerHands.map((hand, index) => 
-        index === prev.activeHandIndex ? cards : hand
-      ),
-      playerValues: prev.playerValues.map((val, index) => 
-        index === prev.activeHandIndex ? value : val
-      )
-    }));
-  };
-  
-  const updateActiveHandCards = (cards) => {
-    setGameState(prev => ({
-      ...prev,
-      playerHands: prev.playerHands.map((hand, index) => 
-        index === prev.activeHandIndex ? cards : hand
-      )
-    }));
-  };
-  
-  const updateActiveHandValue = (value) => {
-    setGameState(prev => ({
-      ...prev,
-      playerValues: prev.playerValues.map((val, index) => 
-        index === prev.activeHandIndex ? value : val
-      )
-    }));
-  };
 
   // Calculate hand value with proper Ace handling
   const calculateHandValue = (cards) => {
@@ -497,28 +466,6 @@ export default function Blackjack({ route }) {
   const insuranceAmount = Math.floor(getActiveCurrentBet() / 2);
 
   
-  // Calculate centered position for hand total relative to hand position
-  const calculateHandTotalPosition = (cards, handPosition, isDealer = false) => {
-    const CARD_WIDTH = gameConfig.cardWidth;
-    const CARD_HEIGHT = gameConfig.cardHeight;
-    const numCards = cards?.length || 2;
-    
-    // Use same logic as Hand component for spread layout
-    const cardSpacingValue = CARD_WIDTH + (CARD_WIDTH * 0.2); // 20% spacing for spread
-    
-    // For blackjack: first two cards use 2-card positioning, then normal shifting
-    const positioningCards = numCards <= 2 ? 2 : numCards;
-    const totalWidth = CARD_WIDTH + (positioningCards - 1) * cardSpacingValue;
-    const centerStart = (screenWidth - totalWidth) / 2;
-    const handCenterX = centerStart + totalWidth / 2;
-    
-    return {
-      left: handCenterX - 30, // Center the 60px wide total container
-      top: isDealer 
-        ? handPosition.y + CARD_HEIGHT + 15  // Below dealer hand
-        : handPosition.y - 50                // Above player hand
-    };
-  };
 
   const formatCurrencyButton = (cents) => {
     if (cents < 100) {
