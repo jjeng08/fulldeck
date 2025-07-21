@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
@@ -80,6 +80,10 @@ export default function Blackjack({ route }) {
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitSequence, setSplitSequence] = useState('idle'); // 'idle', 'handoff', 'spread', 'deal_first', 'deal_second'
   const [handPositions, setHandPositions] = useState([]);
+  
+  // Initialize animated positions after singlePlayerPosition is defined
+  const animatedPositions = useRef([]);
+  const [animatedHandPositions, setAnimatedHandPositions] = useState([]);
   
   // Track when dealer animations are complete for insurance display
   const [dealerAnimationsComplete, setDealerAnimationsComplete] = useState(false);
@@ -352,6 +356,53 @@ export default function Blackjack({ route }) {
   };
   
   const dealerPosition = { x: (screenWidth / 2) - (gameConfig.handWidth / 2), y: dealerAreaY };
+  
+  // Initialize animated positions once positions are defined
+  useEffect(() => {
+    if (animatedPositions.current.length === 0) {
+      animatedPositions.current = [
+        {
+          x: new Animated.Value(singlePlayerPosition.x),
+          y: new Animated.Value(singlePlayerPosition.y)
+        }
+      ];
+      setAnimatedHandPositions([singlePlayerPosition]);
+    }
+  }, [singlePlayerPosition]);
+  
+  // Handle split animation when splitSequence changes to 'spread'
+  useEffect(() => {
+    if (splitSequence === 'spread') {
+      // Initialize second animated position if it doesn't exist
+      if (animatedPositions.current.length === 1) {
+        animatedPositions.current.push({
+          x: new Animated.Value(singlePlayerPosition.x),
+          y: new Animated.Value(singlePlayerPosition.y)
+        });
+      }
+      
+      // Animate both hands to their split positions
+      const animations = splitPositions.map((targetPos, index) => {
+        return Animated.parallel([
+          Animated.timing(animatedPositions.current[index].x, {
+            toValue: targetPos.x,
+            duration: gameConfig.buffers.splitSpread,
+            useNativeDriver: false,
+          }),
+          Animated.timing(animatedPositions.current[index].y, {
+            toValue: targetPos.y,
+            duration: gameConfig.buffers.splitSpread,
+            useNativeDriver: false,
+          })
+        ]);
+      });
+      
+      Animated.parallel(animations).start(() => {
+        // Animation complete - update positions
+        setAnimatedHandPositions(splitPositions);
+      });
+    }
+  }, [splitSequence]);
   
   // Get navigation params
   const { selectedTier, tiers, maxMulti } = route?.params || {};
@@ -1025,20 +1076,34 @@ export default function Blackjack({ route }) {
         
         {/* Split Hand Totals */}
         {showPlayerTotal && gameState.totalHands > 1 && 
-          getPlayerPositions().map((position, handIndex) => (
-            gameState.playerHands[handIndex] && gameState.playerHands[handIndex].length > 0 && (
-              <View key={`total-${handIndex}`} style={[s.handTotalContainer, { 
-                position: 'absolute',
-                left: position.x + (gameConfig.handWidth / 2) - 30,
-                top: position.y - 50,
-                zIndex: 1001
-              }]}>
-                <Text style={s.handTotalText}>
-                  {animatedPlayerTotals[handIndex] || 0}
-                </Text>
-              </View>
-            )
-          ))
+          animatedHandPositions.map((position, handIndex) => {
+            const animatedPos = animatedPositions.current[handIndex];
+            
+            return (
+              gameState.playerHands[handIndex] && gameState.playerHands[handIndex].length > 0 && (
+                <Animated.View 
+                  key={`total-${handIndex}`} 
+                  style={[
+                    s.handTotalContainer,
+                    { 
+                      position: 'absolute',
+                      left: animatedPos ? 
+                        Animated.add(animatedPos.x, (gameConfig.handWidth / 2) - 30) :
+                        position.x + (gameConfig.handWidth / 2) - 30,
+                      top: animatedPos ? 
+                        Animated.add(animatedPos.y, -50) :
+                        position.y - 50,
+                      zIndex: 1001
+                    }
+                  ]}
+                >
+                  <Text style={s.handTotalText}>
+                    {animatedPlayerTotals[handIndex] || 0}
+                  </Text>
+                </Animated.View>
+              )
+            );
+          })
         }
         
         {/* Player Hand(s) */}
@@ -1056,23 +1121,37 @@ export default function Blackjack({ route }) {
             isDealer={false}
           />
         ) : (
-          getPlayerPositions().map((position, handIndex) => (
-            <Hand
-              key={`hand-${handIndex}`}
-              hands={[gameState.playerHands[handIndex] || []]}
-              activeHandIndex={0}
-              handLabels={[`Hand ${handIndex + 1}`]}
-              handValues={[gameState.playerValues[handIndex] || 0]}
-              position={position}
-              deckCoordinates={deckCoordinates}
-              gameConfig={gameConfig}
-              onHandUpdate={(newHands) => onSingleHandUpdate(handIndex, newHands[0])}
-              onAnimationCallback={(suit, value, _, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
-              isDealer={false}
-              disableAnimation={splitSequence === 'handoff'}
-              style={{ zIndex: handIndex === 1 ? 1002 : 1001 }}
-            />
-          ))
+          animatedHandPositions.map((position, handIndex) => {
+            const animatedPos = animatedPositions.current[handIndex];
+            
+            return (
+              <Animated.View
+                key={`animated-hand-${handIndex}`}
+                style={[
+                  {
+                    position: 'absolute',
+                    left: animatedPos?.x || position.x,
+                    top: animatedPos?.y || position.y,
+                    zIndex: handIndex === 1 ? 1002 : 1001
+                  }
+                ]}
+              >
+                <Hand
+                  hands={[gameState.playerHands[handIndex] || []]}
+                  activeHandIndex={0}
+                  handLabels={[`Hand ${handIndex + 1}`]}
+                  handValues={[gameState.playerValues[handIndex] || 0]}
+                  position={{ x: 0, y: 0 }} // Relative to Animated.View
+                  deckCoordinates={deckCoordinates}
+                  gameConfig={gameConfig}
+                  onHandUpdate={(newHands) => onSingleHandUpdate(handIndex, newHands[0])}
+                  onAnimationCallback={(suit, value, _, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
+                  isDealer={false}
+                  disableAnimation={splitSequence === 'handoff'}
+                />
+              </Animated.View>
+            );
+          })
         )}
       </View>
 
