@@ -179,11 +179,15 @@ export default function Blackjack({ route }) {
       setShowPlayerTotal(true);
     }
     
-    // If we're in player dealing sequence and have pending dealer cards, start dealer animation
+    // ONLY for initial deal sequence - trigger dealer animation after player cards finish
     if (dealingSequence === 'player' && pendingDealerCards.length > 0) {
       setDealingSequence('dealer');
-      setDealerHands([pendingDealerCards]);
-      setPendingDealerCards([]);
+      
+      // Wait for the configured delay before dealing to dealer
+      setTimeout(() => {
+        setDealerHands([pendingDealerCards]);
+        setPendingDealerCards([]);
+      }, gameConfig.buffers.initialDeal); // 500ms delay from config
     }
     
     // Check if game is finished and show results after player animations complete
