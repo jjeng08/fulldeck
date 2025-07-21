@@ -183,20 +183,14 @@ export default function Blackjack({ route }) {
   // Split animation flow function
   const performSplitHandoff = (splitHands) => {
     // Step 1: Handoff - silently update hands with no animations
-    // Second card of first hand becomes first card of second hand
+    // Backend now sends single-card hands, so we use them directly
     setSplitSequence('handoff');
     
-    // Update hands immediately with first card only (no animations)
+    // Update hands immediately with single cards (no animations)
     setGameState(prev => ({
       ...prev,
-      playerHands: [
-        [splitHands[0][0]], // First hand gets only first card
-        [splitHands[1][0]]  // Second hand gets only first card (was second card)
-      ],
-      playerValues: [
-        parseInt(calculateHandValue([splitHands[0][0]])),
-        parseInt(calculateHandValue([splitHands[1][0]]))
-      ]
+      playerHands: splitHands, // Use the split hands as received from backend
+      playerValues: splitHands.map(hand => parseInt(calculateHandValue(hand)))
     }));
     
     // Step 2: Spread hands apart horizontally
@@ -207,35 +201,23 @@ export default function Blackjack({ route }) {
       setTimeout(() => {
         setSplitSequence('deal_first');
         
-        // Update first hand with second card (with animation)
-        setGameState(prev => ({
-          ...prev,
-          playerHands: [
-            splitHands[0], // Complete first hand
-            prev.playerHands[1] // Keep second hand as is
-          ],
-          playerValues: [
-            parseInt(calculateHandValue(splitHands[0])),
-            prev.playerValues[1]
-          ]
-        }));
+        // Send hit action to deal second card to first hand
+        sendMessage('playerAction', {
+          type: 'hit',
+          playerCards: splitHands[0],
+          handId: 'player-hand-0'
+        });
         
         // Step 4: Deal second card to second hand after buffer
         setTimeout(() => {
           setSplitSequence('deal_second');
           
-          // Update second hand with second card (with animation)
-          setGameState(prev => ({
-            ...prev,
-            playerHands: [
-              prev.playerHands[0], // Keep first hand as is
-              splitHands[1] // Complete second hand
-            ],
-            playerValues: [
-              prev.playerValues[0],
-              parseInt(calculateHandValue(splitHands[1]))
-            ]
-          }));
+          // Send hit action to deal second card to second hand
+          sendMessage('playerAction', {
+            type: 'hit',
+            playerCards: splitHands[1],
+            handId: 'player-hand-1'
+          });
           
           // Step 5: Complete split sequence
           setTimeout(() => {

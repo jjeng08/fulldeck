@@ -644,9 +644,10 @@ class Blackjack {
       totalBetAmount: betAmount * 2
     });
     
-    // Create two hands from the split
-    const hand1 = [playerCards[0], this.dealCard()]; // First card + new card
-    const hand2 = [playerCards[1], this.dealCard()]; // Second card + new card
+    // Create two hands from the split - only split the pair, don't deal new cards yet
+    // The frontend animation system will handle dealing the second cards
+    const hand1 = [playerCards[0]]; // Just the first card
+    const hand2 = [playerCards[1]]; // Just the second card
     
     // Update multi-hand state
     this.playerHands = [hand1, hand2];
