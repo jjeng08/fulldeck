@@ -36,7 +36,6 @@ export default function Blackjack({ route }) {
       initialDeal: 500,
       dealerTurn: 1000,
       splitSpread: 600,
-      splitDeal: 500
     },
     
     // Layout
@@ -140,10 +139,11 @@ export default function Blackjack({ route }) {
   
   // Handle hand updates from Hand component
   const onHandUpdate = (newHands) => {
+    const handsArray = Array.isArray(newHands) ? newHands : (newHands?.data || []);
     setGameState(prev => ({
       ...prev,
-      playerHands: newHands,
-      playerValues: newHands.map(hand => calculateHandValue(hand))
+      playerHands: handsArray,
+      playerValues: handsArray.map(hand => calculateHandValue(hand))
     }));
     
     // Hand component now manages total display internally
@@ -165,20 +165,22 @@ export default function Blackjack({ route }) {
   
   // Handle individual hand updates for split hands
   const onSingleHandUpdate = (handIndex, newHand) => {
+    const handArray = Array.isArray(newHand) ? newHand : (newHand?.data?.[0] || []);
     setGameState(prev => ({
       ...prev,
       playerHands: prev.playerHands.map((hand, index) => 
-        index === handIndex ? newHand : hand
+        index === handIndex ? handArray : hand
       ),
       playerValues: prev.playerHands.map((hand, index) => 
-        index === handIndex ? parseInt(calculateHandValue(newHand)) : prev.playerValues[index]
+        index === handIndex ? parseInt(calculateHandValue(handArray)) : prev.playerValues[index]
       )
     }));
   };
   
   // Handle dealer hand updates
   const onDealerHandUpdate = (newHands) => {
-    setDealerHands(newHands);
+    const handsArray = Array.isArray(newHands) ? newHands : (newHands?.data || []);
+    setDealerHands(handsArray);
     
     // Hand component now manages total display internally
     
@@ -192,7 +194,7 @@ export default function Blackjack({ route }) {
       // Update game state with dealer cards now that animation is complete
       setGameState(prev => ({
         ...prev,
-        dealerCards: newHands[0] || []
+        dealerCards: handsArray[0] || []
       }));
     }
     
@@ -736,9 +738,12 @@ export default function Blackjack({ route }) {
   const onSplitDealAction = (data) => {
     const completeHands = data.playerHands;
     
+    // Enable animations for card dealing
+    setSplitSequence('idle');
+    
     // Step 1: Update Hand 1 first
-    setTimeout(() => {
-      setGameState(prev => ({
+
+    setGameState(prev => ({
         ...prev,
         playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
         playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1] || 0]
@@ -754,11 +759,9 @@ export default function Blackjack({ route }) {
         
         // Step 3: Complete split sequence after Hand 2 animates
         setTimeout(() => {
-          setSplitSequence('idle');
           setIsSplitting(false);
         }, gameConfig.durations.cardDeal + 100);
       }, gameConfig.durations.cardDeal + 100); // Wait for Hand 1 animation
-    }, 100);
   };
 
   // Handle all other actions (hit, stand, etc.)
@@ -919,7 +922,7 @@ export default function Blackjack({ route }) {
         
         {/* Dealer Hand */}
         <Hand
-          hands={dealerHands}
+          hands={{animate: true, data: dealerHands}}
           activeHandIndex={0}
           handLabels={['Dealer Hand']}
           handValues={[0]}
@@ -939,7 +942,7 @@ export default function Blackjack({ route }) {
         {gameState.totalHands === 1 ? (
           <Hand
             testID="singlePlayerHand"
-            hands={gameState.playerHands}
+            hands={{animate: true, data: gameState.playerHands}}
             activeHandIndex={gameState.activeHandIndex}
             handLabels={['Player Hand']}
             handValues={gameState.playerValues}
@@ -957,7 +960,7 @@ export default function Blackjack({ route }) {
             <Hand
               key={`split-hand-${handIndex}`}
               testID={`splitPlayerHand${handIndex}`}
-              hands={[gameState.playerHands[handIndex] || []]}
+              hands={{animate: splitSequence === 'idle', data: [gameState.playerHands[handIndex] || []]}}
               activeHandIndex={0}
               handLabels={[`Hand ${handIndex + 1}`]}
               handValues={[gameState.playerValues[handIndex] || 0]}

@@ -9,7 +9,7 @@ import Reanimated, {
 import Card from './Card';
 
 const Hand = forwardRef(({ 
-  hands = [], // Array of hands for split support
+  hands = {animate: true, data: []}, // Object with animation flag and hands data
   activeHandIndex = 0, // Which hand is currently active
   handLabels = [], // Labels for each hand
   handValues = [], // Values for each hand
@@ -33,7 +33,7 @@ const Hand = forwardRef(({
 }, ref) => {
   
   const cardAnimations = useRef(new Map());
-  const [internalHands, setInternalHands] = useState(hands);
+  const [internalHands, setInternalHands] = useState(hands.data || []);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   const [pendingAnimations, setPendingAnimations] = useState(0);
@@ -130,7 +130,7 @@ const Hand = forwardRef(({
       centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
     }
     
-    // Calculate position for each card
+    // Calculate position for each card - ONLY create positions for actual cards
     const positions = [];
     for (let cardIndex = 0; cardIndex < totalCards; cardIndex++) {
       positions.push({
@@ -220,6 +220,11 @@ const Hand = forwardRef(({
   // Get card position using the unified calculation
   const getCardPosition = (cardIndex, totalCards, handIndex = 0) => {
     const allPositions = calculateAllCardPositions(handIndex, totalCards);
+    // Safety check: don't return position for cards beyond what we calculated
+    if (cardIndex >= allPositions.length) {
+      console.warn(`Attempted to get position for card ${cardIndex} but only ${allPositions.length} positions calculated`);
+      return { x: 0, y: 0 }; // Return safe default position
+    }
     return allPositions[cardIndex];
   };
   
@@ -258,6 +263,11 @@ const Hand = forwardRef(({
       const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
       return currentHandSize + animatingToThisHand;
     })();
+    
+    // Safety check: cardIndex should never be >= totalCards
+    if (cardIndex >= totalCards) {
+      return;
+    }
     
     const targetPosition = getCardPosition(cardIndex, totalCards, handIndex);
     
@@ -374,11 +384,14 @@ const Hand = forwardRef(({
   
   // Diff incoming hands with current hands and animate differences
   useEffect(() => {
+    const handsData = hands.data || [];
+    const shouldAnimate = hands.animate !== false;
+    
     if (isInitialRender.current) {
       isInitialRender.current = false;
       // Initial render - just set the hands with IDs
       let currentId = nextCardId;
-      const handsWithIds = hands.map(hand => 
+      const handsWithIds = handsData.map(hand => 
         hand.map(card => {
           if (!card.id) {
             const newId = currentId;
@@ -399,13 +412,20 @@ const Hand = forwardRef(({
     const newCardsToAnimate = [];
     const cardsToUpdate = [];
     
-    hands.forEach((newHand, handIndex) => {
+    handsData.forEach((newHand, handIndex) => {
       const currentHand = internalHands[handIndex] || [];
       
       // Check for cards that changed from null to real data (hole card reveals)
       for (let i = 0; i < Math.min(newHand.length, currentHand.length); i++) {
         const currentCard = currentHand[i];
         const newCard = newHand[i];
+        
+        // Skip if cards are identical (same suit and value)
+        if (currentCard && newCard &&
+            currentCard.suit === newCard.suit && 
+            currentCard.value === newCard.value) {
+          continue;
+        }
         
         // If current card has null values but new card has real data, this is a hole card reveal
         if (currentCard && 
@@ -420,29 +440,49 @@ const Hand = forwardRef(({
         }
       }
       
-      // If new hand has more cards than current, animate the difference
+      // If new hand has more cards than current, handle the difference
       if (newHand.length > currentHand.length) {
-        // Calculate final total cards for this hand (including all new cards)
-        const finalTotalCards = newHand.length;
-        
-        for (let i = currentHand.length; i < newHand.length; i++) {
-          // Ensure each card has a unique ID
-          const cardData = newHand[i];
-          const cardWithId = {
-            ...cardData,
-            id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
-          };
+        if (shouldAnimate) {
+          // Calculate final total cards for this hand (including all new cards)
+          const finalTotalCards = newHand.length;
           
-          // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
-          const useInitialTiming = (currentHand.length + (i - currentHand.length)) <= 2;
-          const delayBuffer = (isDealer && !useInitialTiming) ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal;
+          for (let i = currentHand.length; i < newHand.length; i++) {
+            // Ensure each card has a unique ID
+            const cardData = newHand[i];
+            const cardWithId = {
+              ...cardData,
+              id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
+            };
+            
+            // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
+            const useInitialTiming = (currentHand.length + (i - currentHand.length)) <= 2;
+            const delayBuffer = (isDealer && !useInitialTiming) ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal;
+            
+            newCardsToAnimate.push({
+              cardData: cardWithId,
+              handIndex: handIndex,
+              cardIndex: i,
+              finalTotalCards: finalTotalCards,
+              delay: (i - currentHand.length) * delayBuffer
+            });
+          }
+        } else {
+          // No animation - just add cards immediately
+          const newCards = [];
+          for (let i = currentHand.length; i < newHand.length; i++) {
+            const cardData = newHand[i];
+            const cardWithId = {
+              ...cardData,
+              id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
+            };
+            newCards.push(cardWithId);
+          }
           
-          newCardsToAnimate.push({
-            cardData: cardWithId,
-            handIndex: handIndex,
-            cardIndex: i,
-            finalTotalCards: finalTotalCards,
-            delay: (i - currentHand.length) * delayBuffer
+          // Update internal hands immediately
+          setInternalHands(prev => {
+            const newHands = [...prev];
+            newHands[handIndex] = [...currentHand, ...newCards];
+            return newHands;
           });
         }
       }
@@ -519,22 +559,43 @@ const Hand = forwardRef(({
         }, animation.delay);
       });
     } else if (cardsToUpdate.length === 0) {
-      // No new cards to animate and no updates, just update hands with IDs
-      let currentId = nextCardId;
-      const handsWithIds = hands.map(hand => 
-        hand.map(card => {
-          if (!card.id) {
-            const newId = currentId;
-            currentId++;
-            return { ...card, id: newId };
-          }
-          return { ...card };
-        })
-      );
-      if (currentId !== nextCardId) {
-        setNextCardId(currentId);
+      // Check if hands are actually different before updating
+      const handsAreDifferent = handsData.some((newHand, handIndex) => {
+        const currentHand = internalHands[handIndex] || [];
+        
+        // Different lengths mean hands are different
+        if (newHand.length !== currentHand.length) {
+          return true;
+        }
+        
+        // Check each card for differences
+        return newHand.some((newCard, cardIndex) => {
+          const currentCard = currentHand[cardIndex];
+          if (!currentCard) return true; // New card exists but current doesn't
+          
+          // Cards are different if suit or value differs
+          return currentCard.suit !== newCard.suit || currentCard.value !== newCard.value;
+        });
+      });
+      
+      // Only update if hands are actually different
+      if (handsAreDifferent) {
+        let currentId = nextCardId;
+        const handsWithIds = handsData.map(hand => 
+          hand.map(card => {
+            if (!card.id) {
+              const newId = currentId;
+              currentId++;
+              return { ...card, id: newId };
+            }
+            return { ...card };
+          })
+        );
+        if (currentId !== nextCardId) {
+          setNextCardId(currentId);
+        }
+        setInternalHands(handsWithIds);
       }
-      setInternalHands(handsWithIds);
     }
   }, [hands]);
   
