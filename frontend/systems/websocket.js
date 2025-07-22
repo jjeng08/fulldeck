@@ -17,7 +17,7 @@ class WebSocketService {
       const config = getConfig()
       url = config.websocketUrl
     }
-    console.log('Connecting to WebSocket URL:', url);
+    // console.log('Connecting to WebSocket URL:', url);
     try {
       // Store the URL for reconnections
       this.currentUrl = url
@@ -26,7 +26,7 @@ class WebSocketService {
       this.ws = new WebSocket(url)
       
       this.ws.onopen = () => {
-        console.log('WebSocket connected')
+        // console.log('WebSocket connected')
         this.connected = true
         this.reconnectAttempts = 0
       }
@@ -36,35 +36,35 @@ class WebSocketService {
           const message = JSON.parse(event.data)
           this.handleMessage(message)
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error)
+          // console.error('Error parsing WebSocket message:', error)
         }
       }
 
       this.ws.onclose = (event) => {
-        console.log('WebSocket disconnected', { code: event.code, reason: event.reason, wasClean: event.wasClean })
+        // console.log('WebSocket disconnected', { code: event.code, reason: event.reason, wasClean: event.wasClean })
         this.connected = false
         this.attemptReconnect()
       }
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+        // console.error('WebSocket error:', error)
       }
 
     } catch (error) {
-      console.error('Failed to connect to WebSocket:', error)
+      // console.error('Failed to connect to WebSocket:', error)
     }
   }
 
   attemptReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+      // console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
       
       setTimeout(() => {
         this.connect(this.currentUrl)
       }, this.reconnectDelay * this.reconnectAttempts)
     } else {
-      console.log('Max reconnection attempts reached')
+      // console.log('Max reconnection attempts reached')
     }
   }
 
@@ -73,21 +73,21 @@ class WebSocketService {
       const message = { type, data }
       const jsonMessage = JSON.stringify(message)
       this.ws.send(jsonMessage)
-      console.log('Sent message:', type, data)
+      // console.log('Sent message:', type, data)
     } else {
-      console.error('WebSocket not connected')
+      // console.error('WebSocket not connected')
     }
   }
 
   handleMessage(message) {
     const { type, data } = message
-    console.log('Received message:', type, data)
+    // console.log('Received message:', type, data)
 
     if (this.messageHandlers.has(type)) {
       const handler = this.messageHandlers.get(type)
       handler(data)
     } else {
-      console.log('No handler for message type:', type)
+      // console.log('No handler for message type:', type)
     }
   }
 

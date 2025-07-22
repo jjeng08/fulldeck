@@ -7,7 +7,6 @@ import Animated, {
   interpolate,
   runOnJS
 } from 'react-native-reanimated';
-import { styleConstants as sc } from 'shared/styleConstants';
 
 const Card = ({ 
   suit, 
@@ -16,10 +15,10 @@ const Card = ({
   animatePosition = false,
   onAnimationComplete = () => {},
   onAnimationCallback = () => {},
-  gameConfig = { 
-    cardWidth: 90,
-    cardHeight: 126,
-    durations: { cardFlip: 300 }
+  cardConfigs = { 
+    width: 90,
+    height: 126,
+    flip: 300
   },
   style = {}
 }) => {
@@ -46,7 +45,7 @@ const Card = ({
 
   // Animate flip when card data changes
   useEffect(() => {
-    flipProgress.value = withTiming(shouldBeFaceUp ? 1 : 0, { duration: gameConfig.durations.cardFlip }, (finished) => {
+    flipProgress.value = withTiming(shouldBeFaceUp ? 1 : 0, { duration: cardConfigs.flip }, (finished) => {
       if (finished) {
         // Fire animation callback with card value when flip completes
         if (shouldBeFaceUp && suit && value) {
@@ -55,7 +54,7 @@ const Card = ({
         runOnJS(onAnimationComplete)();
       }
     });
-  }, [shouldBeFaceUp, gameConfig.durations.cardFlip]);
+  }, [shouldBeFaceUp, cardConfigs.flip]);
 
   // Animate position when position changes
   useEffect(() => {
@@ -155,11 +154,11 @@ const Card = ({
     </Animated.View>
   );
 
-  // Dynamic styles using gameConfig
+  // Dynamic styles using cardConfigs
   const dynamicStyles = {
     cardContainer: {
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
+      width: cardConfigs.width,
+      height: cardConfigs.height,
       position: 'absolute',
     },
   };

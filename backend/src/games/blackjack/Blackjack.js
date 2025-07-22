@@ -133,42 +133,27 @@ class Blackjack {
     // Remove the selected card from available cards
     const selectedCard = this.availableCards.splice(randomIndex, 1)[0];
     
+    // Add unique ID to the card
+    const cardWithId = {
+      ...selectedCard,
+      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
     
-    return selectedCard;
+    return cardWithId;
   }
 
   // Calculate the value of a hand
   calculateHandValue(cards) {
+    if (!cards || cards.length === 0) return 0;
+    
     let value = 0;
     let aces = 0;
 
     for (const card of cards) {
-      if (card.value === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.value)) {
-        value += 10;
-      } else {
-        value += parseInt(card.value);
+      // Skip cards with null/undefined values (hole cards)
+      if (!card || card.value === null || card.value === undefined) {
+        continue;
       }
-    }
-
-    // Adjust for aces
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
-    }
-
-    return value;
-  }
-
-  // Calculate visible hand value (for display purposes)
-  calculateVisibleHandValue(cards) {
-    let value = 0;
-    let aces = 0;
-
-    for (const card of cards) {
-      if (card.hidden) continue; // Skip hidden dealer cards
       
       if (card.value === 'A') {
         aces++;
@@ -176,11 +161,14 @@ class Blackjack {
       } else if (['K', 'Q', 'J'].includes(card.value)) {
         value += 10;
       } else {
-        value += parseInt(card.value);
+        const numValue = parseInt(card.value);
+        if (!isNaN(numValue)) {
+          value += numValue;
+        }
       }
     }
 
-    // Adjust for aces
+    // Adjust for aces - convert 11s to 1s when busting
     while (value > 21 && aces > 0) {
       value -= 10;
       aces--;
@@ -188,6 +176,7 @@ class Blackjack {
 
     return value;
   }
+
 
   // Check if initial 2-card hand is blackjack (only for initial deal)
   isBlackjack(cards) {
@@ -207,33 +196,7 @@ class Blackjack {
     return hasAce && hasTen;
   }
 
-  // Deal initial cards to a player
-  dealPlayerCards(userId) {
-    const cards = [this.dealCard(), this.dealCard()];
-    this.playerHands.set(userId, cards);
-    return cards;
-  }
 
-  // Get player cards
-  getPlayerCards(userId) {
-    return this.playerHands.get(userId) || [];
-  }
-
-  // Dealer plays their hand
-  playDealerHand() {
-    // Reveal hidden card
-    this.dealerCards = this.dealerCards.map(card => ({ ...card, hidden: false }));
-    
-    // Dealer hits on 16, stands on 17
-    while (this.calculateHandValue(this.dealerCards) < 17) {
-      this.dealerCards.push(this.dealCard());
-    }
-
-    return {
-      cards: this.dealerCards,
-      value: this.calculateHandValue(this.dealerCards)
-    };
-  }
 
 
 
@@ -274,7 +237,8 @@ class Blackjack {
     const dealerHoleCard = this.dealCard();
     const dealerCards = [dealerFaceUp, dealerHoleCard];
     
-    const playerCards = [this.dealCard(), this.dealCard()];
+    // const playerCards = [this.dealCard(), this.dealCard()];
+    const playerCards = [{ suit: 'spades', value: '8' }, { suit: 'hearts', value: '8' }];
     
     // Store cards in new structure
     this.dealerCards = dealerCards;
@@ -312,26 +276,31 @@ class Blackjack {
     
     // Handle immediate blackjack scenarios (only when dealer doesn't show Ace)
     if (playerBlackjack || dealerBlackjack) {
-      let result, payout;
+      let result, payout, profit;
       
       if (playerBlackjack && dealerBlackjack) {
         result = 'push';
         payout = betAmount; // Return bet
+        profit = 0; // No profit or loss
       } else if (playerBlackjack && !dealerBlackjack) {
         result = 'blackjack';
         payout = Math.floor(betAmount * 2.5); // 3:2 payout
+        profit = Math.floor(betAmount * 1.5); // 1.5x bet profit
       } else if (!playerBlackjack && dealerBlackjack) {
         result = 'dealer_blackjack';
         payout = 0;
+        profit = -betAmount; // Loss
       } else {
         result = 'unknown';
         payout = 0;
+        profit = -betAmount; // Loss
       }
       
       // Store the result data for the message handler to process
       this.immediateGameResult = {
         result,
         payout,
+        profit,
         betAmount,
         playerValue: this.calculateHandValue(playerCards),
         dealerValue: this.calculateHandValue(dealerCards)
@@ -359,6 +328,7 @@ class Blackjack {
           gameStatus: 'finished',
           result,
           payout,
+          profit,
           playerValue: this.playerValue,
           dealerValue: this.calculateHandValue(dealerCards)
         },
@@ -441,6 +411,7 @@ class Blackjack {
       dealerCards: workingDealerCards,
       result: result.result,
       payout: result.payout,
+      profit: result.profit,
     };
   }
 
@@ -495,6 +466,7 @@ class Blackjack {
         dealerCards: this.currentDealerCards || dealerCards,
         result: 'lose',
         payout: 0,
+        profit: -(betAmount * 2),
         betAmount: betAmount * 2
       };
     }
@@ -522,6 +494,7 @@ class Blackjack {
       dealerCards: workingDealerCards,
       result: result.result,
       payout: result.payout,
+      profit: result.profit,
       betAmount: betAmount * 2
     };
   }
@@ -644,6 +617,78 @@ class Blackjack {
     };
   }
 
+  // Split hand - create two hands from pair
+  async split(userId, playerCards, currentBet) {
+    // Validate split conditions
+    if (!playerCards || playerCards.length !== 2) {
+      return { success: false, error: 'Can only split with exactly 2 cards' };
+    }
+    
+    if (playerCards[0].value !== playerCards[1].value) {
+      return { success: false, error: 'Can only split cards of the same value' };
+    }
+    
+    const betAmount = this.currentBet || currentBet;
+    
+    // Validate user has enough balance for second bet
+    const user = await DBUtils.getPlayerById(userId);
+    if (!user || user.balance < betAmount) {
+      return { success: false, error: 'Insufficient balance to split hand' };
+    }
+    
+    // Deduct additional bet amount for second hand
+    const updatedPlayer = await DBUtils.debitPlayerAccount(userId, betAmount, 'split_bet', { 
+      splitAmount: betAmount,
+      originalBet: betAmount
+    });
+    
+    // Log split activity
+    await DBUtils.logPlayerActivity(userId, user.username, 'split_bet', {
+      debit: betAmount,
+      balance: updatedPlayer.balance,
+      totalBetAmount: betAmount * 2
+    });
+    
+    // Create two hands from the split - only first cards for now
+    const hand1 = [playerCards[0]]; // Just first card
+    const hand2 = [playerCards[1]]; // Just second card
+    
+    // Store the complete hands for later (with second cards)
+    const completeHand1 = [playerCards[0], this.dealCard()];
+    const completeHand2 = [playerCards[1], this.dealCard()];
+    
+    // Update multi-hand state with complete hands (for internal tracking)
+    this.playerHands = [completeHand1, completeHand2];
+    this.playerValues = [this.calculateHandValue(completeHand1), this.calculateHandValue(completeHand2)];
+    this.currentBets = [betAmount, betAmount];
+    this.totalHands = 2;
+    this.activeHandIndex = 0; // Start with first hand
+    
+    return {
+      success: true,
+      gameStatus: 'playing',
+      playerHands: [hand1, hand2], // Send only first cards to trigger animation
+      playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
+      currentBets: this.currentBets,
+      totalHands: 2,
+      dealerCards: this.dealerCards // Keep existing dealer cards
+    };
+  }
+
+  // Deal second cards to split hands
+  async splitDeal(userId) {
+    // Return the complete hands that were stored during split
+    return {
+      success: true,
+      gameStatus: 'playing',
+      playerHands: this.playerHands, // Complete hands with second cards
+      playerValues: this.playerValues,
+      currentBets: this.currentBets,
+      totalHands: 2,
+      dealerCards: this.dealerCards
+    };
+  }
+
   // Skip insurance
   async skipInsurance(userId, playerCards, dealerCards) {
     // Use stored bet amount from the game instance
@@ -660,16 +705,16 @@ class Blackjack {
       // Update player balance for main bet result
       if (mainBetPayout > 0) {
         const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
+        const player = await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
           result: gameResult,
           payout: mainBetPayout,
           originalBet: betAmount
         });
         
         // Log activity
-        await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
+        await DBUtils.logPlayerActivity(userId, player.username, transactionType, {
           credit: mainBetPayout,
-          balance: finalPlayer.balance,
+          balance: player.balance,
           winAmount: mainBetPayout
         });
       } else {
@@ -720,34 +765,42 @@ class Blackjack {
     const dealerBlackjack = this.isBlackjack(dealerCards);
 
     let result = 'lose';
-    let payoutMultiplier = 0;
+    let totalPayout = 0;
+    let profit = 0;
 
     if (playerBusted) {
       result = 'lose';
-      payoutMultiplier = 0;
+      totalPayout = 0;
+      profit = -betAmount; // Loss
     } else if (playerBlackjack && !dealerBlackjack) {
       result = 'blackjack';
-      payoutMultiplier = 2.5; // Bet + 1.5x bet
+      totalPayout = Math.floor(betAmount * 2.5); // Bet + 1.5x bet
+      profit = Math.floor(betAmount * 1.5); // 1.5x bet profit
     } else if (dealerBusted) {
       result = 'win';
-      payoutMultiplier = 2; // Bet + bet
+      totalPayout = betAmount * 2; // Bet + bet
+      profit = betAmount; // 1x bet profit
     } else if (playerValue > dealerValue) {
       result = 'win';
-      payoutMultiplier = 2;
+      totalPayout = betAmount * 2;
+      profit = betAmount; // 1x bet profit
     } else if (playerValue === dealerValue) {
       result = 'push';
-      payoutMultiplier = 1; // Return bet only
+      totalPayout = betAmount; // Return bet only
+      profit = 0; // No profit or loss
     } else {
       result = 'lose';
-      payoutMultiplier = 0;
+      totalPayout = 0;
+      profit = -betAmount; // Loss
     }
 
     return {
       result,
       playerValue,
       dealerValue,
-      payout: Math.floor(betAmount * payoutMultiplier),
-      payoutMultiplier
+      payout: totalPayout, // Total amount returned (for balance updates)
+      profit: profit, // Profit/loss amount (for frontend display)
+      payoutMultiplier: totalPayout / betAmount
     };
   }
 
@@ -867,6 +920,7 @@ async function onPlayerAction(ws, data, userId) {
             dealerValue: gameResult.gameState.dealerValue,
             result: gameResult.gameState.result,
             payout: gameResult.gameState.payout,
+            profit: gameResult.gameState.profit,
             betAmount: data.betAmount,
             newBalance: finalPlayer.balance
           };
@@ -890,6 +944,8 @@ async function onPlayerAction(ws, data, userId) {
       case 'hit':
       case 'stand':
       case 'doubleDown':
+      case 'split':
+      case 'splitDeal':
       case 'buyInsurance':
       case 'surrender':
       case 'newGame':
@@ -912,6 +968,12 @@ async function onPlayerAction(ws, data, userId) {
           case 'doubleDown':
             logger.logInfo('Double down call params', { userId, playerCards: data.playerCards, dealerCards: data.dealerCards, handId: data.handId });
             result = await blackjack.doubleDown(userId, data.playerCards, data.dealerCards, data.handId);
+            break;
+          case 'split':
+            result = await blackjack.split(userId, data.playerCards, data.currentBet);
+            break;
+          case 'splitDeal':
+            result = await blackjack.splitDeal(userId);
             break;
           case 'buyInsurance':
             result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);
@@ -947,8 +1009,15 @@ async function onPlayerAction(ws, data, userId) {
         playerCards: result.playerCards || result.cards,
         dealerCards: result.dealerCards,
         result: result.result,
-        payout: result.payout,
+        payout: result.profit || result.payout, // Send profit for frontend display
         betAmount: result.betAmount || data.betAmount,
+        // Handle split-specific data
+        ...(result.playerHands ? { 
+          playerHands: result.playerHands,
+          playerValues: result.playerValues,
+          currentBets: result.currentBets,
+          totalHands: result.totalHands
+        } : {}),
         // Handle double down completion flag
         ...(result.doubleDownComplete ? { doubleDownComplete: true } : {})
       }
