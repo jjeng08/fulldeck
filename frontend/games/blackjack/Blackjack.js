@@ -742,12 +742,8 @@ export default function Blackjack({ route }) {
     }));
     
     setIsSplitting(true);
-    
-    // Wait for hands to render, THEN start separation animation
-    setTimeout(() => {
-      setSplitSequence('spread');
-    }, 500); // Give hands time to render
-    
+    setSplitSequence('spread');
+
     // After separation animation, request the second cards
     setTimeout(() => {
       sendMessage('playerAction', {
@@ -761,32 +757,22 @@ export default function Blackjack({ route }) {
 
   // Handle split deal - adding second cards to split hands
   const onSplitDealAction = (data) => {
-    // Handle the complete hands - deal second card to hand 1 first
+    // Use the complete hands directly - backend data is accurate
     const completeHands = data.playerHands;
     
     setTimeout(() => {
-      // Deal second card to hand 1
+      // Update hand 2 first with complete data
       setGameState(prev => ({
         ...prev,
-        playerHands: [completeHands[0], prev.playerHands[1]], // Update hand 1
-        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1]]
+        playerHands: [completeHands[0], completeHands[1]], // BOTH hands from backend - this is the complete replacement
+        playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand)))
       }));
       
-      // Then deal second card to hand 2 after delay
+      // Complete split sequence
       setTimeout(() => {
-        setGameState(prev => ({
-          ...prev,
-          playerHands: [prev.playerHands[0], completeHands[1]], // Update hand 2
-          playerValues: [prev.playerValues[0], parseInt(calculateHandValue(completeHands[1]))]
-        }));
-        
-        // Complete split sequence
-        setTimeout(() => {
-          setSplitSequence('idle');
-          setIsSplitting(false);
-        }, gameConfig.durations.cardDeal + 100);
-        
-      }, gameConfig.buffers.splitDeal);
+        setSplitSequence('idle');
+        setIsSplitting(false);
+      }, gameConfig.durations.cardDeal + 100);
     }, 100);
   };
 
