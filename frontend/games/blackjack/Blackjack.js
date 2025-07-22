@@ -184,76 +184,6 @@ export default function Blackjack({ route }) {
     }
   };
   
-  // Split animation flow function
-  const performSplitHandoff = (splitHands) => {
-    // Step 1: Handoff - silently update hands with no animations
-    // Second card of first hand becomes first card of second hand
-    setSplitSequence('handoff');
-    
-    // Update hands immediately with first card only (no animations)
-    setGameState(prev => ({
-      ...prev,
-      playerHands: [
-        [splitHands[0][0]], // First hand gets only first card
-        [splitHands[1][0]]  // Second hand gets only first card (was second card)
-      ],
-      playerValues: [
-        parseInt(calculateHandValue([splitHands[0][0]])),
-        parseInt(calculateHandValue([splitHands[1][0]]))
-      ],
-      totalHands: 2 // CRITICAL: Set to 2 to trigger split rendering
-    }));
-    
-    // Step 2: Spread hands apart horizontally (after hands have rendered)
-    setTimeout(() => {
-      setSplitSequence('spread');
-      
-      // Step 3: Deal second card to first hand after spread completes
-      setTimeout(() => {
-        setSplitSequence('deal_first');
-        
-        // Update first hand with second card (with animation)
-        setGameState(prev => ({
-          ...prev,
-          playerHands: [
-            splitHands[0], // Complete first hand
-            prev.playerHands[1] // Keep second hand as is
-          ],
-          playerValues: [
-            parseInt(calculateHandValue(splitHands[0])),
-            prev.playerValues[1]
-          ]
-        }));
-        
-        // Step 4: Deal second card to second hand after buffer
-        setTimeout(() => {
-          setSplitSequence('deal_second');
-          
-          // Update second hand with second card (with animation)
-          setGameState(prev => ({
-            ...prev,
-            playerHands: [
-              prev.playerHands[0], // Keep first hand as is
-              splitHands[1] // Complete second hand
-            ],
-            playerValues: [
-              prev.playerValues[0],
-              parseInt(calculateHandValue(splitHands[1]))
-            ]
-          }));
-          
-          // Step 5: Complete split sequence
-          setTimeout(() => {
-            setSplitSequence('idle');
-            setIsSplitting(false);
-          }, gameConfig.durations.cardDeal + 100);
-          
-        }, gameConfig.buffers.splitDeal);
-        
-      }, gameConfig.durations.cardDeal + 100);
-      
-    }, gameConfig.buffers.splitSpread);
-  };
   
   // Handle hand updates from Hand component
   const onHandUpdate = (newHands) => {
@@ -684,16 +614,19 @@ export default function Blackjack({ route }) {
             gameStatus: data.gameStatus
           }));
           
-          // Start separation animation
-          setSplitSequence('spread');
           setIsSplitting(true);
+          
+          // Wait for hands to render, THEN start separation animation
+          setTimeout(() => {
+            setSplitSequence('spread');
+          }, 500); // Give hands time to render
           
           // After separation animation, request the second cards
           setTimeout(() => {
             sendMessage('playerAction', {
               type: 'splitDeal'
             });
-          }, gameConfig.buffers.splitSpread);
+          }, 500 + gameConfig.buffers.splitSpread); // Wait for render + animation
           
         } else if (actionType === 'splitDeal' && data.playerHands) {
           // Handle the complete hands - deal second card to hand 1 first
