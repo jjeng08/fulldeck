@@ -133,11 +133,10 @@ class Blackjack {
     // Remove the selected card from available cards
     const selectedCard = this.availableCards.splice(randomIndex, 1)[0];
     
-    // Add unique ID and position to the card
+    // Add unique ID to the card
     const cardWithId = {
       ...selectedCard,
-      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      position: { x: 0, y: 0 }
+      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     };
     
     return cardWithId;

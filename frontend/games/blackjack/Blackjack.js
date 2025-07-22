@@ -60,13 +60,7 @@ export default function Blackjack({ route }) {
   // Safety controls for button clicks
   const [temporarilyDisabledButtons, setTemporarilyDisabledButtons] = useState(new Set());
   
-  // Track when hand totals should be visible (after card flip animations complete)
-  const [showPlayerTotal, setShowPlayerTotal] = useState(false);
-  const [showDealerTotal, setShowDealerTotal] = useState(false);
-  
-  // Track animated totals that update as each card animation completes
-  const [animatedPlayerTotals, setAnimatedPlayerTotals] = useState([0]); // Array for split hands
-  const [animatedDealerTotal, setAnimatedDealerTotal] = useState(0);
+  // Removed: Total management now handled by Hand component
   
   // Track when final animations are complete for finished games
   const [finalAnimationsComplete, setFinalAnimationsComplete] = useState(false);
@@ -110,32 +104,11 @@ export default function Blackjack({ route }) {
     setTemporarilyDisabledButtons(new Set());
   };
   
-  // Calculate single card value for progressive totals
-  const calculateCardValue = (card) => {
-    if (card.value === 'A') {
-      return 11; // We'll handle soft aces in the progressive calculation
-    } else if (['K', 'Q', 'J'].includes(card.value)) {
-      return 10;
-    } else {
-      return parseInt(card.value);
-    }
-  };
+  // Removed: calculateCardValue - Hand component manages its own totals
   
-  // Handle individual card animation completion for progressive totals
+  // Handle individual card animation completion - simplified since Hand manages totals
   const onCardAnimationComplete = (suit, value, handIndex, cardId, isDealer) => {
-    const cardValue = calculateCardValue({ suit, value });
-    
-    if (isDealer) {
-      setAnimatedDealerTotal(prev => prev + cardValue);
-      setShowDealerTotal(true);
-    } else {
-      setAnimatedPlayerTotals(prev => 
-        prev.map((total, index) => 
-          index === handIndex ? total + cardValue : total
-        )
-      );
-      setShowPlayerTotal(true);
-    }
+    // Animation callback now mainly for external use - Hand component manages totals internally
   };
   
   // Build deck with specified number of cards
@@ -178,10 +151,7 @@ export default function Blackjack({ route }) {
       playerValues: newHands.map(hand => calculateHandValue(hand))
     }));
     
-    // Show player total after cards are dealt
-    if (newHands[0] && newHands[0].length > 0) {
-      setShowPlayerTotal(true);
-    }
+    // Hand component now manages total display internally
     
     // ONLY for initial deal sequence - trigger dealer animation after player cards finish
     if (dealingSequence === 'player' && pendingDealerCards.length > 0) {
@@ -215,10 +185,7 @@ export default function Blackjack({ route }) {
   const onDealerHandUpdate = (newHands) => {
     setDealerHands(newHands);
     
-    // Show dealer total after cards are dealt
-    if (newHands[0] && newHands[0].length > 0) {
-      setShowDealerTotal(true);
-    }
+    // Hand component now manages total display internally
     
     // Complete the dealing sequence when dealer animation finishes
     if (dealingSequence === 'dealer') {
@@ -252,7 +219,7 @@ export default function Blackjack({ route }) {
   
   // Calculate split hand positions
   const calculateSplitHandPositions = () => {
-    const handSeparation = screenWidth * 0.25; // Distance between split hands
+    const handSeparation = screenWidth * 0.3; // Distance between split hands - wider separation
     const leftHandX = (screenWidth / 2) - handSeparation - (gameConfig.handWidth / 2);
     const rightHandX = (screenWidth / 2) + handSeparation - (gameConfig.handWidth / 2);
     
@@ -715,11 +682,7 @@ export default function Blackjack({ route }) {
       payout: data.payout || prev.payout
     }));
 
-    // Reset hand total visibility and animated totals for new game
-    setShowPlayerTotal(false);
-    setShowDealerTotal(false);
-    setAnimatedPlayerTotals([0]);
-    setAnimatedDealerTotal(0);
+    // Reset dealer animations complete flag
     setDealerAnimationsComplete(false);
   };
 
@@ -751,28 +714,35 @@ export default function Blackjack({ route }) {
       });
     }, 500 + gameConfig.buffers.splitSpread); // Wait for render + animation
 
-    // Reset totals for split
-    setAnimatedPlayerTotals([0, 0]);
+    // Hand component now manages split totals internally
   };
 
   // Handle split deal - adding second cards to split hands
   const onSplitDealAction = (data) => {
-    // Use the complete hands directly - backend data is accurate
     const completeHands = data.playerHands;
     
+    // Step 1: Update Hand 1 first
     setTimeout(() => {
-      // Update hand 2 first with complete data
       setGameState(prev => ({
         ...prev,
-        playerHands: [completeHands[0], completeHands[1]], // BOTH hands from backend - this is the complete replacement
-        playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand)))
+        playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
+        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1] || 0]
       }));
       
-      // Complete split sequence
+      // Step 2: After Hand 1 animates, update Hand 2
       setTimeout(() => {
-        setSplitSequence('idle');
-        setIsSplitting(false);
-      }, gameConfig.durations.cardDeal + 100);
+        setGameState(prev => ({
+          ...prev,
+          playerHands: [completeHands[0], completeHands[1]], // Now update Hand 2
+          playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand)))
+        }));
+        
+        // Step 3: Complete split sequence after Hand 2 animates
+        setTimeout(() => {
+          setSplitSequence('idle');
+          setIsSplitting(false);
+        }, gameConfig.durations.cardDeal + 100);
+      }, gameConfig.durations.cardDeal + 100); // Wait for Hand 1 animation
     }, 100);
   };
 
@@ -990,67 +960,10 @@ export default function Blackjack({ route }) {
           onHandUpdate={onDealerHandUpdate}
           onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, true)}
           isDealer={true}
+          showTotal="below"
         />
         
-        {/* Dealer Hand Total - Below dealer cards */}
-        {showDealerTotal && dealerHands[0] && dealerHands[0].length > 0 && (
-          <View style={[s.handTotalContainer, { 
-            position: 'absolute',
-            left: dealerPosition.x + (gameConfig.handWidth / 2) - 30,
-            top: dealerPosition.y + gameConfig.cardHeight + 15,
-            zIndex: 1001
-          }]}>
-            <Text style={s.handTotalText}>
-              {animatedDealerTotal}
-            </Text>
-          </View>
-        )}
-        
-        {/* Player Hand Totals - Above player cards */}
-        {showPlayerTotal && gameState.totalHands === 1 && getActivePlayerCards().length > 0 && (
-          <View style={[s.handTotalContainer, { 
-            position: 'absolute',
-            left: singlePlayerPosition.x + (gameConfig.handWidth / 2) - 30,
-            top: singlePlayerPosition.y - 50,
-            zIndex: 1001
-          }]}>
-            <Text style={s.handTotalText}>
-              {animatedPlayerTotals[0]}
-            </Text>
-          </View>
-        )}
-        
-        {/* Split Hand Totals */}
-        {showPlayerTotal && gameState.totalHands > 1 && 
-          animatedHandPositions.map((position, handIndex) => {
-            const animatedPos = animatedPositions.current[handIndex];
-            
-            return (
-              gameState.playerHands[handIndex] && gameState.playerHands[handIndex].length > 0 && (
-                <Animated.View 
-                  key={`total-${handIndex}`} 
-                  style={[
-                    s.handTotalContainer,
-                    { 
-                      position: 'absolute',
-                      left: animatedPos ? 
-                        Animated.add(animatedPos.x, (gameConfig.handWidth / 2) - 30) :
-                        position.x + (gameConfig.handWidth / 2) - 30,
-                      top: animatedPos ? 
-                        Animated.add(animatedPos.y, -50) :
-                        position.y - 50,
-                      zIndex: 1001
-                    }
-                  ]}
-                >
-                  <Text style={s.handTotalText}>
-                    {animatedPlayerTotals[handIndex] || 0}
-                  </Text>
-                </Animated.View>
-              )
-            );
-          })
-        }
+        {/* Total display now handled by Hand component internally */}
         
         {/* Player Hand(s) */}
         {gameState.totalHands === 1 ? (
@@ -1066,6 +979,7 @@ export default function Blackjack({ route }) {
             onHandUpdate={onHandUpdate}
             onAnimationCallback={(suit, value, handIndex, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
             isDealer={false}
+            showTotal="above"
           />
         ) : (
           animatedHandPositions.map((position, handIndex) => {
@@ -1096,6 +1010,7 @@ export default function Blackjack({ route }) {
                   onHandUpdate={(newHands) => onSingleHandUpdate(handIndex, newHands[0])}
                   onAnimationCallback={(suit, value, _, cardId) => onCardAnimationComplete(suit, value, handIndex, cardId, false)}
                   isDealer={false}
+                  showTotal="above"
                   disableAnimation={splitSequence === 'handoff'}
                 />
               </Animated.View>
@@ -1130,11 +1045,7 @@ export default function Blackjack({ route }) {
                 }));
                 setDealerHands([[]]);
                 
-                // Reset hand total visibility and animated totals
-                setShowPlayerTotal(false);
-                setShowDealerTotal(false);
-                setAnimatedPlayerTotals([0]);
-                setAnimatedDealerTotal(0);
+                // Reset dealer animations complete flag
                 setDealerAnimationsComplete(false);
                 
                 // Reset final animations complete flag

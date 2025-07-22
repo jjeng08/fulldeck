@@ -22,7 +22,8 @@ const Hand = forwardRef(({
   cardData = null, // New card data to deal
   onHandUpdate = () => {}, // Callback when hand is updated
   onAnimationCallback = () => {}, // Callback when individual card animation completes
-  isDealer = false // Flag to distinguish dealer vs player hands
+  isDealer = false, // Flag to distinguish dealer vs player hands
+  showTotal = null // 'above', 'below', or null to not show totals
 }, ref) => {
   
   const cardAnimations = useRef(new Map());
@@ -35,6 +36,10 @@ const Hand = forwardRef(({
   const isInitialRender = useRef(true);
   const shouldNotifyParent = useRef(false);
   
+  // Internal total management
+  const [showHandTotal, setShowHandTotal] = useState(false);
+  const [animatedTotals, setAnimatedTotals] = useState([0]);
+  
   // Notify parent only when all animations are complete
   useEffect(() => {
     if (pendingAnimations === 0 && shouldNotifyParent.current) {
@@ -43,6 +48,43 @@ const Hand = forwardRef(({
     }
   }, [pendingAnimations, internalHands]);
   
+  // Calculate hand value with proper Ace handling
+  const calculateHandValue = (cards) => {
+    if (!cards || cards.length === 0) return 0;
+    
+    let value = 0;
+    let aces = 0;
+    
+    for (const card of cards) {
+      // Skip hole cards (cards with null value)
+      if (card.value === null || card.value === undefined) {
+        continue;
+      }
+      
+      if (card.value === 'A') {
+        aces++;
+        value += 11;
+      } else if (['K', 'Q', 'J'].includes(card.value)) {
+        value += 10;
+      } else {
+        const numValue = parseInt(card.value);
+        if (!isNaN(numValue)) {
+          value += numValue;
+        }
+      }
+    }
+    
+    // Adjust for soft aces to get the highest valid value
+    while (value > 21 && aces > 0) {
+      value -= 10;
+      aces--;
+    }
+    
+    return value;
+  };
+
+  // Removed: calculateCardValue - now using calculateHandValue for totals
+
   // Helper function to determine effective layout for a hand
   const getEffectiveLayout = (handCards) => {
     const layout = cardLayout || 'overlap'; // Default to overlap if no prop specified
@@ -58,11 +100,25 @@ const Hand = forwardRef(({
     const cardSpacingValue = getCardSpacingValue(currentHand);
     const effectiveLayout = getEffectiveLayout(currentHand);
     
-    // For overlap layout: use 2-card positioning for first two cards
-    // For spread layout: always use actual card count for positioning
-    const positioningCards = (effectiveLayout === 'overlap' && totalCards <= 2) ? 2 : totalCards;
-    const totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
-    const centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
+    // ALWAYS use consistent positioning - calculate as if we have at least 2 cards
+    // This ensures first card positioning doesn't shift when second card is dealt
+    const minPositioningCards = Math.max(totalCards, 2);
+    
+    // For spread layout, use total width calculation
+    // For overlap layout, use 2-card positioning when <= 2 cards
+    let positioningCards, totalWidth, centeredStartX;
+    
+    if (effectiveLayout === 'spread') {
+      // Spread: calculate width for positioning cards, but don't force minimum
+      positioningCards = minPositioningCards;
+      totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
+      centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
+    } else {
+      // Overlap: use 2-card positioning for consistency when <= 2 cards
+      positioningCards = (minPositioningCards <= 2) ? 2 : totalCards;
+      totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
+      centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
+    }
     
     // Calculate position for each card
     const positions = [];
@@ -223,6 +279,7 @@ const Hand = forwardRef(({
         // Trigger animation callback after the flip animation completes
         setTimeout(() => {
           onAnimationCallback(cardData.suit, cardData.value, handIndex, currentCardId);
+          // Total calculation now handled by useEffect watching internalHands
         }, gameConfig.durations.cardFlip);
       }, gameConfig.durations.cardDeal / 2 - gameConfig.durations.cardFlip / 2);
     }
@@ -278,6 +335,16 @@ const Hand = forwardRef(({
       repositionCards();
     }
   }, [animatingCards.length]); // Trigger when dealing starts
+  
+  // Calculate totals from current hand state whenever hands change
+  useEffect(() => {
+    if (showTotal) {
+      // Calculate actual totals from current internal hands
+      const currentTotals = displayHands.map(hand => calculateHandValue(hand));
+      setAnimatedTotals(currentTotals);
+      setShowHandTotal(displayHands.some(hand => hand.length > 0));
+    }
+  }, [internalHands, showTotal]); // Recalculate when internal hands change
   
   // Use internal hands state for display
   const displayHands = internalHands.length > 0 ? internalHands : [[]];
@@ -418,6 +485,7 @@ const Hand = forwardRef(({
             // Trigger animation callback after the flip animation completes
             setTimeout(() => {
               onAnimationCallback(animation.newCardData.suit, animation.newCardData.value, animation.handIndex, animation.currentCardId);
+              // Total calculation now handled by useEffect watching internalHands
             }, gameConfig.durations.cardFlip);
             
             // Decrement pending animations immediately for updates
@@ -500,6 +568,23 @@ const Hand = forwardRef(({
         
         return (
           <View key={`hand-${handIndex}`} style={styles.singleHandContainer}>
+            {/* Hand Total - Above cards */}
+            {showTotal === 'above' && showHandTotal && handCards && handCards.length > 0 && (
+              <View style={[
+                styles.handTotalContainer,
+                {
+                  position: 'absolute',
+                  left: (gameConfig.handWidth / 2) - 30,
+                  top: -50,
+                  zIndex: 1001
+                }
+              ]}>
+                <Text style={styles.handTotalText}>
+                  {animatedTotals[handIndex] || 0}
+                </Text>
+              </View>
+            )}
+            
             {/* Hand Label and Value */}
             {isSplit && (
               <View style={[
@@ -553,8 +638,8 @@ const Hand = forwardRef(({
                 const defaultPosition = allPositions[cardIndex];
                 
                 cardAnimations.current.set(animKey, {
-                  x: new Animated.Value(card.position?.x !== undefined ? card.position.x : defaultPosition.x),
-                  y: new Animated.Value(card.position?.y !== undefined ? card.position.y : defaultPosition.y)
+                  x: new Animated.Value(defaultPosition.x),
+                  y: new Animated.Value(defaultPosition.y)
                 });
               }
               
@@ -584,6 +669,23 @@ const Hand = forwardRef(({
                 </Animated.View>
               );
             })}
+            
+            {/* Hand Total - Below cards */}
+            {showTotal === 'below' && showHandTotal && handCards && handCards.length > 0 && (
+              <View style={[
+                styles.handTotalContainer,
+                {
+                  position: 'absolute',
+                  left: (gameConfig.handWidth / 2) - 30,
+                  top: gameConfig.cardHeight + 15,
+                  zIndex: 1001
+                }
+              ]}>
+                <Text style={styles.handTotalText}>
+                  {animatedTotals[handIndex] || 0}
+                </Text>
+              </View>
+            )}
           </View>
         );
       })}
@@ -660,6 +762,21 @@ const styles = {
   cardInHand: {
     width: '100%',
     height: '100%',
+  },
+  handTotalContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 8,
+    minWidth: 60,
+  },
+  handTotalText: {
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 };
 
