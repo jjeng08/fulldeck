@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Dimensions, Animated, Easing } from 'react-native';
+import { getBlackJackHandValue } from 'shared/utils';
 import Reanimated, { 
   useSharedValue, 
   useAnimatedStyle, 
-  withTiming
+  withTiming,
+  Easing as ReanimatedEasing
 } from 'react-native-reanimated';
 
 import Card from './Card';
 
 const Hand = forwardRef(({ 
+  testFinder,
   hands = {animate: true, data: []}, // Object with animation flag and hands data
   activeHandIndex = 0, // Which hand is currently active
   handLabels = [], // Labels for each hand
@@ -16,21 +19,43 @@ const Hand = forwardRef(({
   position = { x: 0, y: 0 },
   animatePosition = false, // Whether to animate position changes
   deckCoordinates = { x: 0, y: 0 },
-  gameConfig = {
-    cardWidth: 90,
-    cardHeight: 126,
-    cardSpacing: 0.3, // Overlap spacing multiplier
+  cardConfigs = {
+    width: 90,
+    height: 126,
+    spacing: 0.3, // Overlap spacing multiplier
     spreadLimit: 3, // Switch from spread to overlap when more than this many cards
+    flip: 300
+  },
+  gameConfigs = {
     handWidth: 300,
-    durations: { cardDeal: 1000, cardFlip: 300, handUpdate: 200 }
+    durations: { cardDeal: 1000, handUpdate: 200 }
   },
   cardLayout = null, // Override for card layout (spread, overlap)
-  cardData = null, // New card data to deal
   onHandUpdate = () => {}, // Callback when hand is updated
-  onAnimationCallback = () => {}, // Callback when individual card animation completes
-  isDealer = false, // Flag to distinguish dealer vs player hands
   showTotal = null // 'above', 'below', or null to not show totals
 }, ref) => {
+
+    // Dynamic styles using gameConfigs
+  const dynamicStyles = {
+    handContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: gameConfigs.handWidth,
+      height: cardConfigs.height,
+      pointerEvents: 'none',
+    },
+    handCard: {
+      position: 'absolute',
+      width: cardConfigs.width,
+      height: cardConfigs.height,
+    },
+    animatingCard: {
+      position: 'absolute',
+      width: cardConfigs.width,
+      height: cardConfigs.height,
+    },
+  };
   
   const cardAnimations = useRef(new Map());
   const [internalHands, setInternalHands] = useState(hands.data || []);
@@ -46,59 +71,30 @@ const Hand = forwardRef(({
   const [showHandTotal, setShowHandTotal] = useState(false);
   const [animatedTotals, setAnimatedTotals] = useState([0]);
   
-  // Position animation using react-native-reanimated
+  // Position animation using react-native-reanimated - initialize with current position
   const positionX = useSharedValue(position?.x || 0);
   const positionY = useSharedValue(position?.y || 0);
   
-  // Notify parent only when all animations are complete
+  // Initialize position values on mount
   useEffect(() => {
-    if (pendingAnimations === 0 && shouldNotifyParent.current) {
-      shouldNotifyParent.current = false;
-      onHandUpdate(internalHands);
+    if (position) {
+      positionX.value = position.x;
+      positionY.value = position.y;
     }
-  }, [pendingAnimations, internalHands]);
+  }, []); // Only run on mount
   
-  // Calculate hand value with proper Ace handling
-  const calculateHandValue = (cards) => {
-    if (!cards || cards.length === 0) return 0;
-    
-    let value = 0;
-    let aces = 0;
-    
-    for (const card of cards) {
-      // Skip hole cards (cards with null value)
-      if (card.value === null || card.value === undefined) {
-        continue;
-      }
-      
-      if (card.value === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.value)) {
-        value += 10;
-      } else {
-        const numValue = parseInt(card.value);
-        if (!isNaN(numValue)) {
-          value += numValue;
-        }
-      }
-    }
-    
-    // Adjust for soft aces to get the highest valid value
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
-    }
-    
-    return value;
-  };
-
-  // Removed: calculateCardValue - now using calculateHandValue for totals
+    // Use internal hands state for display
+  const displayHands = internalHands.length > 0 ? internalHands : [[]];
+  const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
+  const displayValues = handValues.length > 0 ? handValues : [0];
+  
+  const { width: screenWidth } = Dimensions.get('window');
+  const isSplit = displayHands.length > 1;
 
   // Helper function to determine effective layout for a hand
   const getEffectiveLayout = (handCards) => {
     const layout = cardLayout || 'overlap'; // Default to overlap if no prop specified
-    if (layout === 'spread' && handCards.length > gameConfig.spreadLimit) {
+    if (layout === 'spread' && handCards.length > cardConfigs.spreadLimit) {
       return 'overlap';
     }
     return layout;
@@ -109,25 +105,19 @@ const Hand = forwardRef(({
     const currentHand = displayHands[handIndex] || [];
     const cardSpacingValue = getCardSpacingValue(currentHand);
     const effectiveLayout = getEffectiveLayout(currentHand);
-    
-    // ALWAYS use consistent positioning - calculate as if we have at least 2 cards
-    // This ensures first card positioning doesn't shift when second card is dealt
+
     const minPositioningCards = Math.max(totalCards, 2);
-    
-    // For spread layout, use total width calculation
-    // For overlap layout, use 2-card positioning when <= 2 cards
+
     let positioningCards, totalWidth, centeredStartX;
     
     if (effectiveLayout === 'spread') {
-      // Spread: calculate width for positioning cards, but don't force minimum
       positioningCards = minPositioningCards;
-      totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
-      centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
+      totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
+      centeredStartX = (gameConfigs.handWidth - totalWidth) / 2;
     } else {
-      // Overlap: use 2-card positioning for consistency when <= 2 cards
       positioningCards = (minPositioningCards <= 2) ? 2 : totalCards;
-      totalWidth = gameConfig.cardWidth + (positioningCards - 1) * cardSpacingValue;
-      centeredStartX = (gameConfig.handWidth - totalWidth) / 2;
+      totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
+      centeredStartX = (gameConfigs.handWidth - totalWidth) / 2;
     }
     
     // Calculate position for each card - ONLY create positions for actual cards
@@ -204,13 +194,13 @@ const Hand = forwardRef(({
         const cardAnim = cardAnimations.current.get(animKey);
         Animated.timing(cardAnim.x, {
           toValue: targetPosition.x,
-          duration: gameConfig.durations.handUpdate,
+          duration: gameConfigs.durations.handUpdate,
           useNativeDriver: false,
         }).start();
         
         Animated.timing(cardAnim.y, {
           toValue: targetPosition.y,
-          duration: gameConfig.durations.handUpdate,
+          duration: gameConfigs.durations.handUpdate,
           useNativeDriver: false,
         }).start();
       });
@@ -232,14 +222,12 @@ const Hand = forwardRef(({
   const getCardSpacingValue = (handCards) => {
     const effectiveLayout = getEffectiveLayout(handCards);
     if (effectiveLayout === 'spread') {
-      return gameConfig.cardWidth + (gameConfig.cardWidth * 0.2);
+      return cardConfigs.width + (cardConfigs.width * 0.2);
     } else {
-      return gameConfig.cardWidth * gameConfig.cardSpacing;
+      return cardConfigs.width * cardConfigs.spacing;
     }
   };
-  
-  // Card animations now handled by individual Card components
-  
+    
   // Deal card function - with animation
   const dealCard = (cardData, handIndex = 0, specificCardIndex = null, finalTotalCards = null) => {
     // Use existing ID if available, otherwise generate new one
@@ -298,23 +286,22 @@ const Hand = forwardRef(({
         
         // Trigger animation callback after the flip animation completes
         setTimeout(() => {
-          onAnimationCallback(cardData.suit, cardData.value, handIndex, currentCardId);
           // Total calculation now handled by useEffect watching internalHands
-        }, gameConfig.durations.cardFlip);
-      }, gameConfig.durations.cardDeal / 2 - gameConfig.durations.cardFlip / 2);
+        }, cardConfigs.flip);
+      }, gameConfigs.durations.cardDeal / 2 - cardConfigs.flip / 2);
     }
     
     // Start animation
     Animated.parallel([
       Animated.timing(animatingCard.animateX, {
         toValue: targetPosition.x,
-        duration: gameConfig.durations.cardDeal,
+        duration: gameConfigs.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
       Animated.timing(animatingCard.animateY, {
         toValue: targetPosition.y,
-        duration: gameConfig.durations.cardDeal,
+        duration: gameConfigs.durations.cardDeal,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
@@ -342,12 +329,36 @@ const Hand = forwardRef(({
       
       // Decrement pending animations counter
       setPendingAnimations(prev => prev - 1);
-    });
+    });    
+  };
+
+  const calculateHandPosition = (handIndex, totalHands) => {
+    if (totalHands === 1) {
+      return { x: position.x, y: position.y };
+    }
     
-    // Cards now manage their own flipping based on data presence
+    // For split hands, position them side by side
+    const currentHand = displayHands[handIndex] || [];
+    const cardSpacingValue = getCardSpacingValue(currentHand);
+    
+    const handWidth = cardConfigs.width + (Math.max(0, (displayHands[handIndex]?.length || 1) - 1) * cardSpacingValue);
+    const totalWidth = handWidth * totalHands + (totalHands - 1) * 40; // 40px gap between hands
+    const startX = (screenWidth - totalWidth) / 2;
+    const handX = startX + handIndex * (handWidth + 40);
+    
+    return { x: handX, y: position.y };
   };
   
-  
+  // Animated style for Hand container position
+  const containerAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: positionX.value },
+        { translateY: positionY.value }
+      ]
+    };
+  });
+
   // Detect when cards are being dealt and reposition immediately
   useEffect(() => {
     // Reposition existing cards immediately when a new card starts animating
@@ -360,30 +371,47 @@ const Hand = forwardRef(({
   useEffect(() => {
     if (showTotal) {
       // Calculate actual totals from current internal hands
-      const currentTotals = displayHands.map(hand => calculateHandValue(hand));
+      const currentTotals = displayHands.map(hand => getBlackJackHandValue(hand));
       setAnimatedTotals(currentTotals);
       setShowHandTotal(displayHands.some(hand => hand.length > 0));
     }
   }, [internalHands, showTotal]); // Recalculate when internal hands change
   
-  // Animate position changes
+  // Animate position changes - completely isolated from card animations
   useEffect(() => {
-    if (animatePosition && position) {
-      positionX.value = withTiming(position.x, { duration: 600 });
-      positionY.value = withTiming(position.y, { duration: 600 });
-    } else if (position) {
-      positionX.value = position.x;
-      positionY.value = position.y;
+    if (position) {
+      const currentX = positionX.value;
+      const currentY = positionY.value;
+      const targetX = position.x;
+      const targetY = position.y;
+      
+      // Only animate if there's an actual position change
+      const hasPositionChanged = Math.abs(currentX - targetX) > 1 || Math.abs(currentY - targetY) > 1;
+      
+      if (animatePosition && hasPositionChanged) {
+        // Animate to new position with smooth easing
+        positionX.value = withTiming(targetX, { 
+          duration: 600,
+          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
+        });
+        positionY.value = withTiming(targetY, { 
+          duration: 600,
+          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
+        });
+      } else if (!animatePosition) {
+        // Snap to position immediately
+        positionX.value = targetX;
+        positionY.value = targetY;
+      }
     }
   }, [position?.x, position?.y, animatePosition]);
-  
-  // Use internal hands state for display
-  const displayHands = internalHands.length > 0 ? internalHands : [[]];
-  const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
-  const displayValues = handValues.length > 0 ? handValues : [0];
-  
+
   // Diff incoming hands with current hands and animate differences
   useEffect(() => {
+
+    if (testFinder) {
+      console.log(hands)
+    }
     const handsData = hands.data || [];
     const shouldAnimate = hands.animate !== false;
     
@@ -456,7 +484,7 @@ const Hand = forwardRef(({
             
             // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
             const useInitialTiming = (currentHand.length + (i - currentHand.length)) <= 2;
-            const delayBuffer = (isDealer && !useInitialTiming) ? gameConfig.buffers.dealerTurn : gameConfig.buffers.initialDeal;
+            const delayBuffer = (!useInitialTiming) ? gameConfigs.buffers.dealerTurn : gameConfigs.buffers.initialDeal;
             
             newCardsToAnimate.push({
               cardData: cardWithId,
@@ -505,9 +533,8 @@ const Hand = forwardRef(({
     
     // Add new cards to animate, with delays adjusted for card updates
     newCardsToAnimate.forEach(({ cardData, handIndex, cardIndex, finalTotalCards, delay }) => {
-      // If there are card updates, delay new cards by dealer delay
       const adjustedDelay = cardsToUpdate.length > 0 ? 
-        gameConfig.buffers.dealerTurn + delay : 
+        gameConfigs.buffers.dealerTurn + delay : 
         delay;
       
       allAnimations.push({
@@ -547,7 +574,7 @@ const Hand = forwardRef(({
             setTimeout(() => {
               onAnimationCallback(animation.newCardData.suit, animation.newCardData.value, animation.handIndex, animation.currentCardId);
               // Total calculation now handled by useEffect watching internalHands
-            }, gameConfig.durations.cardFlip);
+            }, gameConfigs.durations.cardFlip);
             
             // Decrement pending animations immediately for updates
             setPendingAnimations(prev => prev - 1);
@@ -598,58 +625,14 @@ const Hand = forwardRef(({
       }
     }
   }, [hands]);
-  
-  const { width: screenWidth } = Dimensions.get('window');
-  const isSplit = displayHands.length > 1;
 
-  const calculateHandPosition = (handIndex, totalHands) => {
-    if (totalHands === 1) {
-      return { x: position.x, y: position.y };
+  // Notify parent only when all animations are complete
+  useEffect(() => {
+    if (pendingAnimations === 0 && shouldNotifyParent.current) {
+      shouldNotifyParent.current = false;
+      onHandUpdate(internalHands);
     }
-    
-    // For split hands, position them side by side
-    const currentHand = displayHands[handIndex] || [];
-    const cardSpacingValue = getCardSpacingValue(currentHand);
-    
-    const handWidth = gameConfig.cardWidth + (Math.max(0, (displayHands[handIndex]?.length || 1) - 1) * cardSpacingValue);
-    const totalWidth = handWidth * totalHands + (totalHands - 1) * 40; // 40px gap between hands
-    const startX = (screenWidth - totalWidth) / 2;
-    const handX = startX + handIndex * (handWidth + 40);
-    
-    return { x: handX, y: position.y };
-  };
-  
-  // Animated style for Hand container position
-  const containerAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateX: positionX.value },
-        { translateY: positionY.value }
-      ]
-    };
-  });
-  
-  // Dynamic styles using gameConfig
-  const dynamicStyles = {
-    handContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      width: gameConfig.handWidth,
-      height: gameConfig.cardHeight,
-      pointerEvents: 'none',
-    },
-    handCard: {
-      position: 'absolute',
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
-    },
-    animatingCard: {
-      position: 'absolute',
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
-    },
-  };
+  }, [pendingAnimations, internalHands]);
 
   return (
     <Reanimated.View style={[dynamicStyles.handContainer, containerAnimatedStyle]}>
@@ -665,7 +648,7 @@ const Hand = forwardRef(({
                 styles.handTotalContainer,
                 {
                   position: 'absolute',
-                  left: (gameConfig.handWidth / 2) - 30,
+                  left: (gameConfigs.handWidth / 2) - 30,
                   top: -50,
                   zIndex: 1001
                 }
@@ -710,7 +693,7 @@ const Hand = forwardRef(({
                   top: handPosition.y - 10,
                   width: (() => {
                     const cardSpacingValue = getCardSpacingValue(handCards);
-                    return gameConfig.cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
+                    return card.cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
                   })(),
                   height: 126 + 20, // card height + padding
                   zIndex: 40
@@ -754,7 +737,7 @@ const Hand = forwardRef(({
                     testID={`hand-${handIndex}-card-${card.id}`}
                     suit={card.suit}
                     value={card.value}
-                    gameConfig={gameConfig}
+                    cardConfigs={cardConfigs}
                     style={styles.cardInHand}
                   />
                 </Animated.View>
@@ -767,8 +750,8 @@ const Hand = forwardRef(({
                 styles.handTotalContainer,
                 {
                   position: 'absolute',
-                  left: (gameConfig.handWidth / 2) - 30,
-                  top: gameConfig.cardHeight + 15,
+                  left: (gameConfigs.handWidth / 2) - 30,
+                  top: cardConfigs.height + 15,
                   zIndex: 1001
                 }
               ]}>
@@ -800,7 +783,7 @@ const Hand = forwardRef(({
             <Card
               suit={card.suit}
               value={card.value}
-              gameConfig={gameConfig}
+              gameConfigs={gameConfigs}
               style={styles.cardInHand}
             />
           </Animated.View>

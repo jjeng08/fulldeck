@@ -8,14 +8,13 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const Deck = forwardRef(({ 
   onDealCard = () => {},
   style = {},
-  cards = [],
   portalCards = [],
-  isShuffling = false,
-  shuffleTimes = 0,
-  gameConfig = { 
-    cardWidth: 90,
-    cardHeight: 126,
-    durations: { deckShuffle: 800, cardDeal: 1000, cardFlip: 300 }
+  deckConfigs = {
+    shuffle: 200
+  },
+  cardConfigs = { 
+    width: 90,
+    height: 126,
   },
   onDeckCoordinatesChange = () => {}
 }, ref) => {
@@ -107,12 +106,12 @@ const Deck = forwardRef(({
           right: newZIndex 
         };
       }));
-    }, gameConfig.durations.deckShuffle / 2); // At peak of animation when cards are most separated
+    }, deckConfigs.shuffle / 2); // At peak of animation when cards are most separated
     
     // Start 3-phase arc animation: up -> right with rotation -> back down
     Animated.timing(shuffleProgress, {
       toValue: 1,
-      duration: gameConfig.durations.deckShuffle,
+      duration: deckConfigs.shuffle,
       easing: Easing.linear,
       useNativeDriver: false,
     }).start(() => {
@@ -224,12 +223,12 @@ const Deck = forwardRef(({
           
           const translateY = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: [0, -((gameConfig.cardHeight / 2 + 20) * 1.25), 0], // 25% more vertical separation
+            outputRange: [0, -((cardConfigs.height / 2 + 20) * 1.25), 0], // 25% more vertical separation
           });
           
           const translateX = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1], 
-            outputRange: [0, gameConfig.cardWidth * 0.6 * 0.75, 0], // 25% less horizontal movement
+            outputRange: [0, cardConfigs.width * 0.6 * 0.75, 0], // 25% less horizontal movement
           });
           
           const rotate = shuffleProgress.interpolate({
@@ -249,12 +248,12 @@ const Deck = forwardRef(({
           
           const translateY = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1],
-            outputRange: [0, (gameConfig.cardHeight / 2 + 20) * 1.25, 0], // 25% more vertical separation
+            outputRange: [0, (cardConfigs.height / 2 + 20) * 1.25, 0], // 25% more vertical separation
           });
           
           const translateX = shuffleProgress.interpolate({
             inputRange: [0, 0.5, 1], 
-            outputRange: [0, -(gameConfig.cardWidth * 0.6 * 0.75), 0], // 25% less horizontal movement
+            outputRange: [0, -(cardConfigs.width * 0.6 * 0.75), 0], // 25% less horizontal movement
           });
           
           const rotate = shuffleProgress.interpolate({
@@ -287,7 +286,7 @@ const Deck = forwardRef(({
           <Card
             suit={null}
             value={null}
-            gameConfig={gameConfig}
+            cardConfigs={cardConfigs}
             style={styles.deckCard}
           />
         </Animated.View>
@@ -310,17 +309,17 @@ const Deck = forwardRef(({
     // setDealtCards(prev => prev.filter(card => card.id !== cardId));
   };
 
-  // Dynamic styles using gameConfig
+  // Dynamic styles using cardConfigs
   const dynamicStyles = {
     deckContainer: {
       position: 'relative',
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
+      width: cardConfigs.width,
+      height: cardConfigs.height,
     },
     deckCardContainer: {
       position: 'absolute',
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
+      width: cardConfigs.width,
+      height: cardConfigs.height,
       borderRadius: 8,
       borderWidth: 1,
       borderColor: '#333',
@@ -328,8 +327,8 @@ const Deck = forwardRef(({
     },
     portalCard: {
       position: 'absolute',
-      width: gameConfig.cardWidth,
-      height: gameConfig.cardHeight,
+      width: cardConfigs.width,
+      height: cardConfigs.height,
     },
   };
 
@@ -377,7 +376,7 @@ const Deck = forwardRef(({
               <Card
                 suit={card.isFlipping ? card.suit : null}
                 value={card.isFlipping ? card.value : null}
-                gameConfig={gameConfig}
+                cardConfigs={cardConfigs}
                 style={card.isFlipping ? {
                   width: '100%',
                   height: '100%',
@@ -401,7 +400,7 @@ const Deck = forwardRef(({
             value={card.faceUp ? card.value : null}
             position={targetPosition}
             animatePosition={true}
-            gameConfig={gameConfig}
+            cardConfigs={cardConfigs}
             onAnimationComplete={() => {
               // Flip the card after it reaches target position
               if (!card.faceUp) {

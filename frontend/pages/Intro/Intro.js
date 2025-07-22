@@ -30,10 +30,8 @@ export default function IntroPage() {
   });
 
   useEffect(() => {
-    console.log('Intro useEffect - user:', user);
     // Navigate to blackjack when user successfully logs in
     if (user) {
-      console.log('User is authenticated, navigating to Blackjack');
       // Clear form data before navigation
       setShowLoginForm(false);
       setShowRegisterForm(false);
