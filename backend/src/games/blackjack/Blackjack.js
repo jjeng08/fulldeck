@@ -368,6 +368,25 @@ class Blackjack {
     // Update the active hand state
     this.updateActiveHandCards(newCards);
     
+    // Check if we need to move to next hand after bust in split scenario
+    if (busted && this.totalHands > 1 && this.activeHandIndex < this.totalHands - 1) {
+      // Move to next hand instead of ending game
+      this.activeHandIndex++;
+      return {
+        success: true,
+        newCard,
+        cards: newCards,
+        busted,
+        gameStatus: 'playing',
+        result: 'lose', // This hand lost
+        payout: 0,
+        targetHandId: handId,
+        activeHandIndex: this.activeHandIndex,
+        playerHands: this.playerHands,
+        totalHands: this.totalHands
+      };
+    }
+    
     return {
       success: true,
       newCard,
@@ -376,7 +395,10 @@ class Blackjack {
       gameStatus: busted ? 'finished' : 'playing',
       result: busted ? 'lose' : null,
       payout: busted ? 0 : null,
-      targetHandId: handId
+      targetHandId: handId,
+      playerHands: this.playerHands,
+      totalHands: this.totalHands
+      // Don't send activeHandIndex for non-bust hits - it shouldn't change
     };
   }
 
@@ -388,6 +410,23 @@ class Blackjack {
     
     // Update the active hand state
     this.updateActiveHandCards(playerCards);
+    
+    // Check if we need to move to next hand in split scenario
+    if (this.totalHands > 1 && this.activeHandIndex < this.totalHands - 1) {
+      // Move to next hand instead of playing dealer
+      this.activeHandIndex++;
+      return {
+        success: true,
+        gameStatus: 'playing',
+        playerCards: playerCards,
+        dealerCards: dealerCards,
+        activeHandIndex: this.activeHandIndex,
+        playerHands: this.playerHands,
+        totalHands: this.totalHands
+      };
+    }
+    
+    // All hands complete - play dealer
     // Use the complete dealer hand stored during initial deal
     const completeDealerCards = this.currentDealerCards || dealerCards;
     
@@ -412,6 +451,9 @@ class Blackjack {
       result: result.result,
       payout: result.payout,
       profit: result.profit,
+      activeHandIndex: this.activeHandIndex,
+      playerHands: this.playerHands,
+      totalHands: this.totalHands
     };
   }
 
@@ -456,7 +498,26 @@ class Blackjack {
     const playerHandValue = this.calculateHandValue(newPlayerCards);
     const playerBusted = playerHandValue > 21;
     
-    // If player busted, game ends immediately
+    // Update the active hand with the new card
+    this.updateActiveHandCards(newPlayerCards);
+    
+    // Check if we need to move to next hand after double down (like stand)
+    if (this.totalHands > 1 && this.activeHandIndex < this.totalHands - 1) {
+      // Move to next hand instead of playing dealer
+      this.activeHandIndex++;
+      return {
+        success: true,
+        gameStatus: 'playing',
+        playerCards: newPlayerCards,
+        dealerCards: dealerCards,
+        activeHandIndex: this.activeHandIndex,
+        playerHands: this.playerHands,
+        totalHands: this.totalHands,
+        betAmount: betAmount * 2
+      };
+    }
+    
+    // If player busted on last hand, game ends immediately
     if (playerBusted) {
       await this.updatePlayerBalanceAfterGame(userId, 0, 'lose', betAmount * 2);
       return {
@@ -467,11 +528,14 @@ class Blackjack {
         result: 'lose',
         payout: 0,
         profit: -(betAmount * 2),
-        betAmount: betAmount * 2
+        betAmount: betAmount * 2,
+        activeHandIndex: this.activeHandIndex,
+        playerHands: this.playerHands,
+        totalHands: this.totalHands
       };
     }
     
-    // Player didn't bust - play dealer hand immediately
+    // All hands complete - play dealer hand
     const completeDealerCards = this.currentDealerCards || dealerCards;
     const workingDealerCards = [...completeDealerCards];
     
@@ -670,6 +734,7 @@ class Blackjack {
       playerHands: [hand1, hand2], // Send only first cards to trigger animation
       playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
       currentBets: this.currentBets,
+      activeHandIndex: this.activeHandIndex,
       totalHands: 2,
       dealerCards: this.dealerCards // Keep existing dealer cards
     };
@@ -684,6 +749,7 @@ class Blackjack {
       playerHands: this.playerHands, // Complete hands with second cards
       playerValues: this.playerValues,
       currentBets: this.currentBets,
+      activeHandIndex: this.activeHandIndex,
       totalHands: 2,
       dealerCards: this.dealerCards
     };
@@ -1011,12 +1077,15 @@ async function onPlayerAction(ws, data, userId) {
         result: result.result,
         payout: result.profit || result.payout, // Send profit for frontend display
         betAmount: result.betAmount || data.betAmount,
+        // Only send activeHandIndex when it's explicitly provided (hand transitions)
+        ...(result.activeHandIndex !== undefined ? { activeHandIndex: result.activeHandIndex } : {}),
         // Handle split-specific data
         ...(result.playerHands ? { 
           playerHands: result.playerHands,
           playerValues: result.playerValues,
           currentBets: result.currentBets,
-          totalHands: result.totalHands
+          totalHands: result.totalHands,
+          activeHandIndex: result.activeHandIndex
         } : {}),
         // Handle double down completion flag
         ...(result.doubleDownComplete ? { doubleDownComplete: true } : {})

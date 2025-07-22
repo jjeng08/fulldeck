@@ -16,6 +16,8 @@ const Hand = forwardRef(({
   activeHandIndex = 0, // Which hand is currently active
   handLabels = [], // Labels for each hand
   handValues = [], // Values for each hand
+  betAmounts = [], // Bet amounts for each hand
+  isSplitHand = false, // Whether this is part of a split scenario
   position = { x: 0, y: 0 },
   animatePosition = false, // Whether to animate position changes
   deckCoordinates = { x: 0, y: 0 },
@@ -87,6 +89,7 @@ const Hand = forwardRef(({
   const displayHands = internalHands.length > 0 ? internalHands : [[]];
   const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
   const displayValues = handValues.length > 0 ? handValues : [0];
+  const displayBetAmounts = betAmounts.length > 0 ? betAmounts : [0];
   
   const { width: screenWidth } = Dimensions.get('window');
   const isSplit = displayHands.length > 1;
@@ -570,12 +573,6 @@ const Hand = forwardRef(({
               return newHands;
             });
             
-            // Trigger animation callback after the flip animation completes
-            setTimeout(() => {
-              onAnimationCallback(animation.newCardData.suit, animation.newCardData.value, animation.handIndex, animation.currentCardId);
-              // Total calculation now handled by useEffect watching internalHands
-            }, gameConfigs.durations.cardFlip);
-            
             // Decrement pending animations immediately for updates
             setPendingAnimations(prev => prev - 1);
             
@@ -634,72 +631,82 @@ const Hand = forwardRef(({
     }
   }, [pendingAnimations, internalHands]);
 
+  const isActive = activeHandIndex === 0;
+  
   return (
-    <Reanimated.View style={[dynamicStyles.handContainer, containerAnimatedStyle]}>
-      {displayHands.map((handCards, handIndex) => {
-        const handPosition = calculateHandPosition(handIndex, displayHands.length);
-        const isActive = handIndex === activeHandIndex;
-        
-        return (
-          <View key={`hand-${handIndex}`} style={styles.singleHandContainer}>
-            {/* Hand Total - Above cards */}
-            {showTotal === 'above' && showHandTotal && handCards && handCards.length > 0 && (
-              <View style={[
-                styles.handTotalContainer,
-                {
-                  position: 'absolute',
-                  left: (gameConfigs.handWidth / 2) - 30,
-                  top: -50,
-                  zIndex: 1001
-                }
-              ]}>
-                <Text style={styles.handTotalText}>
-                  {animatedTotals[handIndex] || 0}
-                </Text>
-              </View>
-            )}
-            
-            {/* Hand Label and Value */}
-            {isSplit && (
-              <View style={[
-                styles.handInfo,
-                {
-                  left: handPosition.x,
-                  top: handPosition.y - 60,
-                  zIndex: 100
-                }
-              ]}>
-                <Text style={[
-                  styles.handLabel,
-                  isActive && styles.activeHandLabel
+    <Reanimated.View style={[
+      dynamicStyles.handContainer, 
+      containerAnimatedStyle,
+      isSplitHand && isActive && {
+        borderWidth: 3,
+        borderColor: '#FFD700',
+        borderRadius: 12,
+      }
+    ]}>
+        {displayHands.map((handCards, handIndex) => {
+          const handPosition = calculateHandPosition(handIndex, displayHands.length);
+          const isActive = handIndex === activeHandIndex;
+          
+          return (
+            <View key={`hand-${handIndex}`} style={styles.singleHandContainer}>
+              {/* Bet Display - Above total */}
+              {displayBetAmounts[handIndex] > 0 && (
+                <View style={[
+                  styles.betDisplayContainer,
+                  {
+                    position: 'absolute',
+                    left: (gameConfigs.handWidth / 2) - 60,
+                    top: showTotal === 'above' ? -100 : -50,
+                    zIndex: 1001
+                  }
                 ]}>
-                  {displayLabels[handIndex] || `Hand ${handIndex + 1}`}
-                </Text>
-                <Text style={[
-                  styles.handValue,
-                  isActive && styles.activeHandValue
+                  <Text style={styles.betDisplayText}>
+                    Current Bet: ${Math.floor(displayBetAmounts[handIndex] / 100).toLocaleString()}
+                  </Text>
+                </View>
+              )}
+              
+              {/* Hand Total - Above cards */}
+              {showTotal === 'above' && showHandTotal && handCards && handCards.length > 0 && (
+                <View style={[
+                  styles.handTotalContainer,
+                  {
+                    position: 'absolute',
+                    left: (gameConfigs.handWidth / 2) - 30,
+                    top: -50,
+                    zIndex: 1001
+                  }
                 ]}>
-                  {displayValues[handIndex] || 0}
-                </Text>
-              </View>
-            )}
-            
-            {/* Hand Border for Active Hand */}
-            {isSplit && isActive && (
-              <View style={[
-                styles.activeHandBorder,
-                {
-                  left: handPosition.x - 10,
-                  top: handPosition.y - 10,
-                  width: (() => {
-                    const cardSpacingValue = getCardSpacingValue(handCards);
-                    return card.cardWidth + (Math.max(0, (handCards?.length || 1) - 1) * cardSpacingValue) + 20;
-                  })(),
-                  height: 126 + 20, // card height + padding
-                  zIndex: 40
-                }
-              ]} />
-            )}
+                  <Text style={styles.handTotalText}>
+                    {animatedTotals[handIndex] || 0}
+                  </Text>
+                </View>
+              )}
+              
+              {/* Hand Label and Value */}
+              {isSplitHand && (
+                <View style={[
+                  styles.handInfo,
+                  {
+                    left: handPosition.x,
+                    top: handPosition.y - 60,
+                    zIndex: 100
+                  }
+                ]}>
+                  <Text style={[
+                    styles.handLabel,
+                    isActive && styles.activeHandLabel
+                  ]}>
+                    {displayLabels[handIndex] || `Hand ${handIndex + 1}`}
+                  </Text>
+                  <Text style={[
+                    styles.handValue,
+                    isActive && styles.activeHandValue
+                  ]}>
+                    {displayValues[handIndex] || 0}
+                  </Text>
+                </View>
+              )}
             
             {/* Cards in Hand */}
             {(handCards || []).map((card, cardIndex) => {
@@ -757,6 +764,23 @@ const Hand = forwardRef(({
               ]}>
                 <Text style={styles.handTotalText}>
                   {animatedTotals[handIndex] || 0}
+                </Text>
+              </View>
+            )}
+            
+            {/* Bet Display - Below total */}
+            {displayBetAmounts[handIndex] > 0 && showTotal === 'below' && (
+              <View style={[
+                styles.betDisplayContainer,
+                {
+                  position: 'absolute',
+                  left: (gameConfigs.handWidth / 2) - 60,
+                  top: cardConfigs.height + 65,
+                  zIndex: 1001
+                }
+              ]}>
+                <Text style={styles.betDisplayText}>
+                  Current Bet: ${Math.floor(displayBetAmounts[handIndex] / 100).toLocaleString()}
                 </Text>
               </View>
             )}
@@ -827,12 +851,6 @@ const styles = {
   activeHandValue: {
     color: '#FFD700', // Gold color for active hand
   },
-  activeHandBorder: {
-    position: 'absolute',
-    borderWidth: 3,
-    borderColor: '#FFD700',
-    borderRadius: 12,
-  },
   cardInHand: {
     width: '100%',
     height: '100%',
@@ -849,6 +867,21 @@ const styles = {
   handTotalText: {
     fontSize: 16,
     color: '#ffffff',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  betDisplayContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'transparent',
+    borderRadius: 8,
+    minWidth: 120,
+  },
+  betDisplayText: {
+    fontSize: 14,
+    color: '#FFD700',
     fontWeight: 'bold',
     textAlign: 'center',
   },

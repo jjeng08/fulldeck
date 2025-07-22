@@ -380,7 +380,7 @@ export default function Blackjack({ route }) {
     const { result, payout } = gameState;
     // Use the properly calculated hand values that are displayed
     const playerValue = parseInt(calculateHandValue(getActivePlayerCards()));
-    const dealerValue = parseInt(calculateHandValue(dealerHands[0] || []));
+    const dealerValue = parseInt(calculateHandValue(gameState.dealerCards || []));
     const playerCards = getActivePlayerCards();
     
     if (result === 'lose') {
@@ -686,8 +686,8 @@ export default function Blackjack({ route }) {
 
   // Handle double down action
   const onDoubleDownAction = (data) => {
-    // Double down follows same pattern as initial bet
-    onBetAction(data);
+    // Double down uses the same logic as other actions
+    onDefaultAction(data);
   };
 
   // Handle split action - initial split with first cards
@@ -703,6 +703,7 @@ export default function Blackjack({ route }) {
       playerHands: data.playerHands, // First cards only
       playerValues: data.playerHands.map(hand => parseInt(calculateHandValue(hand))),
       currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
+      activeHandIndex: data.activeHandIndex !== undefined ? data.activeHandIndex : 0,
       gameStatus: data.gameStatus
     }));
     
@@ -739,7 +740,8 @@ export default function Blackjack({ route }) {
     setGameState(prev => ({
         ...prev,
         playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
-        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1] || 0]
+        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1] || 0],
+        activeHandIndex: data.activeHandIndex !== undefined ? data.activeHandIndex : prev.activeHandIndex
       }));
       
       // Step 2: After Hand 1 animates, update Hand 2
@@ -749,7 +751,8 @@ export default function Blackjack({ route }) {
         setGameState(prev => ({
           ...prev,
           playerHands: [completeHands[0], completeHands[1]], // Now update Hand 2
-          playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand)))
+          playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand))),
+          activeHandIndex: data.activeHandIndex !== undefined ? data.activeHandIndex : prev.activeHandIndex
         }));
         
         // Step 3: Complete split sequence after Hand 2 animates
@@ -762,20 +765,39 @@ export default function Blackjack({ route }) {
   // Handle all other actions (hit, stand, etc.)
   const onDefaultAction = (data) => {
     // For all other actions, update normally (no sequencing needed)
-    const newPlayerHands = data.playerCards ? [data.playerCards] : 
-                          data.playerHands ? data.playerHands : gameState.playerHands;
+    const newPlayerHands = data.playerCards ? (() => {
+      // For single playerCards response, update the correct hand in existing array
+      const activeIndex = data.activeHandIndex !== undefined ? data.activeHandIndex : gameState.activeHandIndex;
+      const updatedHands = [...gameState.playerHands];
+      updatedHands[activeIndex] = data.playerCards;
+      return updatedHands;
+    })() : data.playerHands ? data.playerHands : gameState.playerHands;
     const newDealerCards = data.dealerCards || gameState.dealerCards;
     
     // Update hand states with animation
     if (data.playerCards) {
-      setPlayerHand1State({animate: true, data: [data.playerCards]});
+      // For single playerCards response, update the correct hand based on activeHandIndex
+      const activeIndex = data.activeHandIndex !== undefined ? data.activeHandIndex : gameState.activeHandIndex;
+      if (activeIndex === 0) {
+        setPlayerHand1State({animate: true, data: [data.playerCards]});
+      } else if (activeIndex === 1) {
+        setPlayerHand2State({animate: true, data: [data.playerCards]});
+      }
     } else if (data.playerHands) {
       if (data.playerHands[0]) setPlayerHand1State({animate: true, data: [data.playerHands[0]]});
       if (data.playerHands[1]) setPlayerHand2State({animate: true, data: [data.playerHands[1]]});
     }
     
     if (data.dealerCards) {
-      setDealerHandState({animate: true, data: [data.dealerCards]});
+      // Check if this is the final dealer sequence (game finished)
+      if (data.gameStatus === 'finished') {
+        // Use proper dealer animation sequence like initial deal
+        setDealingSequence('dealer');
+        setDealerHandState({animate: true, data: [data.dealerCards]});
+      } else {
+        // Regular dealer update during game
+        setDealerHandState({animate: true, data: [data.dealerCards]});
+      }
     }
     
     // Calculate card values in frontend instead of using backend values
@@ -793,6 +815,7 @@ export default function Blackjack({ route }) {
       playerValues: newPlayerValues,
       dealerValue: newDealerValue,
       totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
+      activeHandIndex: data.activeHandIndex !== undefined ? data.activeHandIndex : prev.activeHandIndex,
       result: data.result || prev.result,
       payout: data.payout || prev.payout
     }));
@@ -906,23 +929,6 @@ export default function Blackjack({ route }) {
             </Text>
           )}
           
-          {/* Current Bet Display */}
-          {gameState.totalHands === 1 && (getActiveCurrentBet() > 0 || gameState.gameStatus === 'dealing') && (
-            <Text style={s.currentBet}>
-              Current Bet: {formatCurrency(getActiveCurrentBet())}
-            </Text>
-          )}
-          
-          {/* Split Hands Bet Display */}
-          {gameState.totalHands > 1 && gameState.currentBets.some(bet => bet > 0) && (
-            <View style={s.splitBetsContainer}>
-              <Text style={s.splitBetsTitle}>Hand Bets:</Text>
-              <View style={s.splitBetsRow}>
-                <Text style={s.splitBetText}>Hand 1: {formatCurrency(gameState.currentBets[0] || 0)}</Text>
-                <Text style={s.splitBetText}>Hand 2: {formatCurrency(gameState.currentBets[1] || 0)}</Text>
-              </View>
-            </View>
-          )}
         </View>
         
         {/* Dealer Hand */}
@@ -952,6 +958,7 @@ export default function Blackjack({ route }) {
             activeHandIndex={gameState.activeHandIndex}
             handLabels={['Player Hand']}
             handValues={gameState.playerValues}
+            betAmounts={gameState.currentBets}
             position={singlePlayerPosition}
             animatePosition={false}
             deckCoordinates={deckCoordinates}
@@ -967,9 +974,11 @@ export default function Blackjack({ route }) {
               key={`split-hand-${handIndex}`}
               testID={`splitPlayerHand${handIndex}`}
               hands={handIndex === 0 ? playerHand1State : playerHand2State}
-              activeHandIndex={0}
+              activeHandIndex={gameState.activeHandIndex === handIndex ? 0 : -1}
               handLabels={[`Hand ${handIndex + 1}`]}
               handValues={[gameState.playerValues[handIndex] || 0]}
+              betAmounts={[gameState.currentBets[handIndex] || 0]}
+              isSplitHand={gameState.totalHands > 1}
               position={position}
               animatePosition={splitSequence === 'spread'}
               deckCoordinates={deckCoordinates}
