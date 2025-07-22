@@ -6,7 +6,6 @@ import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from 'shared/text';
 import { formatCurrency } from 'shared/utils';
-import { styleConstants as sc } from 'shared/styleConstants';
 import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
@@ -312,6 +311,9 @@ export default function Blackjack({ route }) {
         });
       }
       
+      // IMMEDIATELY update positions to render both hands
+      setAnimatedHandPositions(splitPositions);
+      
       // Animate both hands to their split positions
       const animations = splitPositions.map((targetPos, index) => {
         return Animated.parallel([
@@ -328,10 +330,7 @@ export default function Blackjack({ route }) {
         ]);
       });
       
-      Animated.parallel(animations).start(() => {
-        // Animation complete - update positions
-        setAnimatedHandPositions(splitPositions);
-      });
+      Animated.parallel(animations).start();
     }
   }, [splitSequence]);
   
@@ -601,7 +600,6 @@ export default function Blackjack({ route }) {
         
         // Clear loading state for this action
         clearLoadingAction(actionType);
-        
         // Handle split action - backend sends only first cards to trigger separation
         if (actionType === 'split' && data.playerHands) {
           // Update state to show we now have 2 hands with single cards
@@ -1043,6 +1041,7 @@ export default function Blackjack({ route }) {
         {/* Player Hand(s) */}
         {gameState.totalHands === 1 ? (
           <Hand
+            testID="singlePlayerHand"
             hands={gameState.playerHands}
             activeHandIndex={gameState.activeHandIndex}
             handLabels={['Player Hand']}
@@ -1061,6 +1060,7 @@ export default function Blackjack({ route }) {
             return (
               <Animated.View
                 key={`animated-hand-${handIndex}`}
+                testID={`splitHandContainer${handIndex}`}
                 style={[
                   {
                     position: 'absolute',
@@ -1071,6 +1071,7 @@ export default function Blackjack({ route }) {
                 ]}
               >
                 <Hand
+                  testID={`splitPlayerHand${handIndex}`}
                   hands={[gameState.playerHands[handIndex] || []]}
                   activeHandIndex={0}
                   handLabels={[`Hand ${handIndex + 1}`]}
