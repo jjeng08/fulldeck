@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Dimensions, Animated, Easing } from 'react-native';
+import Reanimated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withTiming
+} from 'react-native-reanimated';
 
 import Card from './Card';
 
@@ -9,6 +14,7 @@ const Hand = forwardRef(({
   handLabels = [], // Labels for each hand
   handValues = [], // Values for each hand
   position = { x: 0, y: 0 },
+  animatePosition = false, // Whether to animate position changes
   deckCoordinates = { x: 0, y: 0 },
   gameConfig = {
     cardWidth: 90,
@@ -39,6 +45,10 @@ const Hand = forwardRef(({
   // Internal total management
   const [showHandTotal, setShowHandTotal] = useState(false);
   const [animatedTotals, setAnimatedTotals] = useState([0]);
+  
+  // Position animation using react-native-reanimated
+  const positionX = useSharedValue(position?.x || 0);
+  const positionY = useSharedValue(position?.y || 0);
   
   // Notify parent only when all animations are complete
   useEffect(() => {
@@ -346,6 +356,17 @@ const Hand = forwardRef(({
     }
   }, [internalHands, showTotal]); // Recalculate when internal hands change
   
+  // Animate position changes
+  useEffect(() => {
+    if (animatePosition && position) {
+      positionX.value = withTiming(position.x, { duration: 600 });
+      positionY.value = withTiming(position.y, { duration: 600 });
+    } else if (position) {
+      positionX.value = position.x;
+      positionY.value = position.y;
+    }
+  }, [position?.x, position?.y, animatePosition]);
+  
   // Use internal hands state for display
   const displayHands = internalHands.length > 0 ? internalHands : [[]];
   const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
@@ -537,10 +558,22 @@ const Hand = forwardRef(({
     return { x: handX, y: position.y };
   };
   
+  // Animated style for Hand container position
+  const containerAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: positionX.value },
+        { translateY: positionY.value }
+      ]
+    };
+  });
+  
   // Dynamic styles using gameConfig
   const dynamicStyles = {
     handContainer: {
       position: 'absolute',
+      top: 0,
+      left: 0,
       width: gameConfig.handWidth,
       height: gameConfig.cardHeight,
       pointerEvents: 'none',
@@ -558,10 +591,7 @@ const Hand = forwardRef(({
   };
 
   return (
-    <View style={[dynamicStyles.handContainer, {
-      left: position.x,
-      top: position.y
-    }]}>
+    <Reanimated.View style={[dynamicStyles.handContainer, containerAnimatedStyle]}>
       {displayHands.map((handCards, handIndex) => {
         const handPosition = calculateHandPosition(handIndex, displayHands.length);
         const isActive = handIndex === activeHandIndex;
@@ -715,7 +745,7 @@ const Hand = forwardRef(({
           </Animated.View>
         );
       })}
-    </View>
+    </Reanimated.View>
   );
 });
 
