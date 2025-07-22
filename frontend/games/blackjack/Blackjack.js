@@ -37,7 +37,7 @@ export default function Blackjack({ route }) {
     buffers: {
       initialDeal: 500,
       dealerTurn: 1000,
-      splitSpread: 400,
+      splitSpread: 600,
       splitDeal: 500
     },
     
@@ -200,10 +200,11 @@ export default function Blackjack({ route }) {
       playerValues: [
         parseInt(calculateHandValue([splitHands[0][0]])),
         parseInt(calculateHandValue([splitHands[1][0]]))
-      ]
+      ],
+      totalHands: 2 // CRITICAL: Set to 2 to trigger split rendering
     }));
     
-    // Step 2: Spread hands apart horizontally
+    // Step 2: Spread hands apart horizontally (after hands have rendered)
     setTimeout(() => {
       setSplitSequence('spread');
       
