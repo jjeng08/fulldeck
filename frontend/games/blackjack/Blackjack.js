@@ -10,7 +10,6 @@ import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
 import WebSocketService from 'systems/websocket';
-import testLogger from 'shared/testLogger';
 
 export default function Blackjack({ route }) {
   const navigation = useNavigation();
@@ -154,19 +153,6 @@ export default function Blackjack({ route }) {
     return deck;
   };
   
-  // Initialize deck and shuffle when game starts
-  useEffect(() => {
-    setDeckCards(buildDeck(10));
-    // Shuffle deck 2 times when game first loads
-    setTimeout(() => {
-      shuffleDeck(2);
-    }, 500); // Small delay to ensure deck is rendered
-  }, []);
-  
-  // Initialize test logger with sendMessage function
-  useEffect(() => {
-    testLogger.setSendMessage(sendMessage);
-  }, [sendMessage]);
   
   // Shuffle deck function with animation state tracking
   const shuffleDeck = (times = 1) => {
@@ -287,52 +273,7 @@ export default function Blackjack({ route }) {
   
   const dealerPosition = { x: (screenWidth / 2) - (gameConfig.handWidth / 2), y: dealerAreaY };
   
-  // Initialize animated positions once positions are defined
-  useEffect(() => {
-    if (animatedPositions.current.length === 0) {
-      animatedPositions.current = [
-        {
-          x: new Animated.Value(singlePlayerPosition.x),
-          y: new Animated.Value(singlePlayerPosition.y)
-        }
-      ];
-      setAnimatedHandPositions([singlePlayerPosition]);
-    }
-  }, [singlePlayerPosition]);
   
-  // Handle split animation when splitSequence changes to 'spread'
-  useEffect(() => {
-    if (splitSequence === 'spread') {
-      // Initialize second animated position if it doesn't exist
-      if (animatedPositions.current.length === 1) {
-        animatedPositions.current.push({
-          x: new Animated.Value(singlePlayerPosition.x),
-          y: new Animated.Value(singlePlayerPosition.y)
-        });
-      }
-      
-      // IMMEDIATELY update positions to render both hands
-      setAnimatedHandPositions(splitPositions);
-      
-      // Animate both hands to their split positions
-      const animations = splitPositions.map((targetPos, index) => {
-        return Animated.parallel([
-          Animated.timing(animatedPositions.current[index].x, {
-            toValue: targetPos.x,
-            duration: gameConfig.buffers.splitSpread,
-            useNativeDriver: false,
-          }),
-          Animated.timing(animatedPositions.current[index].y, {
-            toValue: targetPos.y,
-            duration: gameConfig.buffers.splitSpread,
-            useNativeDriver: false,
-          })
-        ]);
-      });
-      
-      Animated.parallel(animations).start();
-    }
-  }, [splitSequence]);
   
   // Get navigation params
   const { selectedTier, tiers, maxMulti } = route?.params || {};
@@ -463,9 +404,6 @@ export default function Blackjack({ route }) {
     const dealerValue = parseInt(calculateHandValue(dealerHands[0] || []));
     const playerCards = getActivePlayerCards();
     
-    // Test logging
-    testLogger.testLog('GAME_RESULT_MESSAGE', { result, payout, playerValue, dealerValue, playerCards });
-    
     if (result === 'lose') {
       // Player busted
       if (playerValue > 21) {
@@ -566,10 +504,7 @@ export default function Blackjack({ route }) {
 
   const onPlaceBet = (addLoadingCallback) => {
     const currentBet = getActiveCurrentBet();
-    if (currentBet > 0) {
-      // Test logging
-      testLogger.testLog('BET_PLACED', { betAmount: currentBet, currentBets: gameState.currentBets, gameStatus: gameState.gameStatus });
-      
+    if (currentBet > 0) {      
       // Immediately switch to dealing state to hide betting controls
       setGameState(prev => ({
         ...prev,
@@ -589,164 +524,6 @@ export default function Blackjack({ route }) {
 
 
   // Handle all blackjack game messages through unified channel
-  useEffect(() => {
-    const onBlackJackChannel = (data) => {
-      if (data.success) {
-        // Test logging
-        testLogger.testLog('ACTION_RESULT', { actionType: data.actionType, success: data.success, gameStatus: data.gameStatus, playerCards: data.playerCards, playerValue: data.playerValue, dealerCards: data.dealerCards, dealerValue: data.dealerValue, result: data.result, payout: data.payout, immediateResult: data.immediateResult });
-        
-        // Handle ALL player actions through this single handler
-        const actionType = data.actionType;
-        
-        // Clear loading state for this action
-        clearLoadingAction(actionType);
-        // Handle split action - backend sends only first cards to trigger separation
-        if (actionType === 'split' && data.playerHands) {
-          // Update state to show we now have 2 hands with single cards
-          setGameState(prev => ({
-            ...prev,
-            totalHands: 2,
-            playerHands: data.playerHands, // First cards only
-            playerValues: data.playerHands.map(hand => parseInt(calculateHandValue(hand))),
-            currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
-            gameStatus: data.gameStatus
-          }));
-          
-          setIsSplitting(true);
-          
-          // Wait for hands to render, THEN start separation animation
-          setTimeout(() => {
-            setSplitSequence('spread');
-          }, 500); // Give hands time to render
-          
-          // After separation animation, request the second cards
-          setTimeout(() => {
-            sendMessage('playerAction', {
-              type: 'splitDeal'
-            });
-          }, 500 + gameConfig.buffers.splitSpread); // Wait for render + animation
-          
-        } else if (actionType === 'splitDeal' && data.playerHands) {
-          // Handle the complete hands - deal second card to hand 1 first
-          const completeHands = data.playerHands;
-          
-          setTimeout(() => {
-            // Deal second card to hand 1
-            setGameState(prev => ({
-              ...prev,
-              playerHands: [completeHands[0], prev.playerHands[1]], // Update hand 1
-              playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1]]
-            }));
-            
-            // Then deal second card to hand 2 after delay
-            setTimeout(() => {
-              setGameState(prev => ({
-                ...prev,
-                playerHands: [prev.playerHands[0], completeHands[1]], // Update hand 2
-                playerValues: [prev.playerValues[0], parseInt(calculateHandValue(completeHands[1]))]
-              }));
-              
-              // Complete split sequence
-              setTimeout(() => {
-                setSplitSequence('idle');
-                setIsSplitting(false);
-              }, gameConfig.durations.cardDeal + 100);
-              
-            }, gameConfig.buffers.splitDeal);
-          }, 100);
-          
-        } else if ((actionType === 'bet' || actionType === 'doubleDown') && data.playerCards && data.dealerCards) {
-          // Store dealer cards for later, start player animation first
-          setPendingDealerCards(data.dealerCards);
-          setDealingSequence('player');
-          
-          // Calculate player card values in frontend
-          const newPlayerValues = [parseInt(calculateHandValue(data.playerCards))];
-          
-          // Update game state with player cards only
-          setGameState(prev => ({
-            ...prev,
-            currentBets: data.betAmount ? [data.betAmount] : prev.currentBets,
-            gameStatus: data.gameStatus,
-            playerHands: [data.playerCards],
-            dealerCards: [], // Keep dealer cards empty until player finishes
-            playerValues: newPlayerValues,
-            dealerValue: 0, // No dealer cards shown yet
-            result: data.result || prev.result,
-            payout: data.payout || prev.payout
-          }));
-          
-          // Don't update dealer hands yet - wait for player animation to complete
-        } else {
-          // For all other actions, update normally (no sequencing needed)
-          const newPlayerHands = data.playerCards ? [data.playerCards] : 
-                                data.playerHands ? data.playerHands : gameState.playerHands;
-          const newDealerCards = data.dealerCards || gameState.dealerCards;
-          
-          // Calculate card values in frontend instead of using backend values
-          const newPlayerValues = newPlayerHands.map(hand => parseInt(calculateHandValue(hand)));
-          const newDealerValue = parseInt(calculateHandValue(newDealerCards));
-          
-          // Update game state immediately - Hand components will handle animations
-          setGameState(prev => ({
-            ...prev,
-            currentBets: data.betAmount ? [data.betAmount] : 
-                        data.currentBets ? data.currentBets : prev.currentBets,
-            gameStatus: data.gameStatus,
-            playerHands: newPlayerHands,
-            dealerCards: newDealerCards,
-            playerValues: newPlayerValues,
-            dealerValue: newDealerValue,
-            totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
-            result: data.result || prev.result,
-            payout: data.payout || prev.payout
-          }));
-          
-          // Update dealer hands for dealer Hand component
-          if (newDealerCards.length > 0) {
-            setDealerHands([newDealerCards]);
-          }
-          
-          // Double down now returns complete game state like initial bet - no automatic stand needed
-        }
-        
-        // Handle finished games - don't show results until animations complete
-        if (data.gameStatus === 'finished') {
-          // Results will be shown when Hand animations complete
-        }
-        
-        // Reset hand total visibility and animated totals for new game
-        if (actionType === 'bet') {
-          setShowPlayerTotal(false);
-          setShowDealerTotal(false);
-          setAnimatedPlayerTotals([0]);
-          setAnimatedDealerTotal(0);
-          setDealerAnimationsComplete(false);
-        }
-        
-        // Reset totals for split
-        if (actionType === 'split') {
-          setAnimatedPlayerTotals([0, 0]);
-        }
-        
-        // Clear temporary disables if game state changes to non-playing
-        if (data.gameStatus !== 'playing') {
-          clearTemporaryDisables();
-        }
-      }
-    };
-
-
-    
-    
-    // Register unified message handler
-    WebSocketService.onMessage('blackJackChannel', onBlackJackChannel);
-    
-    return () => {
-      // Cleanup handler on unmount
-      WebSocketService.removeMessageHandler('blackJackChannel');
-    };
-  }, []);
 
   const renderBetButtons = () => {
     const buttonStyleNames = ['Blue', 'Red', 'Black'];
@@ -894,6 +671,264 @@ export default function Blackjack({ route }) {
     );
   };
 
+  // Get status message based on current game state
+  const getStatusMessage = () => {
+    switch (gameState.gameStatus) {
+      case 'betting':
+        return 'Select your bet amount';
+      case 'dealing':
+        return 'Dealing cards...';
+      case 'insurance_offered':
+        return 'Dealer shows Ace!';
+      case 'doubledown_processing':
+        return 'Doubling down...';
+      case 'dealer_turn':
+        return 'Dealer is playing...';
+      case 'finished':
+        return finalAnimationsComplete ? getGameResultMessage() : 'Finalizing...';
+      default:
+        return 'Make your move';
+    }
+  };
+
+  // ========== Game Action Handlers - Ordered by gameplay sequence ==========
+
+  // Handle initial bet placement and deal
+  const onBetAction = (data) => {
+    // Store dealer cards for later, start player animation first
+    setPendingDealerCards(data.dealerCards);
+    setDealingSequence('player');
+    
+    // Calculate player card values in frontend
+    const newPlayerValues = [parseInt(calculateHandValue(data.playerCards))];
+    
+    // Update game state with player cards only
+    setGameState(prev => ({
+      ...prev,
+      currentBets: data.betAmount ? [data.betAmount] : prev.currentBets,
+      gameStatus: data.gameStatus,
+      playerHands: [data.playerCards],
+      dealerCards: [], // Keep dealer cards empty until player finishes
+      playerValues: newPlayerValues,
+      dealerValue: 0, // No dealer cards shown yet
+      result: data.result || prev.result,
+      payout: data.payout || prev.payout
+    }));
+
+    // Reset hand total visibility and animated totals for new game
+    setShowPlayerTotal(false);
+    setShowDealerTotal(false);
+    setAnimatedPlayerTotals([0]);
+    setAnimatedDealerTotal(0);
+    setDealerAnimationsComplete(false);
+  };
+
+  // Handle double down action
+  const onDoubleDownAction = (data) => {
+    // Double down follows same pattern as initial bet
+    onBetAction(data);
+  };
+
+  // Handle split action - initial split with first cards
+  const onSplitAction = (data) => {
+    // Update state to show we now have 2 hands with single cards
+    setGameState(prev => ({
+      ...prev,
+      totalHands: 2,
+      playerHands: data.playerHands, // First cards only
+      playerValues: data.playerHands.map(hand => parseInt(calculateHandValue(hand))),
+      currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
+      gameStatus: data.gameStatus
+    }));
+    
+    setIsSplitting(true);
+    
+    // Wait for hands to render, THEN start separation animation
+    setTimeout(() => {
+      setSplitSequence('spread');
+    }, 500); // Give hands time to render
+    
+    // After separation animation, request the second cards
+    setTimeout(() => {
+      sendMessage('playerAction', {
+        type: 'splitDeal'
+      });
+    }, 500 + gameConfig.buffers.splitSpread); // Wait for render + animation
+
+    // Reset totals for split
+    setAnimatedPlayerTotals([0, 0]);
+  };
+
+  // Handle split deal - adding second cards to split hands
+  const onSplitDealAction = (data) => {
+    // Handle the complete hands - deal second card to hand 1 first
+    const completeHands = data.playerHands;
+    
+    setTimeout(() => {
+      // Deal second card to hand 1
+      setGameState(prev => ({
+        ...prev,
+        playerHands: [completeHands[0], prev.playerHands[1]], // Update hand 1
+        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1]]
+      }));
+      
+      // Then deal second card to hand 2 after delay
+      setTimeout(() => {
+        setGameState(prev => ({
+          ...prev,
+          playerHands: [prev.playerHands[0], completeHands[1]], // Update hand 2
+          playerValues: [prev.playerValues[0], parseInt(calculateHandValue(completeHands[1]))]
+        }));
+        
+        // Complete split sequence
+        setTimeout(() => {
+          setSplitSequence('idle');
+          setIsSplitting(false);
+        }, gameConfig.durations.cardDeal + 100);
+        
+      }, gameConfig.buffers.splitDeal);
+    }, 100);
+  };
+
+  // Handle all other actions (hit, stand, etc.)
+  const onDefaultAction = (data) => {
+    // For all other actions, update normally (no sequencing needed)
+    const newPlayerHands = data.playerCards ? [data.playerCards] : 
+                          data.playerHands ? data.playerHands : gameState.playerHands;
+    const newDealerCards = data.dealerCards || gameState.dealerCards;
+    
+    // Calculate card values in frontend instead of using backend values
+    const newPlayerValues = newPlayerHands.map(hand => parseInt(calculateHandValue(hand)));
+    const newDealerValue = parseInt(calculateHandValue(newDealerCards));
+    
+    // Update game state immediately - Hand components will handle animations
+    setGameState(prev => ({
+      ...prev,
+      currentBets: data.betAmount ? [data.betAmount] : 
+                  data.currentBets ? data.currentBets : prev.currentBets,
+      gameStatus: data.gameStatus,
+      playerHands: newPlayerHands,
+      dealerCards: newDealerCards,
+      playerValues: newPlayerValues,
+      dealerValue: newDealerValue,
+      totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
+      result: data.result || prev.result,
+      payout: data.payout || prev.payout
+    }));
+    
+    // Update dealer hands for dealer Hand component
+    newDealerCards.length > 0 && setDealerHands([newDealerCards]);
+  };
+
+  // Handle finished game cleanup
+  const onFinishedGame = (data) => {
+    // Handle finished games - don't show results until animations complete
+    if (data.gameStatus === 'finished') {
+      // Results will be shown when Hand animations complete
+    }
+    
+    // Clear temporary disables if game state changes to non-playing
+    data.gameStatus !== 'playing' && clearTemporaryDisables();
+  };
+
+  // ========== ALL useEffects - Defined at bottom for better organization ==========
+  
+  // Initialize deck and shuffle when game starts
+  useEffect(() => {
+    setDeckCards(buildDeck(10));
+    // Shuffle deck 2 times when game first loads
+    setTimeout(() => {
+      shuffleDeck(2);
+    }, 500); // Small delay to ensure deck is rendered
+  }, []);
+  
+  // Initialize animated positions once positions are defined
+  useEffect(() => {
+    if (animatedPositions.current.length === 0) {
+      animatedPositions.current = [
+        {
+          x: new Animated.Value(singlePlayerPosition.x),
+          y: new Animated.Value(singlePlayerPosition.y)
+        }
+      ];
+      setAnimatedHandPositions([singlePlayerPosition]);
+    }
+  }, [singlePlayerPosition]);
+  
+  // Handle split animation when splitSequence changes to 'spread'
+  useEffect(() => {
+    if (splitSequence === 'spread') {
+      // Initialize second animated position if it doesn't exist
+      if (animatedPositions.current.length === 1) {
+        animatedPositions.current.push({
+          x: new Animated.Value(singlePlayerPosition.x),
+          y: new Animated.Value(singlePlayerPosition.y)
+        });
+      }
+      
+      // IMMEDIATELY update positions to render both hands
+      setAnimatedHandPositions(splitPositions);
+      
+      // Animate both hands to their split positions
+      const animations = splitPositions.map((targetPos, index) => {
+        return Animated.parallel([
+          Animated.timing(animatedPositions.current[index].x, {
+            toValue: targetPos.x,
+            duration: gameConfig.buffers.splitSpread,
+            useNativeDriver: false,
+          }),
+          Animated.timing(animatedPositions.current[index].y, {
+            toValue: targetPos.y,
+            duration: gameConfig.buffers.splitSpread,
+            useNativeDriver: false,
+          })
+        ]);
+      });
+      
+      Animated.parallel(animations).start();
+    }
+  }, [splitSequence]);
+  
+  // Handle all blackjack game messages through unified channel
+  useEffect(() => {
+    const BlackJackChannel = (data) => {
+      if (data.success) {        
+        const actionType = data.actionType;
+
+        // Clear loading state for this action
+        clearLoadingAction(actionType);
+
+        // Route to appropriate handler based on action type
+        switch (actionType) {
+          case 'bet':
+            (data.playerCards && data.dealerCards) && onBetAction(data);
+            break;
+          case 'doubleDown':
+            (data.playerCards && data.dealerCards) && onDoubleDownAction(data);
+            break;
+          case 'split':
+            data.playerHands && onSplitAction(data);
+            break;
+          case 'splitDeal':
+            data.playerHands && onSplitDealAction(data);
+            break;
+          default:
+            onDefaultAction(data);
+            break;
+        }    
+        onFinishedGame(data);
+      }
+    };
+    
+    // Register unified message handler
+    WebSocketService.onMessage('blackJackChannel', BlackJackChannel);
+    
+    return () => {
+      // Cleanup handler on unmount
+      WebSocketService.removeMessageHandler('blackJackChannel');
+    };
+  }, []);
+
   return (
     <View style={s.container}>
       {/* TOP SECTION - Dark Green Banner */}
@@ -927,14 +962,7 @@ export default function Blackjack({ route }) {
         {/* Centered instruction text */}
         <View style={s.instructionSection}>
           <Text style={s.gameStatus}>
-            {gameState.gameStatus === 'betting' ? 'Select your bet amount' : 
-             gameState.gameStatus === 'dealing' ? 'Dealing cards...' : 
-             gameState.gameStatus === 'insurance_offered' ? 'Dealer shows Ace!' :
-             gameState.gameStatus === 'doubledown_processing' ? 'Doubling down...' :
-             gameState.gameStatus === 'dealer_turn' ? 'Dealer is playing...' :
-             gameState.gameStatus === 'finished' && finalAnimationsComplete ? getGameResultMessage() :
-             gameState.gameStatus === 'finished' ? 'Finalizing...' :
-             'Make your move'}
+            {getStatusMessage()}
           </Text>
           
           {/* Insurance Question - only after dealer animations complete */}

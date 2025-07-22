@@ -340,11 +340,9 @@ const Hand = forwardRef(({
         for (let i = currentHand.length; i < newHand.length; i++) {
           // Ensure each card has a unique ID
           const cardData = newHand[i];
-          // Create truly unique ID using multiple unique factors
-          const uniqueId = cardData.id || `hand${handIndex}-card${i}-pos${currentHand.length + (i - currentHand.length)}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
           const cardWithId = {
             ...cardData,
-            id: uniqueId
+            id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
           };
           
           // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
