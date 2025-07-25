@@ -4,6 +4,7 @@ const logger = require('../../shared/utils/logger');
 const testLogger = require('../../shared/testLogger');
 const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
+const { GAME_STATES } = require('../../../../shared/BlackJackConstants');
 
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
@@ -258,7 +259,7 @@ class Blackjack {
           playerHands: this.playerHands,
           playerValues: this.playerValues,
           betAmount,
-          gameStatus: 'insurance_offered',
+          gameStatus: GAME_STATES.INSURANCE_OFFERED,
           canHit: false,
           canStand: false,
           canDoubleDown: false,
@@ -325,7 +326,7 @@ class Blackjack {
           playerHands: this.playerHands,
           playerValues: this.playerValues,
           betAmount,
-          gameStatus: 'finished',
+          gameStatus: GAME_STATES.FINISHED,
           result,
           payout,
           profit,
@@ -345,7 +346,7 @@ class Blackjack {
         playerHands: this.playerHands,
         playerValues: this.playerValues,
         betAmount,
-        gameStatus: 'playing',
+        gameStatus: GAME_STATES.PLAYING,
         canHit: true,
         canStand: true,
         canDoubleDown: true,
@@ -376,7 +377,7 @@ class Blackjack {
       newCard,
       cards: newCards,
       busted,
-      gameStatus: 'playing',
+      gameStatus: GAME_STATES.PLAYING,
       result: busted ? 'lose' : null,
       payout: busted ? 0 : null,
       targetHandId: handId,
@@ -413,7 +414,7 @@ class Blackjack {
       
       return {
         success: true,
-        gameStatus: 'finished',
+        gameStatus: GAME_STATES.FINISHED,
         playerCards: this.playerCards,
         dealerCards: workingDealerCards,
         result: result.result,
@@ -428,7 +429,7 @@ class Blackjack {
       // More hands to play - just mark this hand complete (no dealer cards!)
       return {
         success: true,
-        gameStatus: 'playing',
+        gameStatus: GAME_STATES.PLAYING,
         playerCards: this.playerCards,
         // Don't send dealerCards - no dealer update needed for non-final stands
         activeHandIndex: frontendActiveIndex,
@@ -489,7 +490,7 @@ class Blackjack {
       newCard,
       cards: newPlayerCards,
       busted: playerBusted,
-      gameStatus: 'playing',
+      gameStatus: GAME_STATES.PLAYING,
       result: playerBusted ? 'lose' : null,
       payout: playerBusted ? 0 : null,
       targetHandId: handId,
@@ -578,7 +579,7 @@ class Blackjack {
         gameResult,
         mainBetPayout,
         dealerCards: completeDealerCards,
-        gameStatus: 'finished',
+        gameStatus: GAME_STATES.FINISHED,
         result: gameResult,
         totalPayout: insurancePayout + mainBetPayout
       };
@@ -669,7 +670,7 @@ class Blackjack {
     
     return {
       success: true,
-      gameStatus: 'playing',
+      gameStatus: GAME_STATES.PLAYING,
       playerHands: [hand1, hand2], // Send only first cards to trigger animation
       playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
       currentBets: this.currentBets,
@@ -684,7 +685,7 @@ class Blackjack {
     // Return the complete hands that were stored during split
     return {
       success: true,
-      gameStatus: 'playing',
+      gameStatus: GAME_STATES.PLAYING,
       playerHands: this.playerHands, // Complete hands with second cards
       playerValues: this.playerValues,
       currentBets: this.currentBets,
@@ -736,7 +737,7 @@ class Blackjack {
       return {
         success: true,
         dealerBlackjack: true,
-        gameStatus: 'finished',
+        gameStatus: GAME_STATES.FINISHED,
         result: gameResult,
         payout: mainBetPayout,
         dealerCards: completeDealerCards,
@@ -746,7 +747,7 @@ class Blackjack {
       return {
         success: true,
         dealerBlackjack: false,
-        gameStatus: 'playing',
+        gameStatus: GAME_STATES.PLAYING,
         playerCards: playerCards,
         dealerCards: dealerCards
       };
@@ -913,7 +914,7 @@ async function onPlayerAction(ws, data, userId) {
           result = {
             success: true,
             immediateResult: true,
-            gameStatus: 'finished',
+            gameStatus: GAME_STATES.FINISHED,
             playerCards: gameResult.gameState.playerCards,
             dealerCards: gameResult.gameState.dealerCards,
             playerValue: gameResult.gameState.playerValue,

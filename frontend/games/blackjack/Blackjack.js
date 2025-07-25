@@ -6,6 +6,7 @@ import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from 'shared/text';
 import { formatCurrency } from 'shared/utils';
+import { GAME_STATES } from '../../shared/BlackJackConstants';
 import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
@@ -26,7 +27,7 @@ export default function Blackjack({ route }) {
     // Existing single properties
     dealerCards: [],
     dealerValue: 0,
-    gameStatus: 'betting', // 'betting', 'dealing', 'playing', 'dealer_turn', 'finished'
+    gameStatus: GAME_STATES.BETTING, // 'betting', 'dealing', 'playing', 'dealer_turn', 'finished'
     result: null, // 'win', 'lose', 'push', 'blackjack'
     payout: 0,
     handsCompleted: [] // Track which hands are completed
@@ -260,7 +261,7 @@ export default function Blackjack({ route }) {
     const playerValue = parseInt(calculateHandValue(playerCards)); // Use corrected calculation
     
     // Only show buttons during player's turn (not during insurance phase)
-    if (gameStatus !== 'playing') {
+    if (gameStatus !== GAME_STATES.PLAYING) {
       return {
         canHit: false,
         canStand: false,
@@ -298,7 +299,7 @@ export default function Blackjack({ route }) {
   const buttonStates = getButtonStates();
   
   // Check if insurance is available - only after dealer animations complete
-  const canBuyInsurance = gameState.gameStatus === 'insurance_offered' && animationState === 'idle';
+  const canBuyInsurance = gameState.gameStatus === GAME_STATES.INSURANCE_OFFERED && animationState === 'idle';
   const insuranceAmount = Math.floor(getActiveCurrentBet() / 2);
 
   
@@ -364,7 +365,7 @@ export default function Blackjack({ route }) {
   };
 
   const onAddBet = (betAmount) => {
-    if (gameState.gameStatus === 'betting') {
+    if (gameState.gameStatus === GAME_STATES.BETTING) {
       const highestTierValue = Math.max(...tierConfig);
       const maxBetLimit = (maxMulti || 5) * highestTierValue;
       const currentBet = getActiveCurrentBet();
@@ -383,7 +384,7 @@ export default function Blackjack({ route }) {
   };
 
   const onSubtractBet = (betAmount) => {
-    if (gameState.gameStatus === 'betting') {
+    if (gameState.gameStatus === GAME_STATES.BETTING) {
       const currentBet = getActiveCurrentBet();
       const newBet = Math.max(0, currentBet - betAmount);
       setGameState(prev => ({
@@ -405,7 +406,7 @@ export default function Blackjack({ route }) {
       // Immediately switch to dealing state to hide betting controls
       setGameState(prev => ({
         ...prev,
-        gameStatus: 'dealing'
+        gameStatus: GAME_STATES.DEALING
       }));
       
       // Reset animation state for new game
@@ -430,7 +431,7 @@ export default function Blackjack({ route }) {
       <View style={s.betButtonsContainer}>
         {tierConfig.map((betAmount, index) => {
           const styleName = buttonStyleNames[index] || 'Blue';
-          const isDisabled = gameState.gameStatus !== 'betting' || isPageBlocked || animationState === 'deck_shuffling';
+          const isDisabled = gameState.gameStatus !== GAME_STATES.BETTING || isPageBlocked || animationState === 'deck_shuffling';
           
           return (
             <View key={index} style={s.betButtonColumn}>
@@ -568,17 +569,17 @@ export default function Blackjack({ route }) {
   // Get status message based on current game state
   const getStatusMessage = () => {
     switch (gameState.gameStatus) {
-      case 'betting':
+      case GAME_STATES.BETTING:
         return 'Select your bet amount';
-      case 'dealing':
+      case GAME_STATES.DEALING:
         return 'Dealing cards...';
-      case 'insurance_offered':
+      case GAME_STATES.INSURANCE_OFFERED:
         return 'Dealer shows Ace!';
-      case 'doubledown_processing':
+      case GAME_STATES.DOUBLEDOWN_PROCESSING:
         return 'Doubling down...';
-      case 'dealer_turn':
+      case GAME_STATES.DEALER_TURN:
         return 'Dealer is playing...';
-      case 'finished':
+      case GAME_STATES.FINISHED:
         return animationState === 'finalizing' ? getGameResultMessage() : 'Finalizing...';
       default:
         return 'Make your move';
@@ -756,75 +757,62 @@ export default function Blackjack({ route }) {
   };
 
   // ========== ALL useEffects - Defined at bottom for better organization ==========
-  
-  // Initialize deck and shuffle when game starts
+
   useEffect(() => {
-    // Shuffle deck 2 times when game first loads
     setTimeout(() => {
       shuffleDeck(2);
-    }, 500); // Small delay to ensure deck is rendered
-  }, []);
-  
-  // No more Animated.View wrapper logic - Hand components handle their own position animations
-  
-  // Handle all blackjack game messages through unified channel
-  useEffect(() => {
+    }, 500);
+
     const BlackJackChannel = (data) => {
-      if (data.success) {        
-        const actionType = data.actionType;
-
-        // Clear loading state for this action
-        clearLoadingAction(actionType);
-
-        // Route to appropriate handler based on action type
-        switch (actionType) {
-          case 'bet':
-            (data.playerCards && data.dealerCards) && onBetAction(data);
-            break;
-          case 'doubleDown':
-            onDefaultAction(data);
-            // If hand complete, move to next hand or end
-            if (data.handComplete) {
-              setGameState(prev => {
-                if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
-                  // Move to next hand
-                  return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
-                } else {
-                  // All hands complete - TODO: trigger dealer play
-                  return prev;
-                }
-              });
-            }
-            break;
-          case 'split':
-            data.playerHands && onSplitAction(data);
-            break;
-          case 'splitDeal':
-            data.playerHands && onSplitDealAction(data);
-            break;
-          default:
-            onDefaultAction(data);
-            // If hand complete, move to next hand or end
-            if (data.handComplete) {
-              setGameState(prev => {
-                if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
-                  // Move to next hand
-                  return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
-                } else {
-                  // All hands complete - TODO: trigger dealer play
-                  return prev;
-                }
-              });
-            }
-            break;
-        }    
-        onFinishedGame(data);
-      }
+      if (!data.success) return;
+      const actionType = data.actionType;
+      clearLoadingAction(actionType);
+      switch (actionType) {
+        case 'bet':
+          (data.playerCards && data.dealerCards) && onBetAction(data);
+          break;
+        case 'doubleDown':
+          onDefaultAction(data);
+          // If hand complete, move to next hand or end
+          if (data.handComplete) {
+            setGameState(prev => {
+              if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
+                // Move to next hand
+                return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
+              } else {
+                // All hands complete - TODO: trigger dealer play
+                return prev;
+              }
+            });
+          }
+          break;
+        case 'split':
+          data.playerHands && onSplitAction(data);
+          break;
+        case 'splitDeal':
+          data.playerHands && onSplitDealAction(data);
+          break;
+        default:
+          onDefaultAction(data);
+          // If hand complete, move to next hand or end
+          if (data.handComplete) {
+            setGameState(prev => {
+              if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
+                // Move to next hand
+                return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
+              } else {
+                // All hands complete - TODO: trigger dealer play
+                return prev;
+              }
+            });
+          }
+          break;
+      }    
+      onFinishedGame(data);
     };
     
     // Register unified message handler
     WebSocketService.onMessage('blackJackChannel', BlackJackChannel);
-    
     return () => {
       // Cleanup handler on unmount
       WebSocketService.removeMessageHandler('blackJackChannel');
@@ -838,7 +826,7 @@ export default function Blackjack({ route }) {
         <Text style={s.title}>Blackjack</Text>
         <Text style={s.balanceHeader}>
           {t.balance.replace('{balance}', formatCurrency(
-            gameState.gameStatus === 'betting' 
+            gameState.gameStatus === GAME_STATES.BETTING 
               ? playerBalance - (getActiveCurrentBet() || 0)
               : playerBalance
           ))}
@@ -892,10 +880,7 @@ export default function Blackjack({ route }) {
           isDealer={true}
           showTotal="below"
         />
-        
-        {/* Total display now handled by Hand component internally */}
-        
-        {/* Player Hand(s) - Simplified without Animated.View wrappers */}
+
         {gameState.totalHands === 1 ? (
           <Hand
             testID="singlePlayerHand"
@@ -941,8 +926,8 @@ export default function Blackjack({ route }) {
       {/* BOTTOM SECTION - Dark Green Controls */}
       <View style={s.bottomControlsArea}>
         {/* Conditional Controls Based on Game Status */}
-        {gameState.gameStatus === 'betting' && renderBettingControls()}
-        {gameState.gameStatus === 'finished' && animationState === 'finalizing' && (
+        {gameState.gameStatus === GAME_STATES.BETTING && renderBettingControls()}
+        {gameState.gameStatus === GAME_STATES.FINISHED && animationState === 'finalizing' && (
           <View style={s.dealingMessage}>
             <TouchableOpacity
               style={s.playAgainButton}
@@ -950,7 +935,7 @@ export default function Blackjack({ route }) {
                 // Reset frontend state to betting mode
                 setGameState(prev => ({
                   ...prev,
-                  gameStatus: 'betting',
+                  gameStatus: GAME_STATES.BETTING,
                   playerHands: [[]],
                   dealerCards: [],
                   playerValues: [0],
@@ -986,7 +971,7 @@ export default function Blackjack({ route }) {
             </TouchableOpacity>
           </View>
         )}
-        {gameState.gameStatus === 'insurance_offered' && animationState === 'idle' && (
+        {gameState.gameStatus === GAME_STATES.INSURANCE_OFFERED && animationState === 'idle' && (
           <View style={s.insuranceControlsContainer}>
             <View style={s.insuranceButtonsRow}>
               <TouchableOpacity
@@ -1024,7 +1009,7 @@ export default function Blackjack({ route }) {
             </View>
           </View>
         )}
-        {gameState.gameStatus === 'playing' && renderPlayingControls()}
+        {gameState.gameStatus === GAME_STATES.PLAYING && renderPlayingControls()}
       </View>
     </View>
   );
