@@ -566,8 +566,8 @@ export default function Blackjack({ route }) {
               temporarilyDisableButton('hit');
               sendMessage('playerAction', {
                 type: 'hit',
-                playerCards: getActivePlayerCards(),
-                handId: 'player-hand-0'
+                handId: 'player-hand-0',
+                activeHandIndex: gameState.activeHandIndex
               });
             }}
             disabled={!buttonStates.canHit}
@@ -603,9 +603,8 @@ export default function Blackjack({ route }) {
               onPress={() => {
                 sendMessage('playerAction', {
                   type: 'doubleDown',
-                  playerCards: getActivePlayerCards(),
-                  dealerCards: gameState.dealerCards,
-                  handId: 'player-hand-0'
+                  handId: 'player-hand-0',
+                  activeHandIndex: gameState.activeHandIndex
                 });
               }}
               disabled={!buttonStates.canDoubleDown}
@@ -619,8 +618,7 @@ export default function Blackjack({ route }) {
             onPress={() => {
               sendMessage('playerAction', {
                 type: 'stand',
-                playerCards: getActivePlayerCards(),
-                dealerCards: gameState.dealerCards
+                activeHandIndex: gameState.activeHandIndex
               });
             }}
             disabled={!buttonStates.canStand}
@@ -684,11 +682,6 @@ export default function Blackjack({ route }) {
     setDealerAnimationsComplete(false);
   };
 
-  // Handle double down action
-  const onDoubleDownAction = (data) => {
-    // Double down uses the same logic as other actions
-    onDefaultAction(data);
-  };
 
   // Handle split action - initial split with first cards
   const onSplitAction = (data) => {
@@ -860,7 +853,19 @@ export default function Blackjack({ route }) {
             (data.playerCards && data.dealerCards) && onBetAction(data);
             break;
           case 'doubleDown':
-            (data.playerCards && data.dealerCards) && onDoubleDownAction(data);
+            onDefaultAction(data);
+            // If hand complete, move to next hand or end
+            if (data.handComplete) {
+              setGameState(prev => {
+                if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
+                  // Move to next hand
+                  return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
+                } else {
+                  // All hands complete - TODO: trigger dealer play
+                  return prev;
+                }
+              });
+            }
             break;
           case 'split':
             data.playerHands && onSplitAction(data);
@@ -870,6 +875,18 @@ export default function Blackjack({ route }) {
             break;
           default:
             onDefaultAction(data);
+            // If hand complete, move to next hand or end
+            if (data.handComplete) {
+              setGameState(prev => {
+                if (prev.totalHands > 1 && prev.activeHandIndex < prev.totalHands - 1) {
+                  // Move to next hand
+                  return { ...prev, activeHandIndex: prev.activeHandIndex + 1 };
+                } else {
+                  // All hands complete - TODO: trigger dealer play
+                  return prev;
+                }
+              });
+            }
             break;
         }    
         onFinishedGame(data);
