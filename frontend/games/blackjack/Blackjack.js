@@ -13,12 +13,11 @@ import WebSocketService from 'systems/websocket';
 
 export default function Blackjack({ route }) {
   const navigation = useNavigation();
-  const {  playerBalance, loadingActions, sendMessage, clearLoadingAction } = useApp();
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+  const { playerBalance, loadingActions, 
+          sendMessage, clearLoadingAction } = useApp();
   const deckRef = useRef(null);
   
-  // Calculate hand area positions using config
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
   const deckConfigs = {
     shuffle: 400,
     times: 2
@@ -58,37 +57,20 @@ export default function Blackjack({ route }) {
     playerAreaOffset: 400 // from bottom of screen
   };
   
-  // Individual hand states - each Hand component manages its own state
+  const [deckCoordinates, setDeckCoordinates] = useState({ x: 0, y: 0 });
   const [dealerHandState, setDealerHandState] = useState({animate: true, data: [[]]});
   const [playerHand1State, setPlayerHand1State] = useState({animate: true, data: [[]]});
-  const [playerHand2State, setPlayerHand2State] = useState({animate: true, data: [[]]});
+  const [playerHand2State, setPlayerHand2State] = useState({animate: true, data: [[]]});  
+  const [disablePlayButtons, setDisablePlayButtons] = useState(new Set());
   
-  // Deck state management
-  const [deckCards, setDeckCards] = useState([]);
-  const [deckCoordinates, setDeckCoordinates] = useState({ x: 0, y: 0 });
-  
-  
-  // Safety controls for button clicks
-  const [temporarilyDisabledButtons, setTemporarilyDisabledButtons] = useState(new Set());
-  
-  // Removed: Total management now handled by Hand component
-  
-  // Track when final animations are complete for finished games
-  const [finalAnimationsComplete, setFinalAnimationsComplete] = useState(false);
-  
-  // Track when deck shuffle animation is running
   const [isDeckShuffling, setIsDeckShuffling] = useState(false);
-  
-  // Split animation state management
-  const [isSplitting, setIsSplitting] = useState(false);
-  const [splitSequence, setSplitSequence] = useState('idle'); // 'idle', 'handoff', 'spread', 'deal_first', 'deal_second'
-  
-  // Track when dealer animations are complete for insurance display
   const [dealerAnimationsComplete, setDealerAnimationsComplete] = useState(false);
-  
+  const [finalAnimationsComplete, setFinalAnimationsComplete] = useState(false);
+  const [splitSequence, setSplitSequence] = useState('idle'); // 'idle', 'handoff', 'spread', 'deal_first', 'deal_second'
+
   // Function to temporarily disable a button
   const temporarilyDisableButton = (buttonType) => {
-    setTemporarilyDisabledButtons(prev => new Set(prev).add(buttonType));
+    setDisablePlayButtons(prev => new Set(prev).add(buttonType));
     
     // Calculate timeout: card dealing duration + buffer
     const dealingDuration = gameConfigs.durations.cardDeal; // 500ms
@@ -96,7 +78,7 @@ export default function Blackjack({ route }) {
     const totalTimeout = dealingDuration + bufferTime; // 1000ms
     
     setTimeout(() => {
-      setTemporarilyDisabledButtons(prev => {
+      setDisablePlayButtons(prev => {
         const newSet = new Set(prev);
         newSet.delete(buttonType);
         return newSet;
@@ -106,7 +88,7 @@ export default function Blackjack({ route }) {
   
   // Function to clear all temporary disables (when game state changes)
   const clearTemporaryDisables = () => {
-    setTemporarilyDisabledButtons(new Set());
+    setDisablePlayButtons(new Set());
   };
   
   // Build deck with specified number of cards
@@ -343,12 +325,12 @@ export default function Blackjack({ route }) {
     const buyInsuranceBasic = dealerCards.length > 0 && dealerCards[0].value === 'A'; // If dealer shows Ace
     
     // Apply temporary disable logic
-    const isDealingDisabled = temporarilyDisabledButtons.has('dealing');
-    const canHit = canHitBasic && !temporarilyDisabledButtons.has('hit') && !isDealingDisabled;
+    const isDealingDisabled = disablePlayButtons.has('dealing');
+    const canHit = canHitBasic && !disablePlayButtons.has('hit') && !isDealingDisabled;
     const canStand = canStandBasic && !isDealingDisabled;
     const canDoubleDown = canDoubleDownBasic && !isDealingDisabled;
-    const canSplit = canSplitBasic && !temporarilyDisabledButtons.has('split') && !isDealingDisabled;
-    const buyInsurance = buyInsuranceBasic && !temporarilyDisabledButtons.has('insurance') && !isDealingDisabled;
+    const canSplit = canSplitBasic && !disablePlayButtons.has('split') && !isDealingDisabled;
+    const buyInsurance = buyInsuranceBasic && !disablePlayButtons.has('insurance') && !isDealingDisabled;
     
     return {
       canHit,
@@ -581,7 +563,6 @@ export default function Blackjack({ route }) {
               onPress={() => {
                 temporarilyDisableButton('split');
                 // Start split animation sequence
-                setIsSplitting(true);
                 setSplitSequence('handoff');
                 
                 // Send split action to backend
@@ -700,7 +681,6 @@ export default function Blackjack({ route }) {
       gameStatus: data.gameStatus
     }));
     
-    setIsSplitting(true);
     
     // First render both hands at center, then animate to spread positions
     setSplitSequence('handoff');
@@ -829,7 +809,6 @@ export default function Blackjack({ route }) {
   
   // Initialize deck and shuffle when game starts
   useEffect(() => {
-    setDeckCards(buildDeck(10));
     // Shuffle deck 2 times when game first loads
     setTimeout(() => {
       shuffleDeck(2);
