@@ -383,12 +383,9 @@ class Blackjack {
         totalHands: this.totalHands
       };
     } else {
-      // More hands to play - just mark this hand complete (no dealer cards!)
-      // Save current hand's cards before moving to next hand
-      const completedHandCards = this.playerHands[frontendActiveIndex];
-      // Move to next active hand
-      this.activeHandIndex = this.activeHandIndex + 1;
-      const nextHandState = this.activeHandIndex === 0 ? GAME_STATES.PLAYING_HAND_1 : GAME_STATES.PLAYING_HAND_2;
+      // More hands to play - use frontend index to determine next hand
+      const nextHandIndex = frontendActiveIndex + 1;
+      const nextHandState = nextHandIndex === 1 ? GAME_STATES.PLAYING_HAND_2 : GAME_STATES.PLAYING_HAND_1;
       
       // Send response as if starting the next hand
       return {
@@ -396,7 +393,6 @@ class Blackjack {
         actionType: 'nextHand',
         gameStatus: nextHandState,
         target: 'player',
-        handIndex: this.activeHandIndex,
         playerHands: this.playerHands,
         totalHands: this.totalHands
       };
@@ -916,65 +912,81 @@ async function onPlayerAction(ws, data, userId) {
         }
         break;
       case 'hit':
-      case 'stand':
-      case 'doubleDown':
-      case 'split':
-      case 'splitDeal':
-      case 'buyInsurance':
-      case 'surrender':
-      case 'newGame':
-      case 'skipInsurance':
-        // Get existing game instance for all other actions
         blackjack = activeGames.get(userId);
         if (!blackjack) {
           result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
           break;
         }
-        
-        // Execute the action
-        switch (data.type) {
-          case 'hit':
-            // Only player hits are currently supported
-            if (data.target === 'player') {
-              result = blackjack.hit(data.handIndex, data.handIndex, data.target);
-            }
-            break;
-          case 'stand':
-            // Only player stands are currently supported
-            if (data.target === 'player') {
-              result = await blackjack.stand(userId, data.handIndex);
-            }
-            break;
-          case 'doubleDown':
-            logger.logInfo('Double down call params', { userId, target: data.target, handIndex: data.handIndex });
-            // Only player double down is currently supported
-            if (data.target === 'player') {
-              result = await blackjack.doubleDown(userId, data.handIndex, data.handIndex);
-            }
-            break;
-          case 'split':
-            result = await blackjack.split(userId, data.playerHands, data.activeHandIndex, data.currentBet);
-            break;
-          case 'splitDeal':
-            result = await blackjack.splitDeal(userId);
-            break;
-          case 'buyInsurance':
-            result = await blackjack.buyInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards, data.insuranceAmount);
-            break;
-          case 'surrender':
-            result = await blackjack.surrender(userId);
-            break;
-          case 'newGame':
-            // Clear current game and create new one
-            activeGames.delete(userId);
-            blackjack = new Blackjack();
-            activeGames.set(userId, blackjack);
-            result = blackjack.startGame(userId);
-            break;
-          case 'skipInsurance':
-            result = await blackjack.skipInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards);
-            break;
+        if (data.target === 'player') {
+          result = blackjack.hit(data.handIndex, data.handIndex, data.target);
         }
+        break;
+      case 'stand':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        if (data.target === 'player') {
+          result = await blackjack.stand(userId, data.handIndex);
+        }
+        break;
+      case 'doubleDown':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        logger.logInfo('Double down call params', { userId, target: data.target, handIndex: data.handIndex });
+        if (data.target === 'player') {
+          result = await blackjack.doubleDown(userId, data.handIndex, data.handIndex);
+        }
+        break;
+      case 'split':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        result = await blackjack.split(userId, data.playerHands, data.activeHandIndex, data.currentBet);
+        break;
+      case 'splitDeal':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        result = await blackjack.splitDeal(userId);
+        break;
+      case 'buyInsurance':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        result = await blackjack.buyInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards, data.insuranceAmount);
+        break;
+      case 'surrender':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        result = await blackjack.surrender(userId);
+        break;
+      case 'newGame':
+        activeGames.delete(userId);
+        blackjack = new Blackjack();
+        activeGames.set(userId, blackjack);
+        result = blackjack.startGame(userId);
+        break;
+      case 'skipInsurance':
+        blackjack = activeGames.get(userId);
+        if (!blackjack) {
+          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
+          break;
+        }
+        result = await blackjack.skipInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards);
         break;
       default:
         result = { success: false, errorMessage: `Unknown action type: ${data.type}` };
@@ -985,7 +997,7 @@ async function onPlayerAction(ws, data, userId) {
       type: 'actionResult',
       data: {
         success: result.success,
-        actionType: data.type,
+        actionType: result.actionType || data.type,
         gameStatus: result.gameStatus,
         playerValue: result.playerValue,
         dealerValue: result.dealerValue,

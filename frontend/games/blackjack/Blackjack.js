@@ -161,48 +161,57 @@ export default function Blackjack({ route }) {
     };
   }, []);
 
-  const onDefaultAction = (data) => {
-    // Backend now always sends playerHands arrays - no more dual-path logic needed
-    const newPlayerHands = data.playerHands || gameState.playerHands;
-    const newDealerCards = data.dealerCards || gameState.dealerCards;
-    
-    // Update hand states with animation - simplified since we only have playerHands
+  // Helper functions for onDefaultAction
+  const updatePlayerHandAnimations = (data) => {
     if (data.playerHands) {
       if (data.playerHands[0]) setPlayerHand1({animate: true, data: [data.playerHands[0]]});
       if (data.playerHands[1]) setPlayerHand2({animate: true, data: [data.playerHands[1]]});
     }
-    
+  };
+
+  const updateDealerHandAnimation = (data) => {
     if (data.dealerCards) {
-      // Check if this is the final dealer sequence (game finished)
       if (data.gameStatus === 'finished') {
-        // Use proper dealer animation sequence like initial deal
         setAnimationState('dealing_dealer');
         setDealerHand({animate: true, data: [data.dealerCards]});
       } else {
-        // Regular dealer update during game
         setDealerHand({animate: true, data: [data.dealerCards]});
       }
     }
-    
-    // Calculate card values in frontend
-    const newPlayerValues = newPlayerHands.map(hand => calculateHandValue(hand));
-    const newDealerValue = calculateHandValue(newDealerCards);
-    
-    // Update game state immediately - Hand components will handle animations
+  };
+
+  const calculateUpdatedValues = (playerHands, dealerCards) => {
+    const newPlayerValues = playerHands.map(hand => calculateHandValue(hand));
+    const newDealerValue = calculateHandValue(dealerCards);
+    return { newPlayerValues, newDealerValue };
+  };
+
+  const updateGameStateFromAction = (data, playerHands, dealerCards, playerValues, dealerValue) => {
     setGameState(prev => ({
       ...prev,
       currentBets: data.betAmount ? [data.betAmount] : 
                   data.currentBets ? data.currentBets : prev.currentBets,
       gameStatus: data.gameStatus,
-      playerHands: newPlayerHands,
-      dealerCards: newDealerCards,
-      playerValues: newPlayerValues,
-      dealerValue: newDealerValue,
+      playerHands: playerHands,
+      dealerCards: dealerCards,
+      playerValues: playerValues,
+      dealerValue: dealerValue,
       totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
       target: data.target || prev.target,
       result: data.result || prev.result,
       payout: data.payout || prev.payout
     }));
+  };
+
+  const onDefaultAction = (data) => {
+    const newPlayerHands = data.playerHands || gameState.playerHands;
+    const newDealerCards = data.dealerCards || gameState.dealerCards;
+    
+    updatePlayerHandAnimations(data);
+    updateDealerHandAnimation(data);
+    
+    const { newPlayerValues, newDealerValue } = calculateUpdatedValues(newPlayerHands, newDealerCards);
+    updateGameStateFromAction(data, newPlayerHands, newDealerCards, newPlayerValues, newDealerValue);
   };
 
   // Callback when deck shuffle completes
