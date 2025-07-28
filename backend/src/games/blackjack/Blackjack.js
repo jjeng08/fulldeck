@@ -4,7 +4,18 @@ const logger = require('../../shared/utils/logger');
 const testLogger = require('../../shared/testLogger');
 const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
-const { GAME_STATES } = require('../../../../shared/BlackJackConstants');
+// BlackJack game states - keep in sync with frontend
+const GAME_STATES = {
+  BETTING: 'betting',
+  DEALING: 'dealing', 
+  INSURANCE_OFFERED: 'insurance_offered',
+  DOUBLEDOWN_PROCESSING: 'doubledown_processing',
+  PLAYING: 'playing',
+  PLAYING_HAND_1: 'playing_hand_1',
+  PLAYING_HAND_2: 'playing_hand_2',
+  DEALER_TURN: 'dealer_turn',
+  FINISHED: 'finished'
+};
 
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
@@ -64,6 +75,17 @@ class Blackjack {
   
   updateActiveHandValue(value) {
     this.playerValues[this.activeHandIndex] = value;
+  }
+
+  // Get next active hand index for split scenarios
+  getNextActiveHandIndex() {
+    // Find the next hand that hasn't been completed yet
+    for (let i = 0; i < this.totalHands; i++) {
+      if (i !== this.activeHandIndex) {
+        return i;
+      }
+    }
+    return this.activeHandIndex; // fallback
   }
   
   // Initialize new game state
@@ -359,8 +381,8 @@ class Blackjack {
   }
 
 
-  // Player hits
-  hit(frontendActiveIndex, handId = 'player-hand-0') {
+  // Player hits  
+  hit(frontendActiveIndex, handId = 'player-hand-0', target = 'player') {
     const newCard = this.dealCard();
     const currentCards = this.playerHands[frontendActiveIndex] || []; // Use the specific hand from frontend
     const newCards = [...currentCards, newCard];
@@ -380,8 +402,8 @@ class Blackjack {
       gameStatus: GAME_STATES.PLAYING,
       result: busted ? 'lose' : null,
       payout: busted ? 0 : null,
-      targetHandId: handId,
-      activeHandIndex: frontendActiveIndex, // Hand that was modified
+      target: target,
+      handIndex: frontendActiveIndex,
       playerHands: this.playerHands,
       totalHands: this.totalHands,
       handComplete: busted === true // Signal that this hand's play is finished if busted
@@ -412,30 +434,38 @@ class Blackjack {
       // Update player balance
       await this.updatePlayerBalanceAfterGame(userId, result.payout, result.result, betAmount);
       
+      // Send response as game finished with dealer cards
       return {
         success: true,
+        actionType: 'dealerTurn',
         gameStatus: GAME_STATES.FINISHED,
+        target: 'dealer',
+        handIndex: 0,
         playerCards: this.playerCards,
         dealerCards: workingDealerCards,
         result: result.result,
         payout: result.payout,
         profit: result.profit,
-        activeHandIndex: frontendActiveIndex,
         playerHands: this.playerHands,
-        totalHands: this.totalHands,
-        handComplete: true
+        totalHands: this.totalHands
       };
     } else {
       // More hands to play - just mark this hand complete (no dealer cards!)
+      // Save current hand's cards before moving to next hand
+      const completedHandCards = this.playerHands[frontendActiveIndex];
+      // Move to next active hand
+      this.activeHandIndex = this.activeHandIndex + 1;
+      const nextHandState = this.activeHandIndex === 0 ? GAME_STATES.PLAYING_HAND_1 : GAME_STATES.PLAYING_HAND_2;
+      
+      // Send response as if starting the next hand
       return {
         success: true,
-        gameStatus: GAME_STATES.PLAYING,
-        playerCards: this.playerCards,
-        // Don't send dealerCards - no dealer update needed for non-final stands
-        activeHandIndex: frontendActiveIndex,
+        actionType: 'nextHand',
+        gameStatus: nextHandState,
+        target: 'player',
+        handIndex: this.activeHandIndex,
         playerHands: this.playerHands,
-        totalHands: this.totalHands,
-        handComplete: true
+        totalHands: this.totalHands
       };
     }
   }
@@ -487,14 +517,15 @@ class Blackjack {
     // DoubleDown automatically ends the hand - return completion signal
     return {
       success: true,
+      target: 'player',
+      handIndex: frontendActiveIndex,
       newCard,
       cards: newPlayerCards,
       busted: playerBusted,
-      gameStatus: GAME_STATES.PLAYING,
+      gameStatus: GAME_STATES.DOUBLEDOWN_PROCESSING,
       result: playerBusted ? 'lose' : null,
       payout: playerBusted ? 0 : null,
       targetHandId: handId,
-      activeHandIndex: frontendActiveIndex, // Hand that was completed
       playerHands: this.playerHands,
       totalHands: this.totalHands,
       currentBets: this.currentBets,
@@ -579,7 +610,7 @@ class Blackjack {
         gameResult,
         mainBetPayout,
         dealerCards: completeDealerCards,
-        gameStatus: GAME_STATES.FINISHED,
+        gameStatus: GAME_STATES.DEALER_TURN,
         result: gameResult,
         totalPayout: insurancePayout + mainBetPayout
       };
@@ -670,11 +701,12 @@ class Blackjack {
     
     return {
       success: true,
-      gameStatus: GAME_STATES.PLAYING,
+      gameStatus: GAME_STATES.PLAYING_HAND_1,
+      target: 'player',
+      handIndex: this.activeHandIndex,
       playerHands: [hand1, hand2], // Send only first cards to trigger animation
       playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
       currentBets: this.currentBets,
-      activeHandIndex: this.activeHandIndex,
       totalHands: 2,
       dealerCards: this.dealerCards // Keep existing dealer cards
     };
@@ -685,11 +717,12 @@ class Blackjack {
     // Return the complete hands that were stored during split
     return {
       success: true,
-      gameStatus: GAME_STATES.PLAYING,
+      gameStatus: GAME_STATES.PLAYING_HAND_1,
+      target: 'player',
+      handIndex: this.activeHandIndex,
       playerHands: this.playerHands, // Complete hands with second cards
       playerValues: this.playerValues,
       currentBets: this.currentBets,
-      activeHandIndex: this.activeHandIndex,
       totalHands: 2,
       dealerCards: this.dealerCards
     };
@@ -737,7 +770,7 @@ class Blackjack {
       return {
         success: true,
         dealerBlackjack: true,
-        gameStatus: GAME_STATES.FINISHED,
+        gameStatus: GAME_STATES.DEALER_TURN,
         result: gameResult,
         payout: mainBetPayout,
         dealerCards: completeDealerCards,
@@ -747,7 +780,7 @@ class Blackjack {
       return {
         success: true,
         dealerBlackjack: false,
-        gameStatus: GAME_STATES.PLAYING,
+        gameStatus: this.totalHands === 1 ? GAME_STATES.PLAYING : GAME_STATES.PLAYING_HAND_1,
         playerCards: playerCards,
         dealerCards: dealerCards
       };
@@ -961,14 +994,23 @@ async function onPlayerAction(ws, data, userId) {
         // Execute the action
         switch (data.type) {
           case 'hit':
-            result = blackjack.hit(data.activeHandIndex, data.handId);
+            // Only player hits are currently supported
+            if (data.target === 'player') {
+              result = blackjack.hit(data.handIndex, data.handIndex, data.target);
+            }
             break;
           case 'stand':
-            result = await blackjack.stand(userId, data.activeHandIndex);
+            // Only player stands are currently supported
+            if (data.target === 'player') {
+              result = await blackjack.stand(userId, data.handIndex);
+            }
             break;
           case 'doubleDown':
-            logger.logInfo('Double down call params', { userId, activeHandIndex: data.activeHandIndex, handId: data.handId });
-            result = await blackjack.doubleDown(userId, data.activeHandIndex, data.handId);
+            logger.logInfo('Double down call params', { userId, target: data.target, handIndex: data.handIndex });
+            // Only player double down is currently supported
+            if (data.target === 'player') {
+              result = await blackjack.doubleDown(userId, data.handIndex, data.handIndex);
+            }
             break;
           case 'split':
             result = await blackjack.split(userId, data.playerCards, data.currentBet);
@@ -1013,14 +1055,12 @@ async function onPlayerAction(ws, data, userId) {
         payout: result.profit || result.payout, // Send profit for frontend display
         betAmount: result.betAmount || data.betAmount,
         // Only send activeHandIndex when it's explicitly provided (hand transitions)
-        ...(result.activeHandIndex !== undefined ? { activeHandIndex: result.activeHandIndex } : {}),
         // Handle split-specific data
         ...(result.playerHands ? { 
           playerHands: result.playerHands,
           playerValues: result.playerValues,
           currentBets: result.currentBets,
           totalHands: result.totalHands,
-          activeHandIndex: result.activeHandIndex
         } : {}),
         // Handle hand completion flag
         ...(result.handComplete ? { handComplete: true } : {})

@@ -16,7 +16,8 @@ const Deck = forwardRef(({
     width: 90,
     height: 126,
   },
-  onDeckCoordinatesChange = () => {}
+  onDeckCoordinatesChange = () => {},
+  onShuffleComplete = () => {}
 }, ref) => {
   // Animated values for shuffle animations
   const shuffleProgress = React.useRef(new Animated.Value(0)).current;
@@ -122,6 +123,8 @@ const Deck = forwardRef(({
         const remaining = prev - 1;
         if (remaining <= 0) {
           setInternalIsShuffling(false);
+          // Call completion callback after state update completes
+          setTimeout(() => onShuffleComplete(), 0);
         }
         return remaining;
       });

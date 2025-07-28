@@ -226,6 +226,27 @@ Claude is authorized to run ALL system commands necessary for project developmen
 - **Test menu is positioned absolutely on the right side of the screen**
 - **Only production buttons (Lobby, etc.) belong in headers**
 - **Test menu uses testMenu and testMenuButton styles**
+
+## BLACKJACK GAME STATES - CRITICAL
+**ALWAYS use these exact constants for BlackJack game states in both frontend and backend:**
+
+```javascript
+const GAME_STATES = {
+  BETTING: 'betting',
+  DEALING: 'dealing', 
+  INSURANCE_OFFERED: 'insurance_offered',
+  DOUBLEDOWN_PROCESSING: 'doubledown_processing',  // Can happen during initial hand
+  PLAYING: 'playing',                              // General playing state
+  PLAYING_HAND_1: 'playing_hand_1',               // Split hands
+  PLAYING_HAND_2: 'playing_hand_2',               // Split hands
+  DEALER_TURN: 'dealer_turn',
+  FINISHED: 'finished'
+};
+```
+
+**Frontend**: Define these constants in the component file
+**Backend**: Define these constants in the game file
+**NEVER hardcode state strings** - always use these constant names
 ```
 
 ### Project Rules
