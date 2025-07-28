@@ -11,7 +11,8 @@
       "Bash(mv:*)",
       "Bash(mkdir:*)",
       "Bash(chmod:*)",
-      "Bash(npm run sync-core:*)"
+      "Bash(npm run sync-core:*)",
+      "Bash(diff:*)"
     ],
     "deny": []
   }

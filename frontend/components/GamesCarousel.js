@@ -70,8 +70,7 @@ export default function GamesCarousel() {
 
   const onSelectTier = (game, tierIndex) => {
     navigation.navigate(game.route, { 
-      selectedTier: tierIndex,
-      tiers: game.tiers,
+      tierConfig: game.tiers[tierIndex],
       maxMulti: game.maxMulti 
     });
   };

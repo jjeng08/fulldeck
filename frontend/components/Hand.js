@@ -29,13 +29,17 @@ const Hand = forwardRef(({
     flip: 300
   },
   gameConfigs = {
-    handWidth: 300,
+    handWidthRatio: 0.4,
     durations: { cardDeal: 1000, handUpdate: 200 }
   },
   cardLayout = null, // Override for card layout (spread, overlap)
   onHandUpdate = () => {}, // Callback when hand is updated
   showTotal = null // 'above', 'below', or null to not show totals
 }, ref) => {
+  
+  // Calculate actual hand width from screen width and ratio
+  const { width: screenWidth } = Dimensions.get('window');
+  const handWidth = screenWidth * gameConfigs.handWidthRatio;
 
     // Dynamic styles using gameConfigs
   const dynamicStyles = {
@@ -43,7 +47,7 @@ const Hand = forwardRef(({
       position: 'absolute',
       top: 0,
       left: 0,
-      width: gameConfigs.handWidth,
+      width: handWidth,
       height: cardConfigs.height,
       pointerEvents: 'none',
     },
@@ -91,7 +95,6 @@ const Hand = forwardRef(({
   const displayValues = handValues.length > 0 ? handValues : [0];
   const displayBetAmounts = betAmounts.length > 0 ? betAmounts : [0];
   
-  const { width: screenWidth } = Dimensions.get('window');
   const isSplit = displayHands.length > 1;
 
   // Helper function to determine effective layout for a hand
@@ -116,11 +119,11 @@ const Hand = forwardRef(({
     if (effectiveLayout === 'spread') {
       positioningCards = minPositioningCards;
       totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
-      centeredStartX = (gameConfigs.handWidth - totalWidth) / 2;
+      centeredStartX = (handWidth - totalWidth) / 2;
     } else {
       positioningCards = (minPositioningCards <= 2) ? 2 : totalCards;
       totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
-      centeredStartX = (gameConfigs.handWidth - totalWidth) / 2;
+      centeredStartX = (handWidth - totalWidth) / 2;
     }
     
     // Calculate position for each card - ONLY create positions for actual cards
@@ -655,7 +658,7 @@ const Hand = forwardRef(({
                   styles.betDisplayContainer,
                   {
                     position: 'absolute',
-                    left: (gameConfigs.handWidth / 2) - 60,
+                    left: (handWidth / 2) - 60,
                     top: showTotal === 'above' ? -100 : -50,
                     zIndex: 1001
                   }
@@ -672,7 +675,7 @@ const Hand = forwardRef(({
                   styles.handTotalContainer,
                   {
                     position: 'absolute',
-                    left: (gameConfigs.handWidth / 2) - 30,
+                    left: (handWidth / 2) - 30,
                     top: -50,
                     zIndex: 1001
                   }
@@ -757,7 +760,7 @@ const Hand = forwardRef(({
                 styles.handTotalContainer,
                 {
                   position: 'absolute',
-                  left: (gameConfigs.handWidth / 2) - 30,
+                  left: (handWidth / 2) - 30,
                   top: cardConfigs.height + 15,
                   zIndex: 1001
                 }
@@ -774,7 +777,7 @@ const Hand = forwardRef(({
                 styles.betDisplayContainer,
                 {
                   position: 'absolute',
-                  left: (gameConfigs.handWidth / 2) - 60,
+                  left: (handWidth / 2) - 60,
                   top: cardConfigs.height + 65,
                   zIndex: 1001
                 }
