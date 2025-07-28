@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { View, Text, Dimensions, Animated, Easing } from 'react-native';
-import { getBlackJackHandValue } from 'shared/utils';
+import { calculateHandValue } from '../games/blackjack/blackjackCore';
 import Reanimated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -374,7 +374,7 @@ const Hand = forwardRef(({
   useEffect(() => {
     if (showTotal) {
       // Calculate actual totals from current internal hands
-      const currentTotals = displayHands.map(hand => getBlackJackHandValue(hand));
+      const currentTotals = displayHands.map(hand => calculateHandValue(hand));
       setAnimatedTotals(currentTotals);
       setShowHandTotal(displayHands.some(hand => hand.length > 0));
     }

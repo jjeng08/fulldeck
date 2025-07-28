@@ -2,3 +2,9 @@ node_modules
 *.log
 logs/
 backend/logs/
+
+# Generated/synced files from core/ - do not commit
+frontend/shared/text.js
+backend/src/shared/text.js
+frontend/games/blackjack/blackjackCore.js
+backend/src/games/blackjack/blackjackCore.js

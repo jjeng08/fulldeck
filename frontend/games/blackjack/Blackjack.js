@@ -6,18 +6,7 @@ import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from 'shared/text';
 import { formatCurrency } from 'shared/utils';
-// BlackJack game states - keep in sync with backend
-const GAME_STATES = {
-  BETTING: 'betting',
-  DEALING: 'dealing', 
-  INSURANCE_OFFERED: 'insurance_offered',
-  DOUBLEDOWN_PROCESSING: 'doubledown_processing',
-  PLAYING: 'playing',
-  PLAYING_HAND_1: 'playing_hand_1',
-  PLAYING_HAND_2: 'playing_hand_2',
-  DEALER_TURN: 'dealer_turn',
-  FINISHED: 'finished'
-};
+import { GAME_STATES, calculateHandValue } from './blackjackCore';
 import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
@@ -116,59 +105,36 @@ export default function Blackjack({ route }) {
     }
   };
   
-  // Handle hand updates from Hand component
-  const onHandUpdate = (newHands) => {
+  // Handle hand updates from Hand component (both dealer and player)
+  const onHandUpdate = (newHands, isDealer = false) => {
     const handsArray = Array.isArray(newHands) ? newHands : (newHands?.data || []);
-    setGameState(prev => ({
-      ...prev,
-      playerHands: handsArray,
-      playerValues: handsArray.map(hand => calculateHandValue(hand))
-    }));
-    
-    // Hand component now manages total display internally
-    
-    // ONLY for initial deal sequence - trigger dealer animation after player cards finish
-    if (animationState === 'dealing_player') {
-      setAnimationState('dealing_dealer');
-      
-      // Now animate dealer cards from master gameState
-      setDealerHand({animate: true, data: [gameState.dealerCards]});
-    }
-    
-    // Check if game is finished and show results after player animations complete
-    if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
-      setAnimationState('finalizing');
-    }
-  };
-  
-  // Handle individual hand updates for split hands
-  const onSingleHandUpdate = (handIndex, newHand) => {
-    const handArray = Array.isArray(newHand) ? newHand : (newHand?.data?.[0] || []);
-    setGameState(prev => ({
-      ...prev,
-      playerHands: prev.playerHands.map((hand, index) => 
-        index === handIndex ? handArray : hand
-      ),
-      playerValues: prev.playerHands.map((hand, index) => 
-        index === handIndex ? parseInt(calculateHandValue(handArray)) : prev.playerValues[index]
-      )
-    }));
-  };
-  
-  // Handle dealer hand updates
-  const onDealerHandUpdate = (newHands) => {
-    const handsArray = Array.isArray(newHands) ? newHands : (newHands?.data || []);        
-    if (animationState === 'dealing_dealer') {
-      setAnimationState('idle');
+    if (isDealer) {
+      // Handle dealer hand updates
+      if (animationState === 'dealing_dealer') {
+        setAnimationState('idle');
+        setGameState(prev => ({
+          ...prev,
+          dealerCards: handsArray[0] || []
+        }));
+      } else if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
+        setAnimationState('finalizing');
+      }
+    } else {
+      // Handle player hand updates
       setGameState(prev => ({
         ...prev,
-        dealerCards: handsArray[0] || []
+        playerHands: handsArray,
+        playerValues: handsArray.map(hand => calculateHandValue(hand))
       }));
-    }
-    
-    // Check if game is finished and show results after dealer animations complete
-    if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
-      setAnimationState('finalizing');
+            
+      // ONLY for initial deal sequence - trigger dealer animation after player cards finish
+      if (animationState === 'dealing_player') {
+        setAnimationState('dealing_dealer');        
+        setDealerHand({animate: true, data: [gameState.dealerCards]});
+      } else if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
+        // Check if game is finished and show results after player animations complete
+        setAnimationState('finalizing');
+      }
     }
   };
 
@@ -206,52 +172,16 @@ export default function Blackjack({ route }) {
     return splitPositions;
   };
   
-
   // Compatibility layer - maintains existing API for single-hand access
   const getActivePlayerCards = () => gameState.playerHands[gameState.handIndex] || [];
   const getActiveCurrentBet = () => gameState.currentBets[gameState.handIndex] || 0;
   
 
-  // Calculate hand value with proper Ace handling
-  const calculateHandValue = (cards) => {
-    if (!cards || cards.length === 0) return '0';
-    
-    let value = 0;
-    let aces = 0;
-    
-    for (const card of cards) {
-      // Skip hole cards (cards with null value)
-      if (card.value === null || card.value === undefined) {
-        continue;
-      }
-      
-      if (card.value === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.value)) {
-        value += 10;
-      } else {
-        const numValue = parseInt(card.value);
-        if (!isNaN(numValue)) {
-          value += numValue;
-        }
-      }
-    }
-    
-    // Adjust for soft aces to get the highest valid value
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
-    }
-    
-    return value.toString();
-  };
-
   // Frontend logic to determine button states based on game data
   const getButtonStates = () => {
     const { gameStatus, dealerCards } = gameState;
     const playerCards = getActivePlayerCards();
-    const playerValue = parseInt(calculateHandValue(playerCards)); // Use corrected calculation
+    const playerValue = calculateHandValue(playerCards);
     
     // Only show buttons during player's turn (not during insurance phase)
     if (![GAME_STATES.PLAYING, GAME_STATES.PLAYING_HAND_1, GAME_STATES.PLAYING_HAND_2].includes(gameStatus)) {
@@ -308,8 +238,8 @@ export default function Blackjack({ route }) {
   const getGameResultMessage = () => {
     const { result, payout } = gameState;
     // Use the properly calculated hand values that are displayed
-    const playerValue = parseInt(calculateHandValue(getActivePlayerCards()));
-    const dealerValue = parseInt(calculateHandValue(gameState.dealerCards || []));
+    const playerValue = calculateHandValue(getActivePlayerCards());
+    const dealerValue = calculateHandValue(gameState.dealerCards || []);
     const playerCards = getActivePlayerCards();
     
     if (result === 'lose') {
@@ -585,7 +515,7 @@ export default function Blackjack({ route }) {
     setAnimationState('dealing_player');
     
     // Calculate player card values in frontend
-    const newPlayerValues = [parseInt(calculateHandValue(data.playerCards))];
+    const newPlayerValues = [calculateHandValue(data.playerCards)];
     
     // Update player hand 1 state
     setPlayerHand1({animate: true, data: [data.playerCards]});
@@ -598,7 +528,7 @@ export default function Blackjack({ route }) {
       playerHands: [data.playerCards],
       dealerCards: data.dealerCards, // Store dealer cards in master state
       playerValues: newPlayerValues,
-      dealerValue: parseInt(calculateHandValue(data.dealerCards)),
+      dealerValue: calculateHandValue(data.dealerCards),
       result: data.result || prev.result,
       payout: data.payout || prev.payout
     }));
@@ -618,7 +548,7 @@ export default function Blackjack({ route }) {
       ...prev,
       totalHands: 2,
       playerHands: data.playerHands, // First cards only
-      playerValues: data.playerHands.map(hand => parseInt(calculateHandValue(hand))),
+      playerValues: data.playerHands.map(hand => calculateHandValue(hand)),
       currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
       target: data.target || 'player',
       handIndex: data.handIndex !== undefined ? data.handIndex : 0,
@@ -657,7 +587,7 @@ export default function Blackjack({ route }) {
     setGameState(prev => ({
         ...prev,
         playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
-        playerValues: [parseInt(calculateHandValue(completeHands[0])), prev.playerValues[1] || 0],
+        playerValues: [calculateHandValue(completeHands[0]), prev.playerValues[1] || 0],
         target: data.target || prev.target,
         handIndex: data.handIndex !== undefined ? data.handIndex : prev.handIndex
       }));
@@ -669,7 +599,7 @@ export default function Blackjack({ route }) {
         setGameState(prev => ({
           ...prev,
           playerHands: [completeHands[0], completeHands[1]], // Now update Hand 2
-          playerValues: completeHands.map(hand => parseInt(calculateHandValue(hand))),
+          playerValues: completeHands.map(hand => calculateHandValue(hand)),
           target: data.target || prev.target,
         handIndex: data.handIndex !== undefined ? data.handIndex : prev.handIndex
         }));
@@ -720,8 +650,8 @@ export default function Blackjack({ route }) {
     }
     
     // Calculate card values in frontend instead of using backend values
-    const newPlayerValues = newPlayerHands.map(hand => parseInt(calculateHandValue(hand)));
-    const newDealerValue = parseInt(calculateHandValue(newDealerCards));
+    const newPlayerValues = newPlayerHands.map(hand => calculateHandValue(hand));
+    const newDealerValue = calculateHandValue(newDealerCards);
     
     // Update game state immediately - Hand components will handle animations
     setGameState(prev => ({
@@ -896,7 +826,7 @@ export default function Blackjack({ route }) {
           cardConfigs={cardConfigs}
           gameConfigs={gameConfigs}
           cardLayout='spread'
-          onHandUpdate={onDealerHandUpdate}
+          onHandUpdate={(newHands) => onHandUpdate(newHands, true)}
           isDealer={true}
           showTotal="below"
         />
@@ -935,7 +865,7 @@ export default function Blackjack({ route }) {
               deckCoordinates={deckCoordinates}
               cardConfigs={cardConfigs}
               gameConfigs={gameConfigs}
-              onHandUpdate={(newHands) => onSingleHandUpdate(handIndex, newHands[0])}
+              onHandUpdate={onHandUpdate}
               isDealer={false}
               showTotal="above"
             />

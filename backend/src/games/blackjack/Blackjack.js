@@ -4,18 +4,7 @@ const logger = require('../../shared/utils/logger');
 const testLogger = require('../../shared/testLogger');
 const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
-// BlackJack game states - keep in sync with frontend
-const GAME_STATES = {
-  BETTING: 'betting',
-  DEALING: 'dealing', 
-  INSURANCE_OFFERED: 'insurance_offered',
-  DOUBLEDOWN_PROCESSING: 'doubledown_processing',
-  PLAYING: 'playing',
-  PLAYING_HAND_1: 'playing_hand_1',
-  PLAYING_HAND_2: 'playing_hand_2',
-  DEALER_TURN: 'dealer_turn',
-  FINISHED: 'finished'
-};
+const { GAME_STATES, calculateHandValue, isBlackjack } = require('./blackjackCore');
 
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
@@ -53,7 +42,7 @@ class Blackjack {
   get playerCards() { return this.playerHands[this.activeHandIndex] || []; }
   set playerCards(cards) { 
     this.playerHands[this.activeHandIndex] = cards;
-    this.playerValues[this.activeHandIndex] = this.calculateHandValue(cards);
+    this.playerValues[this.activeHandIndex] = calculateHandValue(cards);
   }
   
   get playerValue() { return this.playerValues[this.activeHandIndex] || 0; }
@@ -70,7 +59,7 @@ class Blackjack {
   
   updateActiveHandCards(cards) {
     this.playerHands[this.activeHandIndex] = cards;
-    this.playerValues[this.activeHandIndex] = this.calculateHandValue(cards);
+    this.playerValues[this.activeHandIndex] = calculateHandValue(cards);
   }
   
   updateActiveHandValue(value) {
@@ -165,59 +154,6 @@ class Blackjack {
     return cardWithId;
   }
 
-  // Calculate the value of a hand
-  calculateHandValue(cards) {
-    if (!cards || cards.length === 0) return 0;
-    
-    let value = 0;
-    let aces = 0;
-
-    for (const card of cards) {
-      // Skip cards with null/undefined values (hole cards)
-      if (!card || card.value === null || card.value === undefined) {
-        continue;
-      }
-      
-      if (card.value === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.value)) {
-        value += 10;
-      } else {
-        const numValue = parseInt(card.value);
-        if (!isNaN(numValue)) {
-          value += numValue;
-        }
-      }
-    }
-
-    // Adjust for aces - convert 11s to 1s when busting
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
-    }
-
-    return value;
-  }
-
-
-  // Check if initial 2-card hand is blackjack (only for initial deal)
-  isBlackjack(cards) {
-    if (cards.length !== 2) return false;
-    
-    let hasAce = false;
-    let hasTen = false;
-    
-    for (const card of cards) {
-      if (card.value === 'A') {
-        hasAce = true;
-      } else if (['K', 'Q', 'J'].includes(card.value) || card.value === '10') {
-        hasTen = true;
-      }
-    }
-    
-    return hasAce && hasTen;
-  }
 
 
 
@@ -294,8 +230,8 @@ class Blackjack {
     }
     
     // No dealer Ace - check for immediate blackjack scenarios
-    const playerBlackjack = this.isBlackjack(playerCards);
-    const dealerBlackjack = this.isBlackjack(dealerCards);
+    const playerBlackjack = isBlackjack(playerCards);
+    const dealerBlackjack = isBlackjack(dealerCards);
     
     // Handle immediate blackjack scenarios (only when dealer doesn't show Ace)
     if (playerBlackjack || dealerBlackjack) {
@@ -325,8 +261,8 @@ class Blackjack {
         payout,
         profit,
         betAmount,
-        playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(dealerCards)
+        playerValue: calculateHandValue(playerCards),
+        dealerValue: calculateHandValue(dealerCards)
       };
       
       // Test logging
@@ -334,8 +270,8 @@ class Blackjack {
         result,
         payout,
         betAmount,
-        playerValue: this.calculateHandValue(playerCards),
-        dealerValue: this.calculateHandValue(dealerCards),
+        playerValue: calculateHandValue(playerCards),
+        dealerValue: calculateHandValue(dealerCards),
         playerCards,
         dealerCards
       });
@@ -353,7 +289,7 @@ class Blackjack {
           payout,
           profit,
           playerValue: this.playerValue,
-          dealerValue: this.calculateHandValue(dealerCards)
+          dealerValue: calculateHandValue(dealerCards)
         },
         immediateResult: true
       };
@@ -386,7 +322,7 @@ class Blackjack {
     const newCard = this.dealCard();
     const currentCards = this.playerHands[frontendActiveIndex] || []; // Use the specific hand from frontend
     const newCards = [...currentCards, newCard];
-    const handValue = this.calculateHandValue(newCards);
+    const handValue = calculateHandValue(newCards);
     const busted = handValue > 21;
     
     // Update the specific hand
@@ -422,7 +358,7 @@ class Blackjack {
       const workingDealerCards = [...completeDealerCards];
       
       // Dealer hits until 17 or higher
-      while (this.calculateHandValue(workingDealerCards) < 17) {
+      while (calculateHandValue(workingDealerCards) < 17) {
         const dealerCard = this.dealCard();
         workingDealerCards.push(dealerCard);
       }
@@ -506,7 +442,7 @@ class Blackjack {
     const newCard = this.dealCard();
     const currentCards = this.playerHands[frontendActiveIndex] || []; // Use the specific hand from frontend
     const newPlayerCards = [...currentCards, newCard];
-    const playerHandValue = this.calculateHandValue(newPlayerCards);
+    const playerHandValue = calculateHandValue(newPlayerCards);
     const playerBusted = playerHandValue > 21;
     
     // Update the specific hand with the new card and double the bet
@@ -561,7 +497,7 @@ class Blackjack {
     
     // Check if dealer has blackjack (using stored complete dealer hand)
     const completeDealerCards = this.currentDealerCards || dealerCards;
-    const dealerBlackjack = this.isBlackjack(completeDealerCards);
+    const dealerBlackjack = isBlackjack(completeDealerCards);
     
     if (dealerBlackjack) {
       // Insurance pays 2:1 - this is a WIN on insurance
@@ -582,7 +518,7 @@ class Blackjack {
       });
       
       // Now handle main bet separately - dealer has blackjack
-      const playerBlackjack = this.isBlackjack(playerCards);
+      const playerBlackjack = isBlackjack(playerCards);
       const gameResult = playerBlackjack ? 'push' : 'dealer_blackjack';
       const mainBetPayout = playerBlackjack ? betAmount : 0; // Push returns bet, lose returns 0
       
@@ -694,7 +630,7 @@ class Blackjack {
     
     // Update multi-hand state with complete hands (for internal tracking)
     this.playerHands = [completeHand1, completeHand2];
-    this.playerValues = [this.calculateHandValue(completeHand1), this.calculateHandValue(completeHand2)];
+    this.playerValues = [calculateHandValue(completeHand1), calculateHandValue(completeHand2)];
     this.currentBets = [betAmount, betAmount];
     this.totalHands = 2;
     this.activeHandIndex = 0; // Start with first hand
@@ -705,7 +641,7 @@ class Blackjack {
       target: 'player',
       handIndex: this.activeHandIndex,
       playerHands: [hand1, hand2], // Send only first cards to trigger animation
-      playerValues: [this.calculateHandValue(hand1), this.calculateHandValue(hand2)],
+      playerValues: [calculateHandValue(hand1), calculateHandValue(hand2)],
       currentBets: this.currentBets,
       totalHands: 2,
       dealerCards: this.dealerCards // Keep existing dealer cards
@@ -734,10 +670,10 @@ class Blackjack {
     const betAmount = this.currentBet;
     // Use the stored complete dealer hand to check for blackjack
     const completeDealerCards = this.currentDealerCards || dealerCards;
-    const dealerBlackjack = this.isBlackjack(completeDealerCards);
+    const dealerBlackjack = isBlackjack(completeDealerCards);
     
     if (dealerBlackjack) {
-      const playerBlackjack = this.isBlackjack(playerCards);
+      const playerBlackjack = isBlackjack(playerCards);
       const gameResult = playerBlackjack ? 'push' : 'dealer_blackjack';
       const mainBetPayout = playerBlackjack ? betAmount : 0;
       
@@ -796,12 +732,12 @@ class Blackjack {
 
   // Calculate game result for single player
   calculateGameResult(playerCards, dealerCards, betAmount) {
-    const playerValue = this.calculateHandValue(playerCards);
-    const dealerValue = this.calculateHandValue(dealerCards);
+    const playerValue = calculateHandValue(playerCards);
+    const dealerValue = calculateHandValue(dealerCards);
     const playerBusted = playerValue > 21;
     const dealerBusted = dealerValue > 21;
-    const playerBlackjack = this.isBlackjack(playerCards);
-    const dealerBlackjack = this.isBlackjack(dealerCards);
+    const playerBlackjack = isBlackjack(playerCards);
+    const dealerBlackjack = isBlackjack(dealerCards);
 
     let result = 'lose';
     let totalPayout = 0;
@@ -968,8 +904,8 @@ async function onPlayerAction(ws, data, userId) {
             gameStatus: gameResult.gameState.gameStatus,
             playerCards: gameResult.gameState.playerCards,
             dealerCards: gameResult.gameState.dealerCards,
-            playerValue: blackjack.calculateHandValue(gameResult.gameState.playerCards),
-            dealerValue: blackjack.calculateHandValue(gameResult.gameState.dealerCards),
+            playerValue: calculateHandValue(gameResult.gameState.playerCards),
+            dealerValue: calculateHandValue(gameResult.gameState.dealerCards),
             betAmount: data.betAmount,
             newBalance: updatedPlayer.balance
           };
