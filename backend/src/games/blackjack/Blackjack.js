@@ -1,8 +1,8 @@
 const BettingUtils = require('../../shared/utils/BettingUtils');
+const crypto = require('crypto');
 const DBUtils = require('../../shared/utils/DBUtils');
 const logger = require('../../shared/utils/logger');
 const testLogger = require('../../shared/testLogger');
-const crypto = require('crypto');
 const { text: t } = require('../../shared/text');
 const { GAME_STATES, calculateHandValue, isBlackjack } = require('./blackjackCore');
 
@@ -38,18 +38,18 @@ class Blackjack {
     this.buildDeck(deckConfig);
   }
   
-  // Compatibility layer - maintains existing API for single-hand access
-  get playerCards() { return this.playerHands[this.activeHandIndex] || []; }
-  set playerCards(cards) { 
+  // Direct access methods for current active hand
+  getCurrentPlayerHand() { return this.playerHands[this.activeHandIndex] || []; }
+  setCurrentPlayerHand(cards) { 
     this.playerHands[this.activeHandIndex] = cards;
     this.playerValues[this.activeHandIndex] = calculateHandValue(cards);
   }
   
-  get playerValue() { return this.playerValues[this.activeHandIndex] || 0; }
-  set playerValue(value) { this.playerValues[this.activeHandIndex] = value; }
+  getCurrentPlayerValue() { return this.playerValues[this.activeHandIndex] || 0; }
+  setCurrentPlayerValue(value) { this.playerValues[this.activeHandIndex] = value; }
   
-  get currentBet() { return this.currentBets[this.activeHandIndex] || 0; }
-  set currentBet(bet) { this.currentBets[this.activeHandIndex] = bet; }
+  getCurrentBet() { return this.currentBets[this.activeHandIndex] || 0; }
+  setCurrentBet(bet) { this.currentBets[this.activeHandIndex] = bet; }
   
   // Helper functions for multi-hand state management
   updateActiveHand(cards, value) {
@@ -202,7 +202,7 @@ class Blackjack {
     // Store cards in new structure
     this.dealerCards = dealerCards;
     this.currentDealerCards = dealerCards;
-    this.playerCards = playerCards; // Uses setter to update both hands and values
+    this.setCurrentPlayerHand(playerCards); // Update playerHands and values
     
     // Check for insurance opportunity first (dealer shows Ace)
     const canBuyInsurance = dealerFaceUp.value === 'A';
@@ -213,7 +213,6 @@ class Blackjack {
         success: true,
         gameState: {
           dealerCards: [dealerFaceUp, { suit: null, value: null, isHoleCard: true }], // Face-up card + hole card placeholder
-          playerCards: this.playerCards,
           playerHands: this.playerHands,
           playerValues: this.playerValues,
           betAmount,
@@ -272,7 +271,7 @@ class Blackjack {
         betAmount,
         playerValue: calculateHandValue(playerCards),
         dealerValue: calculateHandValue(dealerCards),
-        playerCards,
+        playerHands: this.playerHands,
         dealerCards
       });
       
@@ -280,7 +279,6 @@ class Blackjack {
         success: true,
         gameState: {
           dealerCards: dealerCards, // Reveal both cards
-          playerCards: this.playerCards,
           playerHands: this.playerHands,
           playerValues: this.playerValues,
           betAmount,
@@ -288,7 +286,7 @@ class Blackjack {
           result,
           payout,
           profit,
-          playerValue: this.playerValue,
+          playerValue: this.getCurrentPlayerValue(),
           dealerValue: calculateHandValue(dealerCards)
         },
         immediateResult: true
@@ -300,7 +298,6 @@ class Blackjack {
       success: true,
       gameState: {
         dealerCards: [dealerFaceUp, { suit: null, value: null, isHoleCard: true }], // Face-up card + hole card placeholder
-        playerCards: this.playerCards,
         playerHands: this.playerHands,
         playerValues: this.playerValues,
         betAmount,
@@ -364,8 +361,8 @@ class Blackjack {
       }
       
       // Calculate final result for current hand
-      const betAmount = this.currentBets[frontendActiveIndex] || this.currentBet;
-      const result = this.calculateGameResult(this.playerCards, workingDealerCards, betAmount);
+      const betAmount = this.currentBets[frontendActiveIndex] || this.getCurrentBet();
+      const result = this.calculateGameResult(this.playerHands[frontendActiveIndex], workingDealerCards, betAmount);
       
       // Update player balance
       await this.updatePlayerBalanceAfterGame(userId, result.payout, result.result, betAmount);
@@ -377,7 +374,7 @@ class Blackjack {
         gameStatus: GAME_STATES.FINISHED,
         target: 'dealer',
         handIndex: 0,
-        playerCards: this.playerCards,
+        playerHands: this.playerHands,
         dealerCards: workingDealerCards,
         result: result.result,
         payout: result.payout,
@@ -409,7 +406,7 @@ class Blackjack {
   // Double down - deal one card and double bet (frontend will handle stand logic)
   async doubleDown(userId, frontendActiveIndex, handId = 'player-hand-0') {
     // Use stored bet amount from the game instance
-    const betAmount = this.currentBets[frontendActiveIndex] || this.currentBet;
+    const betAmount = this.currentBets[frontendActiveIndex] || this.getCurrentBet();
     
     // Validate stored bet amount
     if (!betAmount || typeof betAmount !== 'number' || betAmount <= 0) {
@@ -472,9 +469,11 @@ class Blackjack {
 
 
   // Buy insurance
-  async buyInsurance(userId, playerCards, dealerCards, insuranceAmount) {
+  async buyInsurance(userId, playerHands, activeHandIndex, dealerCards, insuranceAmount) {
+    // Get the active hand for insurance calculation
+    const playerCards = playerHands[activeHandIndex];
     // Use stored bet amount from the game instance
-    const betAmount = this.currentBet;
+    const betAmount = this.getCurrentBet();
     // Validate user has enough balance
     const user = await DBUtils.getPlayerById(userId);
     
@@ -572,7 +571,7 @@ class Blackjack {
   // Surrender
   async surrender(userId) {
     // Use stored bet amount from the game instance
-    const betAmount = this.currentBet;
+    const betAmount = this.getCurrentBet();
     
     // Return half the bet
     const halfBet = Math.floor(betAmount / 2);
@@ -589,7 +588,10 @@ class Blackjack {
   }
 
   // Split hand - create two hands from pair
-  async split(userId, playerCards, currentBet) {
+  async split(userId, playerHands, activeHandIndex, currentBet) {
+    // Get the active hand to split
+    const playerCards = playerHands[activeHandIndex];
+    
     // Validate split conditions
     if (!playerCards || playerCards.length !== 2) {
       return { success: false, error: 'Can only split with exactly 2 cards' };
@@ -599,7 +601,7 @@ class Blackjack {
       return { success: false, error: 'Can only split cards of the same value' };
     }
     
-    const betAmount = this.currentBet || currentBet;
+    const betAmount = this.getCurrentBet() || currentBet;
     
     // Validate user has enough balance for second bet
     const user = await DBUtils.getPlayerById(userId);
@@ -665,9 +667,11 @@ class Blackjack {
   }
 
   // Skip insurance
-  async skipInsurance(userId, playerCards, dealerCards) {
+  async skipInsurance(userId, playerHands, activeHandIndex, dealerCards) {
+    // Get the active hand for insurance check
+    const playerCards = playerHands[activeHandIndex];
     // Use stored bet amount from the game instance
-    const betAmount = this.currentBet;
+    const betAmount = this.getCurrentBet();
     // Use the stored complete dealer hand to check for blackjack
     const completeDealerCards = this.currentDealerCards || dealerCards;
     const dealerBlackjack = isBlackjack(completeDealerCards);
@@ -710,14 +714,14 @@ class Blackjack {
         result: gameResult,
         payout: mainBetPayout,
         dealerCards: completeDealerCards,
-        playerCards: playerCards
+        playerHands: this.playerHands
       };
     } else {
       return {
         success: true,
         dealerBlackjack: false,
         gameStatus: this.totalHands === 1 ? GAME_STATES.PLAYING : GAME_STATES.PLAYING_HAND_1,
-        playerCards: playerCards,
+        playerHands: this.playerHands,
         dealerCards: dealerCards
       };
     }
@@ -884,7 +888,7 @@ async function onPlayerAction(ws, data, userId) {
             success: true,
             immediateResult: true,
             gameStatus: GAME_STATES.FINISHED,
-            playerCards: gameResult.gameState.playerCards,
+            playerHands: gameResult.gameState.playerHands,
             dealerCards: gameResult.gameState.dealerCards,
             playerValue: gameResult.gameState.playerValue,
             dealerValue: gameResult.gameState.dealerValue,
@@ -902,9 +906,9 @@ async function onPlayerAction(ws, data, userId) {
             success: true,
             immediateResult: false,
             gameStatus: gameResult.gameState.gameStatus,
-            playerCards: gameResult.gameState.playerCards,
+            playerHands: gameResult.gameState.playerHands,
             dealerCards: gameResult.gameState.dealerCards,
-            playerValue: calculateHandValue(gameResult.gameState.playerCards),
+            playerValue: calculateHandValue(gameResult.gameState.playerHands[0]),
             dealerValue: calculateHandValue(gameResult.gameState.dealerCards),
             betAmount: data.betAmount,
             newBalance: updatedPlayer.balance
@@ -949,13 +953,13 @@ async function onPlayerAction(ws, data, userId) {
             }
             break;
           case 'split':
-            result = await blackjack.split(userId, data.playerCards, data.currentBet);
+            result = await blackjack.split(userId, data.playerHands, data.activeHandIndex, data.currentBet);
             break;
           case 'splitDeal':
             result = await blackjack.splitDeal(userId);
             break;
           case 'buyInsurance':
-            result = await blackjack.buyInsurance(userId, data.playerCards, data.dealerCards, data.insuranceAmount);
+            result = await blackjack.buyInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards, data.insuranceAmount);
             break;
           case 'surrender':
             result = await blackjack.surrender(userId);
@@ -968,7 +972,7 @@ async function onPlayerAction(ws, data, userId) {
             result = blackjack.startGame(userId);
             break;
           case 'skipInsurance':
-            result = await blackjack.skipInsurance(userId, data.playerCards, data.dealerCards);
+            result = await blackjack.skipInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards);
             break;
         }
         break;
@@ -985,7 +989,7 @@ async function onPlayerAction(ws, data, userId) {
         gameStatus: result.gameStatus,
         playerValue: result.playerValue,
         dealerValue: result.dealerValue,
-        playerCards: result.playerCards || result.cards,
+        playerHands: result.playerHands,
         dealerCards: result.dealerCards,
         result: result.result,
         payout: result.profit || result.payout, // Send profit for frontend display
