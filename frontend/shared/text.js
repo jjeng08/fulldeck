@@ -1,4 +1,4 @@
-export const text = {
+const text = {
   // App and General
   appName: 'FullDeck',
   
@@ -19,7 +19,6 @@ export const text = {
   enterPassword: 'Enter password',
   confirmYourPassword: 'Confirm your password',
   logIn: 'Log In',
-  register: 'Register',
   cancel: 'Cancel',
   submit: 'Submit',
   
@@ -68,6 +67,10 @@ export const text = {
   cardDealt: 'Card dealt: {value} of {suit}',
   gameWin: 'Game win! Amount: ${amount}',
   gameLose: 'Game lose! Amount: ${amount}',
+  gamePush: 'Game push! Bet returned.',
+  surrenderResult: 'Game surrendered. Half bet lost.',
+  doubleDownWin: 'Double down win! Amount: ${amount}',
+  doubleDownLose: 'Double down lose! Amount: ${amount}',
   betPlaced: 'Bet placed! Ready to deal cards.',
   newGameReady: 'Ready for a new game! Place your bet.',
   insufficientBalance: 'Insufficient balance for this bet!',
@@ -79,9 +82,21 @@ export const text = {
   dealerHand: 'Dealer Hand ({count} cards)',
   yourHand: 'Your Hand ({count} cards)',
   
-  // Errors
+  // Authentication Messages
+  loginSuccess: 'Welcome back, {username}!',
+  loginFailed: 'Invalid username or password. Please try again.',
+  
+  // Error Messages
   error: 'Error: {message}',
   unknownCard: 'Unknown',
+  unknownMessageType: 'Unknown message type: {type}',
+  invalidMessageFormat: 'Invalid message format',
+  databaseError: 'Database error occurred. Please try again.',
+  serverError: 'Server error occurred. Please try again.',
+  unableToLogin: 'Unable to login at this time. Please try again.',
+  unableToRegister: 'Unable to register at this time. Please try again.',
+  invalidRefreshToken: 'No valid refresh token provided.',
+  tokenRefreshFailed: 'Unable to refresh token at this time. Please login again.',
   
   // Registration Errors
   usernameExists: 'Username already exists. Please choose a different username.',
@@ -92,4 +107,12 @@ export const text = {
   // Form Validation Errors
   enterUsernameAndPassword: 'Please enter both username and password.',
   enterAllFields: 'Please fill in all required fields.',
-}
+  missingUsername: 'Username is required.',
+  missingPassword: 'Password is required.',
+  invalidBetAmount: 'Invalid bet amount.',
+  userNotFound: 'User not found.',
+  gameNotFound: 'Game not found.',
+};
+
+// ES6 export for frontend
+export { text };

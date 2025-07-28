@@ -6,7 +6,12 @@
       "Bash(git commit:*)",
       "Bash(git checkout:*)",
       "Bash(rg:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git rm:*)",
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(npm run sync-core:*)"
     ],
     "deny": []
   }
