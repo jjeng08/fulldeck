@@ -125,6 +125,10 @@ export default function Blackjack({ route }) {
           break;
         case 'insurance':
           onDefaultAction(data);
+          // If dealer had blackjack, game is finished
+          if (data.gameStatus === GAME_STATES.FINISHED) {
+            setAnimationState('finalizing');
+          }
           break;
         case 'nextHand':
           // Advance to next hand - update local activeHandIndex and game state
@@ -138,7 +142,24 @@ export default function Blackjack({ route }) {
           }));
           break;
         case 'dealerTurn':
-          // Dealer turn with final results
+          // Dealer turn - animate cards and handle completion
+          setGameState(prev => ({
+            ...prev,
+            gameStatus: data.gameStatus,
+            target: data.target,
+            dealerCards: data.dealerCards,
+            playerHands: data.playerHands,
+            totalHands: data.totalHands,
+            handComplete: data.handComplete // Store handComplete for onHandUpdate
+          }));
+          // Animate dealer cards
+          if (data.dealerCards) {
+            setAnimationState('dealing_dealer');
+            setDealerHand({animate: true, data: [data.dealerCards]});
+          }
+          break;
+        case 'dealerComplete':
+          // Final game results
           setGameState(prev => ({
             ...prev,
             gameStatus: data.gameStatus,
@@ -149,10 +170,9 @@ export default function Blackjack({ route }) {
             playerHands: data.playerHands,
             totalHands: data.totalHands
           }));
-          // Animate dealer cards
-          if (data.dealerCards) {
-            setAnimationState('dealing_dealer');
-            setDealerHand({animate: true, data: [data.dealerCards]});
+          // Game is finished, set to finalizing state
+          if (data.gameStatus === GAME_STATES.FINISHED) {
+            setAnimationState('finalizing');
           }
           break;
       }
@@ -245,6 +265,13 @@ export default function Blackjack({ route }) {
           ...prev,
           dealerCards: handsArray[0] || []
         }));
+        
+        // If dealer's turn just finished, send dealerComplete message
+        if (gameState.gameStatus === GAME_STATES.DEALER_TURN && gameState.handComplete) {
+          sendMessage('playerAction', {
+            type: 'dealerComplete'
+          });
+        }
       } else if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
         setAnimationState('finalizing');
       }

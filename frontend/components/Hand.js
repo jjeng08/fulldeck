@@ -62,7 +62,7 @@ const Hand = forwardRef(({
       height: cardConfigs.height,
     },
   };
-  
+
   const cardAnimations = useRef(new Map());
   const [internalHands, setInternalHands] = useState(hands.data || []);
   const [animatingCards, setAnimatingCards] = useState([]);
