@@ -14,8 +14,6 @@ const Hand = forwardRef(({
   testFinder,
   cards = [], // Array of card objects for the hand
   animate = true, // Whether to animate card dealing
-  handLabel = 'Player Hand', // Label for the hand
-  handValue = 0, // Value for the hand
   betAmount = 0, // Bet amount for the hand
   isActiveHand = false, // Whether this hand is currently active
   position = { x: 0, y: 0 },
@@ -64,18 +62,33 @@ const Hand = forwardRef(({
   };
 
   const cardAnimations = useRef(new Map());
-  const [internalCards, setInternalCards] = useState(cards || []);
+  const [internalCards, setInternalCards] = useState([]);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   const [pendingAnimations, setPendingAnimations] = useState(0);
   
-  // Track initial render and when we should notify parent
-  const isInitialRender = useRef(true);
+  // Track when we should notify parent
   const shouldNotifyParent = useRef(false);
   
   // Internal total management
   const [showHandTotal, setShowHandTotal] = useState(false);
   const [animatedTotal, setAnimatedTotal] = useState(0);
+  
+  // COMPLETE RESET FUNCTION - Restore to exact initial state
+  const resetHandToDefault = () => {
+    // Reset all state variables to their initial values
+    setInternalCards([]);
+    setAnimatingCards([]);
+    setPendingAnimations(0);
+    setShowHandTotal(false);
+    setAnimatedTotal(0);
+    
+    // Reset all refs to their initial values
+    cardAnimations.current.clear();
+    shouldNotifyParent.current = false;
+    
+    // DO NOT reset nextCardId - keep incrementing for unique keys across games
+  };
   
   // Position animation using react-native-reanimated - initialize with current position
   const positionX = useSharedValue(position?.x || 0);
@@ -388,22 +401,9 @@ const Hand = forwardRef(({
     const cardsData = cards || [];
     const shouldAnimate = animate !== false;
     
-    if (isInitialRender.current) {
-      isInitialRender.current = false;
-      // Initial render - just set the cards with IDs
-      let currentId = nextCardId;
-      const cardsWithIds = cardsData.map(card => {
-        if (!card.id) {
-          const newId = currentId;
-          currentId++;
-          return { ...card, id: newId };
-        }
-        return { ...card };
-      });
-      if (currentId !== nextCardId) {
-        setNextCardId(currentId);
-      }
-      setInternalCards(cardsWithIds);
+    // COMPLETE RESET when receiving empty array - restore to exact initial state
+    if (cardsData.length === 0) {
+      resetHandToDefault();
       return;
     }
 
@@ -584,6 +584,14 @@ const Hand = forwardRef(({
       onHandUpdate(internalCards);
     }
   }, [pendingAnimations, internalCards]);
+
+  // Cleanup effect to ensure proper state reset
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      cardAnimations.current.clear();
+    };
+  }, []);
 
   return (
     <Reanimated.View style={[
