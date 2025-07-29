@@ -797,17 +797,17 @@ export default function Blackjack({ route }) {
         
         {/* Dealer Hand */}
         <Hand
-          hands={dealerHand}
-          activeHandIndex={0}
-          handLabels={['Dealer Hand']}
-          handValues={[0]}
+          cards={dealerHand.data?.[0] || []}
+          animate={dealerHand.animate}
+          handLabel="Dealer Hand"
+          handValue={gameState.dealerValue}
+          betAmount={0}
           position={dealerPosition}
           deckCoordinates={deckCoordinates}
           cardConfigs={cardConfigs}
           gameConfigs={gameConfigs}
           cardLayout='spread'
-          onHandUpdate={(newHands) => onHandUpdate(newHands, true)}
-          isDealer={true}
+          onHandUpdate={(newCards) => onHandUpdate([newCards], true)}
           showTotal="below"
         />
 
@@ -815,41 +815,50 @@ export default function Blackjack({ route }) {
           <Hand
             testID="singlePlayerHand"
             testFinder='testFinder'
-            hands={playerHand1}
-            activeHandIndex={activeHandIndex.current}
-            handLabels={['Player Hand']}
-            handValues={gameState.playerValues}
-            betAmounts={gameState.currentBets}
+            cards={playerHand1.data?.[0] || []}
+            animate={playerHand1.animate}
+            handLabel="Player Hand"
+            handValue={gameState.playerValues[0] || 0}
+            betAmount={gameState.currentBets[0] || 0}
             position={singlePlayerPosition}
             animatePosition={false}
             deckCoordinates={deckCoordinates}
             cardConfigs={cardConfigs}
             gameConfigs={gameConfigs}
-            onHandUpdate={onHandUpdate}
-            isDealer={false}
+            onHandUpdate={(newCards) => onHandUpdate([newCards])}
             showTotal="above"
           />
         ) : (
-          getCurrentHandPositions().map((position, handIndex) => (
-            <Hand
-              key={`split-hand-${handIndex}`}
-              testID={`splitPlayerHand${handIndex}`}
-              hands={handIndex === 0 ? playerHand1 : playerHand2}
-              activeHandIndex={activeHandIndex.current === handIndex ? 0 : -1}
-              handLabels={[`Hand ${handIndex + 1}`]}
-              handValues={[gameState.playerValues[handIndex] || 0]}
-              betAmounts={[gameState.currentBets[handIndex] || 0]}
-              isSplitHand={gameState.totalHands > 1}
-              position={position}
-              animatePosition={animationState === 'split_spread'}
-              deckCoordinates={deckCoordinates}
-              cardConfigs={cardConfigs}
-              gameConfigs={gameConfigs}
-              onHandUpdate={onHandUpdate}
-              isDealer={false}
-              showTotal="above"
-            />
-          ))
+          getCurrentHandPositions().map((position, handIndex) => {
+            const isActiveHand = activeHandIndex.current === handIndex;
+            const handCards = handIndex === 0 ? playerHand1.data?.[0] || [] : playerHand2.data?.[0] || [];
+            const handAnimate = handIndex === 0 ? playerHand1.animate : playerHand2.animate;
+            
+            return (
+              <Hand
+                key={`split-hand-${handIndex}`}
+                testID={`splitPlayerHand${handIndex}`}
+                cards={handCards}
+                animate={handAnimate}
+                handLabel={`Hand ${handIndex + 1}`}
+                handValue={gameState.playerValues[handIndex] || 0}
+                betAmount={gameState.currentBets[handIndex] || 0}
+                position={position}
+                animatePosition={animationState === 'split_spread'}
+                deckCoordinates={deckCoordinates}
+                cardConfigs={cardConfigs}
+                gameConfigs={gameConfigs}
+                onHandUpdate={(newCards) => {
+                  // Update the specific hand in the array
+                  const updatedHands = [...gameState.playerHands];
+                  updatedHands[handIndex] = newCards;
+                  onHandUpdate(updatedHands);
+                }}
+                showTotal="above"
+                isActiveHand={isActiveHand}
+              />
+            );
+          })
         )}
       </View>
 

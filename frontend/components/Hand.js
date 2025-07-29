@@ -12,12 +12,12 @@ import Card from './Card';
 
 const Hand = forwardRef(({ 
   testFinder,
-  hands = {animate: true, data: []}, // Object with animation flag and hands data
-  activeHandIndex = 0, // Which hand is currently active
-  handLabels = [], // Labels for each hand
-  handValues = [], // Values for each hand
-  betAmounts = [], // Bet amounts for each hand
-  isSplitHand = false, // Whether this is part of a split scenario
+  cards = [], // Array of card objects for the hand
+  animate = true, // Whether to animate card dealing
+  handLabel = 'Player Hand', // Label for the hand
+  handValue = 0, // Value for the hand
+  betAmount = 0, // Bet amount for the hand
+  isActiveHand = false, // Whether this hand is currently active
   position = { x: 0, y: 0 },
   animatePosition = false, // Whether to animate position changes
   deckCoordinates = { x: 0, y: 0 },
@@ -64,7 +64,7 @@ const Hand = forwardRef(({
   };
 
   const cardAnimations = useRef(new Map());
-  const [internalHands, setInternalHands] = useState(hands.data || []);
+  const [internalCards, setInternalCards] = useState(cards || []);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   const [pendingAnimations, setPendingAnimations] = useState(0);
@@ -75,7 +75,7 @@ const Hand = forwardRef(({
   
   // Internal total management
   const [showHandTotal, setShowHandTotal] = useState(false);
-  const [animatedTotals, setAnimatedTotals] = useState([0]);
+  const [animatedTotal, setAnimatedTotal] = useState(0);
   
   // Position animation using react-native-reanimated - initialize with current position
   const positionX = useSharedValue(position?.x || 0);
@@ -89,28 +89,23 @@ const Hand = forwardRef(({
     }
   }, []); // Only run on mount
   
-    // Use internal hands state for display
-  const displayHands = internalHands.length > 0 ? internalHands : [[]];
-  const displayLabels = handLabels.length > 0 ? handLabels : ['Player Hand'];
-  const displayValues = handValues.length > 0 ? handValues : [0];
-  const displayBetAmounts = betAmounts.length > 0 ? betAmounts : [0];
-  
-  const isSplit = displayHands.length > 1;
+  // Use internal cards state for display
+  const displayCards = internalCards.length > 0 ? internalCards : [];
 
-  // Helper function to determine effective layout for a hand
-  const getEffectiveLayout = (handCards) => {
+  // Helper function to determine effective layout for cards
+  const getEffectiveLayout = (cards) => {
     const layout = cardLayout || 'overlap'; // Default to overlap if no prop specified
-    if (layout === 'spread' && handCards.length > cardConfigs.spreadLimit) {
+    if (layout === 'spread' && cards.length > cardConfigs.spreadLimit) {
       return 'overlap';
     }
     return layout;
   };
   
   // Single source of truth for card positioning - calculates all positions at once
-  const calculateAllCardPositions = (handIndex, totalCards) => {
-    const currentHand = displayHands[handIndex] || [];
-    const cardSpacingValue = getCardSpacingValue(currentHand);
-    const effectiveLayout = getEffectiveLayout(currentHand);
+  const calculateAllCardPositions = (totalCards) => {
+    const currentCards = displayCards || [];
+    const cardSpacingValue = getCardSpacingValue(currentCards);
+    const effectiveLayout = getEffectiveLayout(currentCards);
 
     const minPositioningCards = Math.max(totalCards, 2);
 
@@ -139,30 +134,27 @@ const Hand = forwardRef(({
   };
   
   // Reveal hole card function - updates first hole card found with real card data
-  const revealHoleCard = (cardData, handIndex = 0) => {
-    setInternalHands(prev => {
-      const newHands = [...prev];
-      const targetHand = newHands[handIndex] || [];
+  const revealHoleCard = (cardData) => {
+    setInternalCards(prev => {
+      const newCards = [...prev];
       
       // Find first hole card in the hand
-      const holeCardIndex = targetHand.findIndex(card => card.isHoleCard);
+      const holeCardIndex = newCards.findIndex(card => card.isHoleCard);
       
       if (holeCardIndex !== -1) {
         // Update the hole card with revealed data and trigger flip
         const updatedHoleCard = {
-          ...targetHand[holeCardIndex],
+          ...newCards[holeCardIndex],
           suit: cardData.suit,
           value: cardData.value,
           isHoleCard: false,
         };
         
         // Update the card in the hand
-        const newHand = [...targetHand];
-        newHand[holeCardIndex] = updatedHoleCard;
-        newHands[handIndex] = newHand;
+        newCards[holeCardIndex] = updatedHoleCard;
       }
       
-      return newHands;
+      return newCards;
     });
   };
   
@@ -172,50 +164,47 @@ const Hand = forwardRef(({
   }));
   
   const repositionCards = () => {
-    displayHands.forEach((handCards, handIndex) => {
-      const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
-      const totalCards = handCards.length + animatingToThisHand;
-      const effectiveLayout = getEffectiveLayout(handCards);
+    const totalCards = displayCards.length + animatingCards.length;
+    const effectiveLayout = getEffectiveLayout(displayCards);
+    
+    // Skip repositioning for first two cards in overlap layout only
+    // BUT only if we currently have exactly 2 cards or fewer
+    if (effectiveLayout === 'overlap' && displayCards.length <= 2 && totalCards <= 2) {
+      return;
+    }
+    
+    // Use single source of truth for positions
+    const allPositions = calculateAllCardPositions(totalCards);
+    
+    displayCards.forEach((card, cardIndex) => {
+      const targetPosition = allPositions[cardIndex];
       
-      // Skip repositioning for first two cards in overlap layout only
-      // BUT only if we currently have exactly 2 cards or fewer
-      if (effectiveLayout === 'overlap' && handCards.length <= 2 && totalCards <= 2) {
-        return;
+      const animKey = `card-${card.id}`;
+      if (!cardAnimations.current.has(animKey)) {
+        cardAnimations.current.set(animKey, {
+          x: new Animated.Value(card.position?.x || targetPosition.x),
+          y: new Animated.Value(card.position?.y || targetPosition.y)
+        });
       }
       
-      // Use single source of truth for positions
-      const allPositions = calculateAllCardPositions(handIndex, totalCards);
+      const cardAnim = cardAnimations.current.get(animKey);
+      Animated.timing(cardAnim.x, {
+        toValue: targetPosition.x,
+        duration: gameConfigs.durations.handUpdate,
+        useNativeDriver: false,
+      }).start();
       
-      handCards.forEach((card, cardIndex) => {
-        const targetPosition = allPositions[cardIndex];
-        
-        const animKey = `${handIndex}-${card.id}`;
-        if (!cardAnimations.current.has(animKey)) {
-          cardAnimations.current.set(animKey, {
-            x: new Animated.Value(card.position?.x || targetPosition.x),
-            y: new Animated.Value(card.position?.y || targetPosition.y)
-          });
-        }
-        
-        const cardAnim = cardAnimations.current.get(animKey);
-        Animated.timing(cardAnim.x, {
-          toValue: targetPosition.x,
-          duration: gameConfigs.durations.handUpdate,
-          useNativeDriver: false,
-        }).start();
-        
-        Animated.timing(cardAnim.y, {
-          toValue: targetPosition.y,
-          duration: gameConfigs.durations.handUpdate,
-          useNativeDriver: false,
-        }).start();
-      });
+      Animated.timing(cardAnim.y, {
+        toValue: targetPosition.y,
+        duration: gameConfigs.durations.handUpdate,
+        useNativeDriver: false,
+      }).start();
     });
   };
   
   // Get card position using the unified calculation
-  const getCardPosition = (cardIndex, totalCards, handIndex = 0) => {
-    const allPositions = calculateAllCardPositions(handIndex, totalCards);
+  const getCardPosition = (cardIndex, totalCards) => {
+    const allPositions = calculateAllCardPositions(totalCards);
     // Safety check: don't return position for cards beyond what we calculated
     if (cardIndex >= allPositions.length) {
       console.warn(`Attempted to get position for card ${cardIndex} but only ${allPositions.length} positions calculated`);
@@ -225,8 +214,8 @@ const Hand = forwardRef(({
   };
   
   // Helper function to calculate card spacing value - eliminates redundancy
-  const getCardSpacingValue = (handCards) => {
-    const effectiveLayout = getEffectiveLayout(handCards);
+  const getCardSpacingValue = (cards) => {
+    const effectiveLayout = getEffectiveLayout(cards);
     if (effectiveLayout === 'spread') {
       return cardConfigs.width + (cardConfigs.width * 0.2);
     } else {
@@ -235,7 +224,7 @@ const Hand = forwardRef(({
   };
     
   // Deal card function - with animation
-  const dealCard = (cardData, handIndex = 0, specificCardIndex = null, finalTotalCards = null) => {
+  const dealCard = (cardData, specificCardIndex = null, finalTotalCards = null) => {
     // Use existing ID if available, otherwise generate new one
     const currentCardId = cardData.id || nextCardId;
     if (!cardData.id) {
@@ -246,16 +235,14 @@ const Hand = forwardRef(({
     
     // Use provided finalTotalCards or calculate it
     const totalCards = finalTotalCards || (() => {
-      const currentHandSize = internalHands[handIndex]?.length || 0;
-      const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
-      return currentHandSize + animatingToThisHand + 1;
+      const currentHandSize = internalCards.length || 0;
+      return currentHandSize + animatingCards.length + 1;
     })();
     
     // Use specific card index if provided, otherwise calculate based on current position
     const cardIndex = specificCardIndex !== null ? specificCardIndex : (() => {
-      const currentHandSize = internalHands[handIndex]?.length || 0;
-      const animatingToThisHand = animatingCards.filter(card => card.targetHandIndex === handIndex).length;
-      return currentHandSize + animatingToThisHand;
+      const currentHandSize = internalCards.length || 0;
+      return currentHandSize + animatingCards.length;
     })();
     
     // Safety check: cardIndex should never be >= totalCards
@@ -263,7 +250,7 @@ const Hand = forwardRef(({
       return;
     }
     
-    const targetPosition = getCardPosition(cardIndex, totalCards, handIndex);
+    const targetPosition = getCardPosition(cardIndex, totalCards);
     
     // Create animating card - start with null values so it stays face down
     const animatingCard = {
@@ -273,7 +260,6 @@ const Hand = forwardRef(({
       isHoleCard: cardData.isHoleCard || false,
       animateX: new Animated.Value(startPos.x),
       animateY: new Animated.Value(startPos.y),
-      targetHandIndex: handIndex,
       realCardData: cardData, // Store real data for later reveal
     };
 
@@ -313,9 +299,7 @@ const Hand = forwardRef(({
       }),
     ]).start(() => {
       // Animation complete - add to hand and remove from animating
-      setInternalHands(prev => {
-        const newHands = [...prev];
-        const targetHand = newHands[handIndex] || [];
+      setInternalCards(prev => {
         const cardWithId = {
           ...cardData,
           id: currentCardId,
@@ -325,8 +309,7 @@ const Hand = forwardRef(({
           value: cardData.isHoleCard ? null : cardData.value,
         };
         
-        newHands[handIndex] = [...targetHand, cardWithId];
-        return newHands;
+        return [...prev, cardWithId];
       });
       
       setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
@@ -338,22 +321,6 @@ const Hand = forwardRef(({
     });    
   };
 
-  const calculateHandPosition = (handIndex, totalHands) => {
-    if (totalHands === 1) {
-      return { x: position.x, y: position.y };
-    }
-    
-    // For split hands, position them side by side
-    const currentHand = displayHands[handIndex] || [];
-    const cardSpacingValue = getCardSpacingValue(currentHand);
-    
-    const handWidth = cardConfigs.width + (Math.max(0, (displayHands[handIndex]?.length || 1) - 1) * cardSpacingValue);
-    const totalWidth = handWidth * totalHands + (totalHands - 1) * 40; // 40px gap between hands
-    const startX = (screenWidth - totalWidth) / 2;
-    const handX = startX + handIndex * (handWidth + 40);
-    
-    return { x: handX, y: position.y };
-  };
   
   // Animated style for Hand container position
   const containerAnimatedStyle = useAnimatedStyle(() => {
@@ -373,15 +340,15 @@ const Hand = forwardRef(({
     }
   }, [animatingCards.length]); // Trigger when dealing starts
   
-  // Calculate totals from current hand state whenever hands change
+  // Calculate totals from current cards state whenever cards change
   useEffect(() => {
     if (showTotal) {
-      // Calculate actual totals from current internal hands
-      const currentTotals = displayHands.map(hand => calculateHandValue(hand));
-      setAnimatedTotals(currentTotals);
-      setShowHandTotal(displayHands.some(hand => hand.length > 0));
+      // Calculate actual total from current internal cards
+      const currentTotal = calculateHandValue(displayCards);
+      setAnimatedTotal(currentTotal);
+      setShowHandTotal(displayCards.length > 0);
     }
-  }, [internalHands, showTotal]); // Recalculate when internal hands change
+  }, [internalCards, showTotal]); // Recalculate when internal cards change
   
   // Animate position changes - completely isolated from card animations
   useEffect(() => {
@@ -412,124 +379,113 @@ const Hand = forwardRef(({
     }
   }, [position?.x, position?.y, animatePosition]);
 
-  // Diff incoming hands with current hands and animate differences
+  // Diff incoming cards with current cards and animate differences
   useEffect(() => {
 
     if (testFinder) {
-      console.log(hands)
+      console.log(cards)
     }
-    const handsData = hands.data || [];
-    const shouldAnimate = hands.animate !== false;
+    const cardsData = cards || [];
+    const shouldAnimate = animate !== false;
     
     if (isInitialRender.current) {
       isInitialRender.current = false;
-      // Initial render - just set the hands with IDs
+      // Initial render - just set the cards with IDs
       let currentId = nextCardId;
-      const handsWithIds = handsData.map(hand => 
-        hand.map(card => {
-          if (!card.id) {
-            const newId = currentId;
-            currentId++;
-            return { ...card, id: newId };
-          }
-          return { ...card };
-        })
-      );
+      const cardsWithIds = cardsData.map(card => {
+        if (!card.id) {
+          const newId = currentId;
+          currentId++;
+          return { ...card, id: newId };
+        }
+        return { ...card };
+      });
       if (currentId !== nextCardId) {
         setNextCardId(currentId);
       }
-      setInternalHands(handsWithIds);
+      setInternalCards(cardsWithIds);
       return;
     }
 
-    // Find differences between current and new hands
+    // Find differences between current and new cards
     const newCardsToAnimate = [];
     const cardsToUpdate = [];
     
-    handsData.forEach((newHand, handIndex) => {
-      const currentHand = internalHands[handIndex] || [];
+    const currentCards = internalCards || [];
+    
+    // Check for cards that changed from null to real data (hole card reveals)
+    for (let i = 0; i < Math.min(cardsData.length, currentCards.length); i++) {
+      const currentCard = currentCards[i];
+      const newCard = cardsData[i];
       
-      // Check for cards that changed from null to real data (hole card reveals)
-      for (let i = 0; i < Math.min(newHand.length, currentHand.length); i++) {
-        const currentCard = currentHand[i];
-        const newCard = newHand[i];
+      // Skip if cards are identical (same suit and value)
+      if (currentCard && newCard &&
+          currentCard.suit === newCard.suit && 
+          currentCard.value === newCard.value) {
+        continue;
+      }
+      
+      // If current card has null values but new card has real data, this is a hole card reveal
+      if (currentCard && 
+          (currentCard.suit === null || currentCard.value === null) &&
+          newCard.suit !== null && newCard.value !== null) {
+        cardsToUpdate.push({
+          cardIndex: i,
+          newCardData: newCard,
+          currentCardId: currentCard.id
+        });
+      }
+    }
+    
+    // If new cards array has more cards than current, handle the difference
+    if (cardsData.length > currentCards.length) {
+      if (shouldAnimate) {
+        // Calculate final total cards (including all new cards)
+        const finalTotalCards = cardsData.length;
         
-        // Skip if cards are identical (same suit and value)
-        if (currentCard && newCard &&
-            currentCard.suit === newCard.suit && 
-            currentCard.value === newCard.value) {
-          continue;
-        }
-        
-        // If current card has null values but new card has real data, this is a hole card reveal
-        if (currentCard && 
-            (currentCard.suit === null || currentCard.value === null) &&
-            newCard.suit !== null && newCard.value !== null) {
-          cardsToUpdate.push({
-            handIndex,
+        for (let i = currentCards.length; i < cardsData.length; i++) {
+          // Ensure each card has a unique ID
+          const cardData = cardsData[i];
+          const cardWithId = {
+            ...cardData,
+            id: `card-${cardData.value}-${cardData.suit}-${i}`
+          };
+          
+          // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
+          const useInitialTiming = (currentCards.length + (i - currentCards.length)) <= 2;
+          const delayBuffer = (!useInitialTiming) ? gameConfigs.buffers?.dealerTurn || 500 : gameConfigs.buffers?.initialDeal || 200;
+          
+          newCardsToAnimate.push({
+            cardData: cardWithId,
             cardIndex: i,
-            newCardData: newCard,
-            currentCardId: currentCard.id
+            finalTotalCards: finalTotalCards,
+            delay: (i - currentCards.length) * delayBuffer
           });
         }
-      }
-      
-      // If new hand has more cards than current, handle the difference
-      if (newHand.length > currentHand.length) {
-        if (shouldAnimate) {
-          // Calculate final total cards for this hand (including all new cards)
-          const finalTotalCards = newHand.length;
-          
-          for (let i = currentHand.length; i < newHand.length; i++) {
-            // Ensure each card has a unique ID
-            const cardData = newHand[i];
-            const cardWithId = {
-              ...cardData,
-              id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
-            };
-            
-            // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
-            const useInitialTiming = (currentHand.length + (i - currentHand.length)) <= 2;
-            const delayBuffer = (!useInitialTiming) ? gameConfigs.buffers.dealerTurn : gameConfigs.buffers.initialDeal;
-            
-            newCardsToAnimate.push({
-              cardData: cardWithId,
-              handIndex: handIndex,
-              cardIndex: i,
-              finalTotalCards: finalTotalCards,
-              delay: (i - currentHand.length) * delayBuffer
-            });
-          }
-        } else {
-          // No animation - just add cards immediately
-          const newCards = [];
-          for (let i = currentHand.length; i < newHand.length; i++) {
-            const cardData = newHand[i];
-            const cardWithId = {
-              ...cardData,
-              id: `${handIndex}-${cardData.value}-${cardData.suit}-${i}`
-            };
-            newCards.push(cardWithId);
-          }
-          
-          // Update internal hands immediately
-          setInternalHands(prev => {
-            const newHands = [...prev];
-            newHands[handIndex] = [...currentHand, ...newCards];
-            return newHands;
-          });
+      } else {
+        // No animation - just add cards immediately
+        const newCards = [];
+        for (let i = currentCards.length; i < cardsData.length; i++) {
+          const cardData = cardsData[i];
+          const cardWithId = {
+            ...cardData,
+            id: `card-${cardData.value}-${cardData.suit}-${i}`
+          };
+          newCards.push(cardWithId);
         }
+        
+        // Update internal cards immediately
+        setInternalCards(prev => [...prev, ...newCards]);
       }
-    });
+    }
 
     // Combine card updates and new cards into a single sequence
     const allAnimations = [];
     
     // Add card updates as immediate actions
-    cardsToUpdate.forEach(({ handIndex, cardIndex, newCardData, currentCardId }) => {
+    cardsToUpdate.forEach(({ cardIndex, newCardData, currentCardId }) => {
       allAnimations.push({
         type: 'update',
-        handIndex,
         cardIndex,
         newCardData,
         currentCardId,
@@ -538,15 +494,14 @@ const Hand = forwardRef(({
     });
     
     // Add new cards to animate, with delays adjusted for card updates
-    newCardsToAnimate.forEach(({ cardData, handIndex, cardIndex, finalTotalCards, delay }) => {
+    newCardsToAnimate.forEach(({ cardData, cardIndex, finalTotalCards, delay }) => {
       const adjustedDelay = cardsToUpdate.length > 0 ? 
-        gameConfigs.buffers.dealerTurn + delay : 
+        (gameConfigs.buffers?.dealerTurn || 500) + delay : 
         delay;
       
       allAnimations.push({
         type: 'deal',
         cardData,
-        handIndex,
         cardIndex,
         finalTotalCards,
         delay: adjustedDelay
@@ -562,18 +517,16 @@ const Hand = forwardRef(({
         setTimeout(() => {
           if (animation.type === 'update') {
             // Handle card data update - Card component handles animation
-            setInternalHands(prev => {
-              const newHands = [...prev];
-              const targetHand = [...(newHands[animation.handIndex] || [])];
+            setInternalCards(prev => {
+              const newCards = [...prev];
               
               // Update the card with real data - Card component will handle animation
-              targetHand[animation.cardIndex] = {
+              newCards[animation.cardIndex] = {
                 ...animation.newCardData,
                 id: animation.currentCardId, // Keep the same ID
               };
               
-              newHands[animation.handIndex] = targetHand;
-              return newHands;
+              return newCards;
             });
             
             // Decrement pending animations immediately for updates
@@ -581,215 +534,177 @@ const Hand = forwardRef(({
             
           } else if (animation.type === 'deal') {
             // Handle new card dealing
-            dealCard(animation.cardData, animation.handIndex, animation.cardIndex, animation.finalTotalCards);
+            dealCard(animation.cardData, animation.cardIndex, animation.finalTotalCards);
           }
         }, animation.delay);
       });
     } else if (cardsToUpdate.length === 0) {
-      // Check if hands are actually different before updating
-      const handsAreDifferent = handsData.some((newHand, handIndex) => {
-        const currentHand = internalHands[handIndex] || [];
+      // Check if cards are actually different before updating
+      const cardsAreDifferent = (() => {
+        const currentCards = internalCards || [];
         
-        // Different lengths mean hands are different
-        if (newHand.length !== currentHand.length) {
+        // Different lengths mean cards are different
+        if (cardsData.length !== currentCards.length) {
           return true;
         }
         
         // Check each card for differences
-        return newHand.some((newCard, cardIndex) => {
-          const currentCard = currentHand[cardIndex];
+        return cardsData.some((newCard, cardIndex) => {
+          const currentCard = currentCards[cardIndex];
           if (!currentCard) return true; // New card exists but current doesn't
           
           // Cards are different if suit or value differs
           return currentCard.suit !== newCard.suit || currentCard.value !== newCard.value;
         });
-      });
+      })();
       
-      // Only update if hands are actually different
-      if (handsAreDifferent) {
+      // Only update if cards are actually different
+      if (cardsAreDifferent) {
         let currentId = nextCardId;
-        const handsWithIds = handsData.map(hand => 
-          hand.map(card => {
-            if (!card.id) {
-              const newId = currentId;
-              currentId++;
-              return { ...card, id: newId };
-            }
-            return { ...card };
-          })
-        );
+        const cardsWithIds = cardsData.map(card => {
+          if (!card.id) {
+            const newId = currentId;
+            currentId++;
+            return { ...card, id: newId };
+          }
+          return { ...card };
+        });
         if (currentId !== nextCardId) {
           setNextCardId(currentId);
         }
-        setInternalHands(handsWithIds);
+        setInternalCards(cardsWithIds);
       }
     }
-  }, [hands]);
+  }, [cards, animate]);
 
   // Notify parent only when all animations are complete
   useEffect(() => {
     if (pendingAnimations === 0 && shouldNotifyParent.current) {
       shouldNotifyParent.current = false;
-      onHandUpdate(internalHands);
+      onHandUpdate(internalCards);
     }
-  }, [pendingAnimations, internalHands]);
+  }, [pendingAnimations, internalCards]);
 
-  const isActive = activeHandIndex === 0;
-  
   return (
     <Reanimated.View style={[
       dynamicStyles.handContainer, 
       containerAnimatedStyle,
-      isSplitHand && isActive && {
+      isActiveHand && {
         borderWidth: 3,
         borderColor: '#FFD700',
         borderRadius: 12,
       }
     ]}>
-        {displayHands.map((handCards, handIndex) => {
-          const handPosition = calculateHandPosition(handIndex, displayHands.length);
-          const isActive = handIndex === activeHandIndex;
+      {/* Bet Display - Above total */}
+      {betAmount > 0 && (
+        <View style={[
+          styles.betDisplayContainer,
+          {
+            position: 'absolute',
+            left: (handWidth / 2) - 60,
+            top: showTotal === 'above' ? -100 : -50,
+            zIndex: 1001
+          }
+        ]}>
+          <Text style={styles.betDisplayText}>
+            Current Bet: ${Math.floor(betAmount / 100).toLocaleString()}
+          </Text>
+        </View>
+      )}
+      
+      {/* Hand Total - Above cards */}
+      {showTotal === 'above' && showHandTotal && displayCards && displayCards.length > 0 && (
+        <View style={[
+          styles.handTotalContainer,
+          {
+            position: 'absolute',
+            left: (handWidth / 2) - 30,
+            top: -50,
+            zIndex: 1001
+          }
+        ]}>
+          <Text style={styles.handTotalText}>
+            {animatedTotal || 0}
+          </Text>
+        </View>
+      )}
+            
+      {/* Cards in Hand */}
+      {(displayCards || []).map((card, cardIndex) => {
+        const animKey = `card-${card.id}`;
+        
+        // Initialize animation if not present
+        if (!cardAnimations.current.has(animKey)) {
+          const totalCards = displayCards.length;
+          const allPositions = calculateAllCardPositions(totalCards);
+          const defaultPosition = allPositions[cardIndex] || { x: 0, y: 0 };
           
-          return (
-            <View key={`hand-${handIndex}`} style={styles.singleHandContainer}>
-              {/* Bet Display - Above total */}
-              {displayBetAmounts[handIndex] > 0 && (
-                <View style={[
-                  styles.betDisplayContainer,
-                  {
-                    position: 'absolute',
-                    left: (handWidth / 2) - 60,
-                    top: showTotal === 'above' ? -100 : -50,
-                    zIndex: 1001
-                  }
-                ]}>
-                  <Text style={styles.betDisplayText}>
-                    Current Bet: ${Math.floor(displayBetAmounts[handIndex] / 100).toLocaleString()}
-                  </Text>
-                </View>
-              )}
-              
-              {/* Hand Total - Above cards */}
-              {showTotal === 'above' && showHandTotal && handCards && handCards.length > 0 && (
-                <View style={[
-                  styles.handTotalContainer,
-                  {
-                    position: 'absolute',
-                    left: (handWidth / 2) - 30,
-                    top: -50,
-                    zIndex: 1001
-                  }
-                ]}>
-                  <Text style={styles.handTotalText}>
-                    {animatedTotals[handIndex] || 0}
-                  </Text>
-                </View>
-              )}
-              
-              {/* Hand Label and Value */}
-              {isSplitHand && (
-                <View style={[
-                  styles.handInfo,
-                  {
-                    left: handPosition.x,
-                    top: handPosition.y - 60,
-                    zIndex: 100
-                  }
-                ]}>
-                  <Text style={[
-                    styles.handLabel,
-                    isActive && styles.activeHandLabel
-                  ]}>
-                    {displayLabels[handIndex] || `Hand ${handIndex + 1}`}
-                  </Text>
-                  <Text style={[
-                    styles.handValue,
-                    isActive && styles.activeHandValue
-                  ]}>
-                    {displayValues[handIndex] || 0}
-                  </Text>
-                </View>
-              )}
-            
-            {/* Cards in Hand */}
-            {(handCards || []).map((card, cardIndex) => {
-              const animKey = `${handIndex}-${card.id}`;
-              
-              // Initialize animation if not present
-              if (!cardAnimations.current.has(animKey)) {
-                const totalCards = handCards.length;
-                const allPositions = calculateAllCardPositions(handIndex, totalCards);
-                const defaultPosition = allPositions[cardIndex];
-                
-                cardAnimations.current.set(animKey, {
-                  x: new Animated.Value(defaultPosition.x),
-                  y: new Animated.Value(defaultPosition.y)
-                });
+          cardAnimations.current.set(animKey, {
+            x: new Animated.Value(defaultPosition.x),
+            y: new Animated.Value(defaultPosition.y)
+          });
+        }
+        
+        const cardAnim = cardAnimations.current.get(animKey);
+        
+        return (
+          <Animated.View
+            key={card.id}
+            style={[
+              dynamicStyles.handCard,
+              {
+                transform: [
+                  { translateX: cardAnim.x },
+                  { translateY: cardAnim.y }
+                ],
+                zIndex: 100 + cardIndex,
               }
-              
-              const cardAnim = cardAnimations.current.get(animKey);
-              
-              return (
-                <Animated.View
-                  key={card.id}
-                  style={[
-                    dynamicStyles.handCard,
-                    {
-                      transform: [
-                        { translateX: cardAnim.x },
-                        { translateY: cardAnim.y }
-                      ],
-                      zIndex: 100 + cardIndex,
-                    }
-                  ]}
-                >
-                  <Card
-                    testID={`hand-${handIndex}-card-${card.id}`}
-                    suit={card.suit}
-                    value={card.value}
-                    cardConfigs={cardConfigs}
-                    style={styles.cardInHand}
-                  />
-                </Animated.View>
-              );
-            })}
-            
-            {/* Hand Total - Below cards */}
-            {showTotal === 'below' && showHandTotal && handCards && handCards.length > 0 && (
-              <View style={[
-                styles.handTotalContainer,
-                {
-                  position: 'absolute',
-                  left: (handWidth / 2) - 30,
-                  top: cardConfigs.height + 15,
-                  zIndex: 1001
-                }
-              ]}>
-                <Text style={styles.handTotalText}>
-                  {animatedTotals[handIndex] || 0}
-                </Text>
-              </View>
-            )}
-            
-            {/* Bet Display - Below total */}
-            {displayBetAmounts[handIndex] > 0 && showTotal === 'below' && (
-              <View style={[
-                styles.betDisplayContainer,
-                {
-                  position: 'absolute',
-                  left: (handWidth / 2) - 60,
-                  top: cardConfigs.height + 65,
-                  zIndex: 1001
-                }
-              ]}>
-                <Text style={styles.betDisplayText}>
-                  Current Bet: ${Math.floor(displayBetAmounts[handIndex] / 100).toLocaleString()}
-                </Text>
-              </View>
-            )}
-          </View>
+            ]}
+          >
+            <Card
+              testID={`card-${card.id}`}
+              suit={card.suit}
+              value={card.value}
+              cardConfigs={cardConfigs}
+              style={styles.cardInHand}
+            />
+          </Animated.View>
         );
       })}
+      
+      {/* Hand Total - Below cards */}
+      {showTotal === 'below' && showHandTotal && displayCards && displayCards.length > 0 && (
+        <View style={[
+          styles.handTotalContainer,
+          {
+            position: 'absolute',
+            left: (handWidth / 2) - 30,
+            top: cardConfigs.height + 15,
+            zIndex: 1001
+          }
+        ]}>
+          <Text style={styles.handTotalText}>
+            {animatedTotal || 0}
+          </Text>
+        </View>
+      )}
+      
+      {/* Bet Display - Below total */}
+      {betAmount > 0 && showTotal === 'below' && (
+        <View style={[
+          styles.betDisplayContainer,
+          {
+            position: 'absolute',
+            left: (handWidth / 2) - 60,
+            top: cardConfigs.height + 65,
+            zIndex: 1001
+          }
+        ]}>
+          <Text style={styles.betDisplayText}>
+            Current Bet: ${Math.floor(betAmount / 100).toLocaleString()}
+          </Text>
+        </View>
+      )}
       
       {/* Animating Cards */}
       {animatingCards.map((card) => {
@@ -823,37 +738,6 @@ const Hand = forwardRef(({
 Hand.displayName = 'Hand';
 
 const styles = {
-  singleHandContainer: {
-    position: 'relative',
-  },
-  handInfo: {
-    position: 'absolute',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    minWidth: 80,
-  },
-  handLabel: {
-    fontSize: 12,
-    color: '#ffffff',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  activeHandLabel: {
-    color: '#FFD700', // Gold color for active hand
-    fontWeight: 'bold',
-  },
-  handValue: {
-    fontSize: 14,
-    color: '#ffffff',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  activeHandValue: {
-    color: '#FFD700', // Gold color for active hand
-  },
   cardInHand: {
     width: '100%',
     height: '100%',
