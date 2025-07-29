@@ -58,52 +58,17 @@ async function onPlayerAction(ws, data, userId) {
         // Start new blackjack game with the stored instance
         const gameResult = blackjack.startNewGame(userId, data.betAmount);
         
-        if (gameResult.immediateResult) {
-          // Update player balance for immediate result
-          const transactionType = `hand_${gameResult.gameState.result}`;
-          
-          const finalPlayer = await DBUtils.creditPlayerAccount(userId, gameResult.gameState.payout, transactionType, {
-            result: gameResult.gameState.result,
-            payout: gameResult.gameState.payout,
-            originalBet: data.betAmount
-          });
-          
-          await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
-            credit: gameResult.gameState.payout,
-            balance: finalPlayer.balance,
-            winAmount: gameResult.gameState.payout
-          });
-          
-          result = {
-            success: true,
-            immediateResult: true,
-            gameStatus: GAME_STATES.FINISHED,
-            playerHands: gameResult.gameState.playerHands,
-            dealerCards: gameResult.gameState.dealerCards,
-            playerValue: gameResult.gameState.playerValue,
-            dealerValue: gameResult.gameState.dealerValue,
-            result: gameResult.gameState.result,
-            payout: gameResult.gameState.payout,
-            profit: gameResult.gameState.profit,
-            betAmount: data.betAmount,
-            newBalance: finalPlayer.balance
-          };
-          
-          // Test logging
-          testLogger.testLog('BACKEND', 'BET_IMMEDIATE_RESULT', result);
-        } else {
-          result = {
-            success: true,
-            immediateResult: false,
-            gameStatus: gameResult.gameState.gameStatus,
-            playerHands: gameResult.gameState.playerHands,
-            dealerCards: gameResult.gameState.dealerCards,
-            playerValue: calculateHandValue(gameResult.gameState.playerHands[0]),
-            dealerValue: calculateHandValue(gameResult.gameState.dealerCards),
-            betAmount: data.betAmount,
-            newBalance: updatedPlayer.balance
-          };
-        }
+        result = {
+          success: true,
+          gameStatus: gameResult.gameState.gameStatus,
+          playerHands: gameResult.gameState.playerHands,
+          dealerCards: gameResult.gameState.dealerCards,
+          playerValue: calculateHandValue(gameResult.gameState.playerHands[0]),
+          dealerValue: calculateHandValue(gameResult.gameState.dealerCards),
+          betAmount: data.betAmount,
+          newBalance: updatedPlayer.balance,
+          handComplete: gameResult.immediateResult // Signal immediate completion
+        };
         break;
       case 'hit':
         blackjack = activeGames.get(userId);

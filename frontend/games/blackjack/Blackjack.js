@@ -96,6 +96,11 @@ export default function Blackjack({ route }) {
       switch (actionType) {
         case 'bet':
           (data.playerHands && data.dealerCards) && onBetAction(data);
+          if (data.handComplete) {
+            sendMessage('playerAction', {
+              type: 'dealerComplete'
+            });
+          }
           break;
         case 'hit':
           onDefaultAction(data);
@@ -814,7 +819,6 @@ export default function Blackjack({ route }) {
         {gameState.totalHands === 1 ? (
           <Hand
             testID="singlePlayerHand"
-            testFinder='testFinder'
             cards={playerHand1.data?.[0] || []}
             animate={playerHand1.animate}
             handLabel="Player Hand"

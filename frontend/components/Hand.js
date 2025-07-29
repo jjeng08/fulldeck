@@ -178,13 +178,6 @@ const Hand = forwardRef(({
   
   const repositionCards = () => {
     const totalCards = displayCards.length + animatingCards.length;
-    const effectiveLayout = getEffectiveLayout(displayCards);
-    
-    // Skip repositioning for first two cards in overlap layout only
-    // BUT only if we currently have exactly 2 cards or fewer
-    if (effectiveLayout === 'overlap' && displayCards.length <= 2 && totalCards <= 2) {
-      return;
-    }
     
     // Use single source of truth for positions
     const allPositions = calculateAllCardPositions(totalCards);
@@ -394,10 +387,6 @@ const Hand = forwardRef(({
 
   // Diff incoming cards with current cards and animate differences
   useEffect(() => {
-
-    if (testFinder) {
-      console.log(cards)
-    }
     const cardsData = cards || [];
     const shouldAnimate = animate !== false;
     
@@ -439,10 +428,17 @@ const Hand = forwardRef(({
     
     // If new cards array has more cards than current, handle the difference
     if (cardsData.length > currentCards.length) {
+      // Check if dealing new cards will exceed spread limit and trigger layout change
+      const finalTotalCards = cardsData.length;
+      const currentLayout = getEffectiveLayout(currentCards);
+      const futureLayout = getEffectiveLayout(Array(finalTotalCards).fill({}));
+      
+      // If layout will change from spread to overlap, reposition existing cards first
+      if (currentLayout === 'spread' && futureLayout === 'overlap' && currentCards.length > 0) {
+        repositionCards();
+      }
+      
       if (shouldAnimate) {
-        // Calculate final total cards (including all new cards)
-        const finalTotalCards = cardsData.length;
-        
         for (let i = currentCards.length; i < cardsData.length; i++) {
           // Ensure each card has a unique ID
           const cardData = cardsData[i];
