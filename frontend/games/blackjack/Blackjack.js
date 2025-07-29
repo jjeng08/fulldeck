@@ -39,6 +39,7 @@ const gameConfigs = {
   },
   
   // Layout (ratios and absolute values only)
+  startingCards: 2,
   handWidthRatio: 0.4,
   handSeparationRatio: 0.3, // Distance between split hands
   cardSpacing: 0.3, // Overlap spacing multiplier

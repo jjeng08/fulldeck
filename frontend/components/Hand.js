@@ -35,9 +35,15 @@ const Hand = forwardRef(({
   showTotal = null // 'above', 'below', or null to not show totals
 }, ref) => {
   
-  // Calculate actual hand width from screen width and ratio
+  // Extract config values for cleaner code
   const { width: screenWidth } = Dimensions.get('window');
   const handWidth = screenWidth * gameConfigs.handWidthRatio;
+  const cardWidth = cardConfigs.width;
+  const cardHeight = cardConfigs.height;
+  const cardSpacing = cardConfigs.spacing;
+  const spreadLimit = cardConfigs.spreadLimit;
+  const flipDuration = cardConfigs.flip;
+  const startingCards = gameConfigs.startingCards;
 
     // Dynamic styles using gameConfigs
   const dynamicStyles = {
@@ -46,18 +52,18 @@ const Hand = forwardRef(({
       top: 0,
       left: 0,
       width: handWidth,
-      height: cardConfigs.height,
+      height: cardHeight,
       pointerEvents: 'none',
     },
     handCard: {
       position: 'absolute',
-      width: cardConfigs.width,
-      height: cardConfigs.height,
+      width: cardWidth,
+      height: cardHeight,
     },
     animatingCard: {
       position: 'absolute',
-      width: cardConfigs.width,
-      height: cardConfigs.height,
+      width: cardWidth,
+      height: cardHeight,
     },
   };
 
@@ -105,32 +111,32 @@ const Hand = forwardRef(({
   // Use internal cards state for display
   const displayCards = internalCards.length > 0 ? internalCards : [];
 
-  // Helper function to determine effective layout for cards
-  const getEffectiveLayout = (cards) => {
-    const layout = cardLayout || 'overlap'; // Default to overlap if no prop specified
-    if (layout === 'spread' && cards.length > cardConfigs.spreadLimit) {
-      return 'overlap';
-    }
-    return layout;
+  // Helper function to determine effective layout based on card count
+  const getEffectiveLayout = (totalCards) => {
+    const initialLayout = cardLayout || 'overlap';
+    return (initialLayout === 'spread' && totalCards > spreadLimit) ? 'overlap' : initialLayout;
   };
   
   // Single source of truth for card positioning - calculates all positions at once
   const calculateAllCardPositions = (totalCards) => {
-    const currentCards = displayCards || [];
-    const cardSpacingValue = getCardSpacingValue(currentCards);
-    const effectiveLayout = getEffectiveLayout(currentCards);
+    const effectiveLayout = getEffectiveLayout(totalCards);
+    
+    // Calculate spacing based on the effective layout
+    const cardSpacingValue = effectiveLayout === 'spread' 
+      ? cardWidth + (cardWidth * cardSpacing)
+      : cardWidth * cardSpacing;
 
-    const minPositioningCards = Math.max(totalCards, 2);
+    const minPositioningCards = Math.max(totalCards, startingCards);
 
     let positioningCards, totalWidth, centeredStartX;
     
     if (effectiveLayout === 'spread') {
       positioningCards = minPositioningCards;
-      totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
+      totalWidth = cardWidth + (positioningCards - 1) * cardSpacingValue;
       centeredStartX = (handWidth - totalWidth) / 2;
     } else {
-      positioningCards = (minPositioningCards <= 2) ? 2 : totalCards;
-      totalWidth = cardConfigs.width + (positioningCards - 1) * cardSpacingValue;
+      positioningCards = (minPositioningCards <= startingCards) ? startingCards : totalCards;
+      totalWidth = cardWidth + (positioningCards - 1) * cardSpacingValue;
       centeredStartX = (handWidth - totalWidth) / 2;
     }
     
@@ -211,6 +217,8 @@ const Hand = forwardRef(({
   // Get card position using the unified calculation
   const getCardPosition = (cardIndex, totalCards) => {
     const allPositions = calculateAllCardPositions(totalCards);
+    console.log(`DEBUG: getCardPosition(${cardIndex}, ${totalCards}) - layout: ${cardLayout}, positions:`, allPositions.map(p => p.x));
+    console.log(`DEBUG: returning position for cardIndex ${cardIndex}:`, allPositions[cardIndex]);
     // Safety check: don't return position for cards beyond what we calculated
     if (cardIndex >= allPositions.length) {
       console.warn(`Attempted to get position for card ${cardIndex} but only ${allPositions.length} positions calculated`);
@@ -219,13 +227,12 @@ const Hand = forwardRef(({
     return allPositions[cardIndex];
   };
   
-  // Helper function to calculate card spacing value - eliminates redundancy
-  const getCardSpacingValue = (cards) => {
-    const effectiveLayout = getEffectiveLayout(cards);
-    if (effectiveLayout === 'spread') {
-      return cardConfigs.width + (cardConfigs.width * 0.2);
+  // Helper function to calculate card spacing value
+  const getCardSpacingValue = (layout) => {
+    if (layout === 'spread') {
+      return cardWidth + (cardWidth * cardSpacing);
     } else {
-      return cardConfigs.width * cardConfigs.spacing;
+      return cardWidth * cardSpacing;
     }
   };
     
@@ -285,8 +292,8 @@ const Hand = forwardRef(({
         // Trigger animation callback after the flip animation completes
         setTimeout(() => {
           // Total calculation now handled by useEffect watching internalHands
-        }, cardConfigs.flip);
-      }, gameConfigs.durations.cardDeal / 2 - cardConfigs.flip / 2);
+        }, flipDuration);
+      }, gameConfigs.durations.cardDeal / 2 - flipDuration / 2);
     }
     
     // Start animation
@@ -428,14 +435,40 @@ const Hand = forwardRef(({
     
     // If new cards array has more cards than current, handle the difference
     if (cardsData.length > currentCards.length) {
-      // Check if dealing new cards will exceed spread limit and trigger layout change
-      const finalTotalCards = cardsData.length;
-      const currentLayout = getEffectiveLayout(currentCards);
-      const futureLayout = getEffectiveLayout(Array(finalTotalCards).fill({}));
-      
-      // If layout will change from spread to overlap, reposition existing cards first
-      if (currentLayout === 'spread' && futureLayout === 'overlap' && currentCards.length > 0) {
-        repositionCards();
+      // Check if we need to reposition existing cards when transitioning to overlap
+      const currentLayout = getEffectiveLayout(currentCards.length);
+      const newLayout = getEffectiveLayout(cardsData.length);
+      if (currentLayout === 'spread' && 
+          currentCards.length === spreadLimit && 
+          newLayout === 'overlap') {
+        
+        // Reposition existing cards to overlap spacing BEFORE dealing new card
+        const overlapPositions = calculateAllCardPositions(cardsData.length);
+        
+        currentCards.forEach((card, cardIndex) => {
+          const targetPosition = overlapPositions[cardIndex];
+          
+          const animKey = `card-${card.id}`;
+          if (!cardAnimations.current.has(animKey)) {
+            cardAnimations.current.set(animKey, {
+              x: new Animated.Value(card.position?.x || targetPosition.x),
+              y: new Animated.Value(card.position?.y || targetPosition.y)
+            });
+          }
+          
+          const cardAnim = cardAnimations.current.get(animKey);
+          Animated.timing(cardAnim.x, {
+            toValue: targetPosition.x,
+            duration: gameConfigs.durations.handUpdate,
+            useNativeDriver: false,
+          }).start();
+          
+          Animated.timing(cardAnim.y, {
+            toValue: targetPosition.y,
+            duration: gameConfigs.durations.handUpdate,
+            useNativeDriver: false,
+          }).start();
+        });
       }
       
       if (shouldAnimate) {
@@ -454,7 +487,7 @@ const Hand = forwardRef(({
           newCardsToAnimate.push({
             cardData: cardWithId,
             cardIndex: i,
-            finalTotalCards: finalTotalCards,
+            finalTotalCards: i + 1, // Current card position + 1, not final total
             delay: (i - currentCards.length) * delayBuffer
           });
         }
@@ -683,7 +716,7 @@ const Hand = forwardRef(({
           {
             position: 'absolute',
             left: (handWidth / 2) - 30,
-            top: cardConfigs.height + 15,
+            top: cardHeight + 15,
             zIndex: 1001
           }
         ]}>
@@ -700,7 +733,7 @@ const Hand = forwardRef(({
           {
             position: 'absolute',
             left: (handWidth / 2) - 60,
-            top: cardConfigs.height + 65,
+            top: cardHeight + 65,
             zIndex: 1001
           }
         ]}>

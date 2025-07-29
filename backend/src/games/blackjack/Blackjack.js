@@ -360,8 +360,9 @@ class Blackjack {
     this.initializeNewGame(betAmount);
     
     // Deal initial cards (deck is already fresh from constructor)
-    const dealerFaceUp = this.dealCard();
-    const dealerHoleCard = this.dealCard();
+    // TEST: Force dealer to get low cards (2-5) for easier testing
+    const dealerFaceUp = { suit: 'hearts', value: ['2', '3', '4', '5'][Math.floor(Math.random() * 4)] };
+    const dealerHoleCard = { suit: 'spades', value: ['2', '3', '4', '5'][Math.floor(Math.random() * 4)] };
     const dealerCards = [dealerFaceUp, dealerHoleCard];
     
     // const playerCards = [this.dealCard(), this.dealCard()];
@@ -524,8 +525,9 @@ class Blackjack {
       
       // Dealer hits until 17 or higher
       while (calculateHandValue(workingDealerCards) < 17) {
-        const dealerCard = this.dealCard();
-        workingDealerCards.push(dealerCard);
+        // TEST: Force dealer to get low cards (2-5) for easier testing
+        const testCard = { suit: 'hearts', value: ['2', '3', '4', '5'][Math.floor(Math.random() * 4)] };
+        workingDealerCards.push(testCard);
       }
       
       // Send response as dealer turn with dealer cards for animation
