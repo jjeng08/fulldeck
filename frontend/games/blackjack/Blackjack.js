@@ -123,6 +123,9 @@ export default function Blackjack({ route }) {
         case 'splitDeal':
           data.playerHands && onSplitDealAction(data);
           break;
+        case 'insurance':
+          onDefaultAction(data);
+          break;
         case 'nextHand':
           // Advance to next hand - update local activeHandIndex and game state
           activeHandIndex.current = activeHandIndex.current + 1;
@@ -880,11 +883,8 @@ export default function Blackjack({ route }) {
                 style={s.insuranceButton}
                 onPress={() => {
                   sendMessage('playerAction', {
-                    type: 'buyInsurance',
-                    playerHands: gameState.playerHands,
-                    activeHandIndex: activeHandIndex.current,
-                    dealerCards: gameState.dealerCards,
-                    insuranceAmount: buttonStates.insuranceAmount
+                    type: 'insurance',
+                    buy: true
                   });
                 }}
                 testID="buyInsuranceButton"
@@ -898,10 +898,8 @@ export default function Blackjack({ route }) {
                 style={s.skipInsuranceButton}
                 onPress={() => {
                   sendMessage('playerAction', {
-                    type: 'skipInsurance',
-                    playerHands: gameState.playerHands,
-                    activeHandIndex: activeHandIndex.current,
-                    dealerCards: gameState.dealerCards
+                    type: 'insurance',
+                    buy: false
                   });
                 }}
                 testID="skipInsuranceButton"

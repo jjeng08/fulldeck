@@ -464,53 +464,65 @@ class Blackjack {
   }
 
 
-  // Buy insurance
-  async buyInsurance(userId, playerHands, activeHandIndex, dealerCards, insuranceAmount) {
+  // Handle insurance decision
+  async handleInsurance(userId, buyInsurance) {
     // Get the active hand for insurance calculation
-    const playerCards = playerHands[activeHandIndex];
+    const playerCards = this.getCurrentPlayerHand();
     // Use stored bet amount from the game instance
     const betAmount = this.getCurrentBet();
-    // Validate user has enough balance
-    const user = await DBUtils.getPlayerById(userId);
+    const insuranceAmount = Math.floor(betAmount / 2);
     
-    if (!user || user.balance < insuranceAmount) {
-      return { success: false, error: 'Insufficient balance to buy insurance' };
+    if (buyInsurance) {
+      // Validate user has enough balance
+      const user = await DBUtils.getPlayerById(userId);
+      
+      if (!user || user.balance < insuranceAmount) {
+        return { success: false, error: 'Insufficient balance to buy insurance' };
+      }
+      
+      // Deduct insurance amount
+      const updatedPlayer = await DBUtils.debitPlayerAccount(userId, insuranceAmount, 'insurance', { 
+        insuranceAmount,
+        originalBet: betAmount
+      });
+      
+      // Log insurance activity separately
+      await DBUtils.logPlayerActivity(userId, user.username, 'insurance', {
+        debit: insuranceAmount,
+        balance: updatedPlayer.balance,
+        insuranceAmount
+      });
     }
     
-    // Deduct insurance amount
-    const updatedPlayer = await DBUtils.debitPlayerAccount(userId, insuranceAmount, 'insurance', { 
-      insuranceAmount,
-      originalBet: betAmount
-    });
-    
-    // Log insurance activity separately
-    await DBUtils.logPlayerActivity(userId, user.username, 'insurance', {
-      debit: insuranceAmount,
-      balance: updatedPlayer.balance,
-      insuranceAmount
-    });
-    
     // Check if dealer has blackjack (using stored complete dealer hand)
-    const completeDealerCards = this.currentDealerCards || dealerCards;
+    const completeDealerCards = this.currentDealerCards || this.dealerCards;
     const dealerBlackjack = isBlackjack(completeDealerCards);
     
     if (dealerBlackjack) {
-      // Insurance pays 2:1 - this is a WIN on insurance
-      const insurancePayout = insuranceAmount * 2;
-      const balanceAfterInsuranceWin = newBalance + insurancePayout;
+      let insurancePayout = 0;
+      let finalPlayer;
       
-      // Update balance with insurance WIN
-      const insuranceWinPlayer = await DBUtils.creditPlayerAccount(userId, insurancePayout, 'insurance_win', {
-        insuranceWin: insurancePayout,
-        originalInsurance: insuranceAmount
-      });
-      
-      // Log insurance WIN activity
-      await DBUtils.logPlayerActivity(userId, user.username, 'insurance_win', {
-        credit: insurancePayout,
-        balance: insuranceWinPlayer.balance,
-        winAmount: insurancePayout
-      });
+      if (buyInsurance) {
+        // Insurance pays 2:1 - this is a WIN on insurance
+        insurancePayout = insuranceAmount * 2;
+        
+        // Update balance with insurance WIN
+        const insuranceWinPlayer = await DBUtils.creditPlayerAccount(userId, insurancePayout, 'insurance_win', {
+          insuranceWin: insurancePayout,
+          originalInsurance: insuranceAmount
+        });
+        
+        // Log insurance WIN activity
+        await DBUtils.logPlayerActivity(userId, user.username, 'insurance_win', {
+          credit: insurancePayout,
+          balance: insuranceWinPlayer.balance,
+          winAmount: insurancePayout
+        });
+        
+        finalPlayer = insuranceWinPlayer;
+      } else {
+        finalPlayer = await DBUtils.getPlayerById(userId);
+      }
       
       // Now handle main bet separately - dealer has blackjack
       const playerBlackjack = isBlackjack(playerCards);
@@ -519,15 +531,16 @@ class Blackjack {
       
       // Update balance for main bet result
       const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-      const finalPlayer = mainBetPayout > 0 ? 
-        await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
+      if (mainBetPayout > 0) {
+        finalPlayer = await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
           result: gameResult,
           payout: mainBetPayout,
           originalBet: betAmount
-        }) : insuranceWinPlayer;
+        });
+      }
       
       // Log main bet result activity
-      await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
+      await DBUtils.logPlayerActivity(userId, finalPlayer.username, transactionType, {
         credit: mainBetPayout,
         balance: finalPlayer.balance,
         winAmount: mainBetPayout
@@ -536,30 +549,36 @@ class Blackjack {
       return {
         success: true,
         dealerBlackjack: true,
-        insuranceWon: true,
+        insuranceWon: buyInsurance,
         insurancePayout,
         gameResult,
         mainBetPayout,
         dealerCards: completeDealerCards,
-        gameStatus: GAME_STATES.DEALER_TURN,
+        gameStatus: GAME_STATES.FINISHED,
         result: gameResult,
-        totalPayout: insurancePayout + mainBetPayout
+        payout: insurancePayout + mainBetPayout,
+        playerHands: this.playerHands
       };
     } else {
-      // Insurance lost - this is a LOSS on insurance (0 payout)
-      // Log insurance LOSS activity with 0 win amount
-      await DBUtils.logPlayerActivity(userId, user.username, 'insurance_lose', {
-        credit: 0,
-        balance: updatedPlayer.balance,
-        winAmount: 0
-      });
+      // No dealer blackjack
+      if (buyInsurance) {
+        // Insurance lost - this is a LOSS on insurance (0 payout)
+        const user = await DBUtils.getPlayerById(userId);
+        await DBUtils.logPlayerActivity(userId, user.username, 'insurance_lose', {
+          credit: 0,
+          balance: user.balance,
+          winAmount: 0
+        });
+      }
       
       return {
         success: true,
         dealerBlackjack: false,
         insuranceWon: false,
         insurancePayout: 0,
-        gameStatus: 'playing'
+        gameStatus: this.totalHands === 1 ? GAME_STATES.PLAYING : GAME_STATES.PLAYING_HAND_1,
+        playerHands: this.playerHands,
+        dealerCards: [this.dealerCards[0], { suit: null, value: null, isHoleCard: true }]
       };
     }
   }
@@ -662,66 +681,6 @@ class Blackjack {
     };
   }
 
-  // Skip insurance
-  async skipInsurance(userId, playerHands, activeHandIndex, dealerCards) {
-    // Get the active hand for insurance check
-    const playerCards = playerHands[activeHandIndex];
-    // Use stored bet amount from the game instance
-    const betAmount = this.getCurrentBet();
-    // Use the stored complete dealer hand to check for blackjack
-    const completeDealerCards = this.currentDealerCards || dealerCards;
-    const dealerBlackjack = isBlackjack(completeDealerCards);
-    
-    if (dealerBlackjack) {
-      const playerBlackjack = isBlackjack(playerCards);
-      const gameResult = playerBlackjack ? 'push' : 'dealer_blackjack';
-      const mainBetPayout = playerBlackjack ? betAmount : 0;
-      
-      // Update player balance for main bet result
-      if (mainBetPayout > 0) {
-        const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        const player = await DBUtils.creditPlayerAccount(userId, mainBetPayout, transactionType, {
-          result: gameResult,
-          payout: mainBetPayout,
-          originalBet: betAmount
-        });
-        
-        // Log activity
-        await DBUtils.logPlayerActivity(userId, player.username, transactionType, {
-          credit: mainBetPayout,
-          balance: player.balance,
-          winAmount: mainBetPayout
-        });
-      } else {
-        // Log loss with 0 payout
-        const user = await DBUtils.getPlayerById(userId);
-        const transactionType = `hand_${gameResult === 'dealer_blackjack' ? 'lose' : gameResult}`;
-        await DBUtils.logPlayerActivity(userId, user.username, transactionType, {
-          credit: 0,
-          balance: user.balance,
-          winAmount: 0
-        });
-      }
-      
-      return {
-        success: true,
-        dealerBlackjack: true,
-        gameStatus: GAME_STATES.DEALER_TURN,
-        result: gameResult,
-        payout: mainBetPayout,
-        dealerCards: completeDealerCards,
-        playerHands: this.playerHands
-      };
-    } else {
-      return {
-        success: true,
-        dealerBlackjack: false,
-        gameStatus: this.totalHands === 1 ? GAME_STATES.PLAYING : GAME_STATES.PLAYING_HAND_1,
-        playerHands: this.playerHands,
-        dealerCards: dealerCards
-      };
-    }
-  }
 
   // Start game (placeholder - game starts with placeBet)
   startGame(userId) {
@@ -958,13 +917,13 @@ async function onPlayerAction(ws, data, userId) {
         }
         result = await blackjack.splitDeal(userId);
         break;
-      case 'buyInsurance':
+      case 'insurance':
         blackjack = activeGames.get(userId);
         if (!blackjack) {
           result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
           break;
         }
-        result = await blackjack.buyInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards, data.insuranceAmount);
+        result = await blackjack.handleInsurance(userId, data.buy);
         break;
       case 'surrender':
         blackjack = activeGames.get(userId);
@@ -979,14 +938,6 @@ async function onPlayerAction(ws, data, userId) {
         blackjack = new Blackjack();
         activeGames.set(userId, blackjack);
         result = blackjack.startGame(userId);
-        break;
-      case 'skipInsurance':
-        blackjack = activeGames.get(userId);
-        if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
-        }
-        result = await blackjack.skipInsurance(userId, data.playerHands, data.activeHandIndex, data.dealerCards);
         break;
       default:
         result = { success: false, errorMessage: `Unknown action type: ${data.type}` };
