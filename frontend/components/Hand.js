@@ -79,6 +79,160 @@ const Hand = forwardRef(({
   // Internal total management
   const [showHandTotal, setShowHandTotal] = useState(false);
   const [animatedTotal, setAnimatedTotal] = useState(0);
+
+  useEffect(() => {
+    return () => {cardAnimations.current.clear()};
+  }, []);
+
+    // Calculate totals from current cards state whenever cards change
+  useEffect(() => {
+    if (showTotal) {
+      const currentTotal = calculateHandValue(displayCards);
+      setAnimatedTotal(currentTotal);
+      setShowHandTotal(displayCards.length > 0);
+    }
+  }, [internalCards, showTotal]);
+  
+  // Animate position changes - completely isolated from card animations
+  useEffect(() => {
+    if (position) {
+      const currentX = positionX.value;
+      const currentY = positionY.value;
+      const targetX = position.x;
+      const targetY = position.y;
+      
+      // Only animate if there's an actual position change
+      const hasPositionChanged = Math.abs(currentX - targetX) > 1 || Math.abs(currentY - targetY) > 1;
+      
+      if (animatePosition && hasPositionChanged) {
+        // Animate to new position with smooth easing
+        positionX.value = withTiming(targetX, { 
+          duration: 600,
+          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
+        });
+        positionY.value = withTiming(targetY, { 
+          duration: 600,
+          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
+        });
+      } else if (!animatePosition) {
+        // Snap to position immediately
+        positionX.value = targetX;
+        positionY.value = targetY;
+      }
+    }
+  }, [position?.x, position?.y, animatePosition]);
+
+  // Notify parent only when all animations are complete
+  useEffect(() => {
+    if (pendingAnimations === 0 && shouldNotifyParent.current) {
+      shouldNotifyParent.current = false;
+      onHandUpdate(internalCards);
+    }
+  }, [pendingAnimations, internalCards]);
+
+  // Diff incoming cards with current cards and animate differences
+  useEffect(() => {
+    const cardsData = cards || [];
+    const shouldAnimate = animate !== false;
+    
+    // COMPLETE RESET when receiving empty array - restore to exact initial state
+    if (cardsData.length === 0) {
+      resetHandToDefault();
+      return;
+    }
+
+    const currentCards = internalCards || [];
+    
+    // Create unified animation sequence: flips first, then new cards
+    const allAnimations = [];
+    let animationIndex = 0;
+    const delayBuffer = gameConfigs.buffers?.dealerTurn || 500;
+    
+    // Step 1: Add hole card flips for existing cards
+    for (let i = 0; i < Math.min(cardsData.length, currentCards.length); i++) {
+      const currentCard = currentCards[i];
+      const newCard = cardsData[i];
+      
+      // If current card has null values but new card has real data, this is a hole card reveal
+      if (currentCard && 
+          (currentCard.suit === null || currentCard.value === null) &&
+          newCard.suit !== null && newCard.value !== null) {
+        allAnimations.push({
+          type: 'flip',
+          cardIndex: i,
+          newCardData: newCard,
+          currentCardId: currentCard.id,
+          delay: animationIndex * delayBuffer
+        });
+        animationIndex++;
+      }
+    }
+    
+    // Step 2: Add new card deals for additional cards
+    if (cardsData.length > currentCards.length && shouldAnimate) {
+      for (let i = currentCards.length; i < cardsData.length; i++) {
+        const cardData = cardsData[i];
+        const cardWithId = {
+          ...cardData,
+          id: `card-${cardData.value}-${cardData.suit}-${i}`
+        };
+        
+        allAnimations.push({
+          type: 'deal',
+          cardData: cardWithId,
+          cardIndex: i,
+          finalTotalCards: cardsData.length,
+          delay: animationIndex * delayBuffer
+        });
+        animationIndex++;
+      }
+    }
+    
+    // Execute unified animation sequence
+    if (allAnimations.length > 0) {
+      shouldNotifyParent.current = true;
+      setPendingAnimations(allAnimations.length);
+      
+      allAnimations.forEach((animation) => {
+        setTimeout(() => {
+          if (animation.type === 'flip') {
+            // Handle hole card flip
+            setInternalCards(prev => {
+              const newCards = [...prev];
+              newCards[animation.cardIndex] = {
+                ...animation.newCardData,
+                id: animation.currentCardId, // Keep the same ID
+              };
+              return newCards;
+            });
+            setPendingAnimations(prev => prev - 1);
+            
+          } else if (animation.type === 'deal') {
+            // Reposition existing cards before dealing the new card
+            const totalCards = animation.finalTotalCards;
+            const allPositions = calculateAllCardPositions(totalCards);
+            repositionCards(allPositions);
+            // Handle new card dealing
+            dealCard(animation.cardData, animation.cardIndex, animation.finalTotalCards, allPositions);
+          }
+        }, animation.delay);
+      });
+      
+    } else if (cardsData.length > currentCards.length && !shouldAnimate) {
+      // No animation - just add cards immediately
+      const newCards = [];
+      for (let i = currentCards.length; i < cardsData.length; i++) {
+        const cardData = cardsData[i];
+        const cardWithId = {
+          ...cardData,
+          id: `card-${cardData.value}-${cardData.suit}-${i}`
+        };
+        newCards.push(cardWithId);
+      }
+      setInternalCards(prev => [...prev, ...newCards]);
+    }
+
+  }, [cards, animate]);
   
   // COMPLETE RESET FUNCTION - Restore to exact initial state
   const resetHandToDefault = () => {
@@ -182,12 +336,7 @@ const Hand = forwardRef(({
     revealHoleCard
   }));
   
-  const repositionCards = () => {
-    const totalCards = displayCards.length + animatingCards.length;
-    
-    // Use single source of truth for positions
-    const allPositions = calculateAllCardPositions(totalCards);
-    
+  const repositionCards = (allPositions) => {
     displayCards.forEach((card, cardIndex) => {
       const targetPosition = allPositions[cardIndex];
       
@@ -214,30 +363,8 @@ const Hand = forwardRef(({
     });
   };
   
-  // Get card position using the unified calculation
-  const getCardPosition = (cardIndex, totalCards) => {
-    const allPositions = calculateAllCardPositions(totalCards);
-    console.log(`DEBUG: getCardPosition(${cardIndex}, ${totalCards}) - layout: ${cardLayout}, positions:`, allPositions.map(p => p.x));
-    console.log(`DEBUG: returning position for cardIndex ${cardIndex}:`, allPositions[cardIndex]);
-    // Safety check: don't return position for cards beyond what we calculated
-    if (cardIndex >= allPositions.length) {
-      console.warn(`Attempted to get position for card ${cardIndex} but only ${allPositions.length} positions calculated`);
-      return { x: 0, y: 0 }; // Return safe default position
-    }
-    return allPositions[cardIndex];
-  };
-  
-  // Helper function to calculate card spacing value
-  const getCardSpacingValue = (layout) => {
-    if (layout === 'spread') {
-      return cardWidth + (cardWidth * cardSpacing);
-    } else {
-      return cardWidth * cardSpacing;
-    }
-  };
-    
   // Deal card function - with animation
-  const dealCard = (cardData, specificCardIndex = null, finalTotalCards = null) => {
+  const dealCard = (cardData, specificCardIndex = null, finalTotalCards = null, allPositions) => {
     // Use existing ID if available, otherwise generate new one
     const currentCardId = cardData.id || nextCardId;
     if (!cardData.id) {
@@ -263,7 +390,7 @@ const Hand = forwardRef(({
       return;
     }
     
-    const targetPosition = getCardPosition(cardIndex, totalCards);
+    const targetPosition = allPositions[cardIndex];
     
     // Create animating card - start with null values so it stays face down
     const animatingCard = {
@@ -345,282 +472,8 @@ const Hand = forwardRef(({
     };
   });
 
-  // Detect when cards are being dealt and reposition immediately
-  useEffect(() => {
-    // Reposition existing cards immediately when a new card starts animating
-    if (animatingCards.length > 0) {
-      repositionCards();
-    }
-  }, [animatingCards.length]); // Trigger when dealing starts
   
-  // Calculate totals from current cards state whenever cards change
-  useEffect(() => {
-    if (showTotal) {
-      // Calculate actual total from current internal cards
-      const currentTotal = calculateHandValue(displayCards);
-      setAnimatedTotal(currentTotal);
-      setShowHandTotal(displayCards.length > 0);
-    }
-  }, [internalCards, showTotal]); // Recalculate when internal cards change
-  
-  // Animate position changes - completely isolated from card animations
-  useEffect(() => {
-    if (position) {
-      const currentX = positionX.value;
-      const currentY = positionY.value;
-      const targetX = position.x;
-      const targetY = position.y;
-      
-      // Only animate if there's an actual position change
-      const hasPositionChanged = Math.abs(currentX - targetX) > 1 || Math.abs(currentY - targetY) > 1;
-      
-      if (animatePosition && hasPositionChanged) {
-        // Animate to new position with smooth easing
-        positionX.value = withTiming(targetX, { 
-          duration: 600,
-          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
-        });
-        positionY.value = withTiming(targetY, { 
-          duration: 600,
-          easing: ReanimatedEasing.out(ReanimatedEasing.cubic)
-        });
-      } else if (!animatePosition) {
-        // Snap to position immediately
-        positionX.value = targetX;
-        positionY.value = targetY;
-      }
-    }
-  }, [position?.x, position?.y, animatePosition]);
 
-  // Diff incoming cards with current cards and animate differences
-  useEffect(() => {
-    const cardsData = cards || [];
-    const shouldAnimate = animate !== false;
-    
-    // COMPLETE RESET when receiving empty array - restore to exact initial state
-    if (cardsData.length === 0) {
-      resetHandToDefault();
-      return;
-    }
-
-    // Find differences between current and new cards
-    const newCardsToAnimate = [];
-    const cardsToUpdate = [];
-    
-    const currentCards = internalCards || [];
-    
-    // Check for cards that changed from null to real data (hole card reveals)
-    for (let i = 0; i < Math.min(cardsData.length, currentCards.length); i++) {
-      const currentCard = currentCards[i];
-      const newCard = cardsData[i];
-      
-      // Skip if cards are identical (same suit and value)
-      if (currentCard && newCard &&
-          currentCard.suit === newCard.suit && 
-          currentCard.value === newCard.value) {
-        continue;
-      }
-      
-      // If current card has null values but new card has real data, this is a hole card reveal
-      if (currentCard && 
-          (currentCard.suit === null || currentCard.value === null) &&
-          newCard.suit !== null && newCard.value !== null) {
-        cardsToUpdate.push({
-          cardIndex: i,
-          newCardData: newCard,
-          currentCardId: currentCard.id
-        });
-      }
-    }
-    
-    // If new cards array has more cards than current, handle the difference
-    if (cardsData.length > currentCards.length) {
-      // Check if we need to reposition existing cards when transitioning to overlap
-      const currentLayout = getEffectiveLayout(currentCards.length);
-      const newLayout = getEffectiveLayout(cardsData.length);
-      if (currentLayout === 'spread' && 
-          currentCards.length === spreadLimit && 
-          newLayout === 'overlap') {
-        
-        // Reposition existing cards to overlap spacing BEFORE dealing new card
-        const overlapPositions = calculateAllCardPositions(cardsData.length);
-        
-        currentCards.forEach((card, cardIndex) => {
-          const targetPosition = overlapPositions[cardIndex];
-          
-          const animKey = `card-${card.id}`;
-          if (!cardAnimations.current.has(animKey)) {
-            cardAnimations.current.set(animKey, {
-              x: new Animated.Value(card.position?.x || targetPosition.x),
-              y: new Animated.Value(card.position?.y || targetPosition.y)
-            });
-          }
-          
-          const cardAnim = cardAnimations.current.get(animKey);
-          Animated.timing(cardAnim.x, {
-            toValue: targetPosition.x,
-            duration: gameConfigs.durations.handUpdate,
-            useNativeDriver: false,
-          }).start();
-          
-          Animated.timing(cardAnim.y, {
-            toValue: targetPosition.y,
-            duration: gameConfigs.durations.handUpdate,
-            useNativeDriver: false,
-          }).start();
-        });
-      }
-      
-      if (shouldAnimate) {
-        for (let i = currentCards.length; i < cardsData.length; i++) {
-          // Ensure each card has a unique ID
-          const cardData = cardsData[i];
-          const cardWithId = {
-            ...cardData,
-            id: `card-${cardData.value}-${cardData.suit}-${i}`
-          };
-          
-          // Use initialDeal timing for initial 2-card deal, dealerTurn timing for subsequent dealer cards
-          const useInitialTiming = (currentCards.length + (i - currentCards.length)) <= 2;
-          const delayBuffer = (!useInitialTiming) ? gameConfigs.buffers?.dealerTurn || 500 : gameConfigs.buffers?.initialDeal || 200;
-          
-          newCardsToAnimate.push({
-            cardData: cardWithId,
-            cardIndex: i,
-            finalTotalCards: i + 1, // Current card position + 1, not final total
-            delay: (i - currentCards.length) * delayBuffer
-          });
-        }
-      } else {
-        // No animation - just add cards immediately
-        const newCards = [];
-        for (let i = currentCards.length; i < cardsData.length; i++) {
-          const cardData = cardsData[i];
-          const cardWithId = {
-            ...cardData,
-            id: `card-${cardData.value}-${cardData.suit}-${i}`
-          };
-          newCards.push(cardWithId);
-        }
-        
-        // Update internal cards immediately
-        setInternalCards(prev => [...prev, ...newCards]);
-      }
-    }
-
-    // Combine card updates and new cards into a single sequence
-    const allAnimations = [];
-    
-    // Add card updates as immediate actions
-    cardsToUpdate.forEach(({ cardIndex, newCardData, currentCardId }) => {
-      allAnimations.push({
-        type: 'update',
-        cardIndex,
-        newCardData,
-        currentCardId,
-        delay: 0 // Card updates happen immediately
-      });
-    });
-    
-    // Add new cards to animate, with delays adjusted for card updates
-    newCardsToAnimate.forEach(({ cardData, cardIndex, finalTotalCards, delay }) => {
-      const adjustedDelay = cardsToUpdate.length > 0 ? 
-        (gameConfigs.buffers?.dealerTurn || 500) + delay : 
-        delay;
-      
-      allAnimations.push({
-        type: 'deal',
-        cardData,
-        cardIndex,
-        finalTotalCards,
-        delay: adjustedDelay
-      });
-    });
-
-    // Execute all animations in sequence
-    if (allAnimations.length > 0) {
-      shouldNotifyParent.current = true;
-      setPendingAnimations(allAnimations.length);
-      
-      allAnimations.forEach((animation) => {
-        setTimeout(() => {
-          if (animation.type === 'update') {
-            // Handle card data update - Card component handles animation
-            setInternalCards(prev => {
-              const newCards = [...prev];
-              
-              // Update the card with real data - Card component will handle animation
-              newCards[animation.cardIndex] = {
-                ...animation.newCardData,
-                id: animation.currentCardId, // Keep the same ID
-              };
-              
-              return newCards;
-            });
-            
-            // Decrement pending animations immediately for updates
-            setPendingAnimations(prev => prev - 1);
-            
-          } else if (animation.type === 'deal') {
-            // Handle new card dealing
-            dealCard(animation.cardData, animation.cardIndex, animation.finalTotalCards);
-          }
-        }, animation.delay);
-      });
-    } else if (cardsToUpdate.length === 0) {
-      // Check if cards are actually different before updating
-      const cardsAreDifferent = (() => {
-        const currentCards = internalCards || [];
-        
-        // Different lengths mean cards are different
-        if (cardsData.length !== currentCards.length) {
-          return true;
-        }
-        
-        // Check each card for differences
-        return cardsData.some((newCard, cardIndex) => {
-          const currentCard = currentCards[cardIndex];
-          if (!currentCard) return true; // New card exists but current doesn't
-          
-          // Cards are different if suit or value differs
-          return currentCard.suit !== newCard.suit || currentCard.value !== newCard.value;
-        });
-      })();
-      
-      // Only update if cards are actually different
-      if (cardsAreDifferent) {
-        let currentId = nextCardId;
-        const cardsWithIds = cardsData.map(card => {
-          if (!card.id) {
-            const newId = currentId;
-            currentId++;
-            return { ...card, id: newId };
-          }
-          return { ...card };
-        });
-        if (currentId !== nextCardId) {
-          setNextCardId(currentId);
-        }
-        setInternalCards(cardsWithIds);
-      }
-    }
-  }, [cards, animate]);
-
-  // Notify parent only when all animations are complete
-  useEffect(() => {
-    if (pendingAnimations === 0 && shouldNotifyParent.current) {
-      shouldNotifyParent.current = false;
-      onHandUpdate(internalCards);
-    }
-  }, [pendingAnimations, internalCards]);
-
-  // Cleanup effect to ensure proper state reset
-  useEffect(() => {
-    return () => {
-      // Cleanup on unmount
-      cardAnimations.current.clear();
-    };
-  }, []);
 
   return (
     <Reanimated.View style={[
