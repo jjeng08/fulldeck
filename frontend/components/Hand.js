@@ -11,7 +11,6 @@ import Reanimated, {
 import Card from './Card';
 
 const Hand = forwardRef(({ 
-  testFinder,
   cards = [], // Array of card objects for the hand
   animate = true, // Whether to animate card dealing
   betAmount = 0, // Bet amount for the hand
@@ -71,11 +70,18 @@ const Hand = forwardRef(({
   const [internalCards, setInternalCards] = useState([]);
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
-  const [pendingAnimations, setPendingAnimations] = useState(0);
   const [queueTrigger, setQueueTrigger] = useState(0);
   
   // Track when we should notify parent
   const shouldNotifyParent = useRef(false);
+  
+  // Check if all animations are complete and notify parent
+  const checkAnimationsComplete = () => {
+    if (animationQueue.current.length === 0 && shouldNotifyParent.current) {
+      shouldNotifyParent.current = false;
+      onHandUpdate(internalCards);
+    }
+  };
   
   // Single source of truth for card positions
   const currentPositions = useRef([]);
@@ -132,15 +138,11 @@ const Hand = forwardRef(({
 
   // Handle sequential animation processing
   useEffect(() => {
-    console.log('Sequential processing:', { queueLength: animationQueue.current.length, pendingAnimations });
-    // If we have animations in queue and current animations are done
-    if (animationQueue.current.length > 0 && pendingAnimations === 0) {
-      const nextAnimation = animationQueue.current.shift();
-      console.log('Processing animation:', nextAnimation);
-      
+    // If we have animations in queue
+    if (animationQueue.current.length > 0) {
+      const nextAnimation = animationQueue.current.shift();      
       if (nextAnimation.type === 'flip') {
         // Handle hole card flip - set up animation and wait for completion
-        setPendingAnimations(1);
         
         // Create animation entry if it doesn't exist
         const animKey = `card-${nextAnimation.currentCardId}`;
@@ -158,14 +160,11 @@ const Hand = forwardRef(({
           newCards[nextAnimation.cardIndex] = {
             ...nextAnimation.newCardData,
             id: nextAnimation.currentCardId,
+            // Add completion callback to the card data
+            onFlipComplete: checkAnimationsComplete
           };
           return newCards;
         });
-        
-        // Wait for flip animation to complete (same duration as cardConfigs.flip)
-        setTimeout(() => {
-          setPendingAnimations(prev => prev - 1);
-        }, cardConfigs.flip);
         
       } else if (nextAnimation.type === 'deal') {
         // Calculate positions and reposition before dealing
@@ -174,19 +173,11 @@ const Hand = forwardRef(({
         repositionCards();
         
         // Deal the card
-        setPendingAnimations(1);
         dealCard(nextAnimation.cardData, nextAnimation.cardIndex, totalCards);
       }
     }
-  }, [internalCards, pendingAnimations, queueTrigger]);
+  }, [internalCards, queueTrigger]);
 
-  // Notify parent only when all animations are complete
-  useEffect(() => {
-    if (pendingAnimations === 0 && shouldNotifyParent.current && animationQueue.current.length === 0) {
-      shouldNotifyParent.current = false;
-      onHandUpdate(internalCards);
-    }
-  }, [pendingAnimations, internalCards]);
 
   // Setup animation sequence when cards prop changes
   useEffect(() => {
@@ -273,7 +264,6 @@ const Hand = forwardRef(({
     // Reset all state variables to their initial values
     setInternalCards([]);
     setAnimatingCards([]);
-    setPendingAnimations(0);
     setShowHandTotal(false);
     setAnimatedTotal(0);
     
@@ -387,17 +377,18 @@ const Hand = forwardRef(({
       }
       
       const cardAnim = cardAnimations.current.get(animKey);
-      Animated.timing(cardAnim.x, {
-        toValue: targetPosition.x,
-        duration: gameConfigs.durations.handUpdate,
-        useNativeDriver: false,
-      }).start();
-      
-      Animated.timing(cardAnim.y, {
-        toValue: targetPosition.y,
-        duration: gameConfigs.durations.handUpdate,
-        useNativeDriver: false,
-      }).start();
+      Animated.parallel([
+        Animated.timing(cardAnim.x, {
+          toValue: targetPosition.x,
+          duration: gameConfigs.durations.handUpdate,
+          useNativeDriver: false,
+        }),
+        Animated.timing(cardAnim.y, {
+          toValue: targetPosition.y,
+          duration: gameConfigs.durations.handUpdate,
+          useNativeDriver: false,
+        })
+      ]).start();
     });
   };
   
@@ -475,7 +466,7 @@ const Hand = forwardRef(({
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
-    ]).start(() => {
+    ]).start((finished) => {
       // Animation complete - create animation entry then add to hand
       const animKey = `card-${currentCardId}`;
       
@@ -500,10 +491,8 @@ const Hand = forwardRef(({
       
       setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
       
-      // Card data already revealed during animation for regular cards
-      
-      // Decrement pending animations counter
-      setPendingAnimations(prev => prev - 1);
+      // Check if all animations are complete
+      checkAnimationsComplete();
     });    
   };
 
@@ -602,6 +591,7 @@ const Hand = forwardRef(({
               value={card.value}
               cardConfigs={cardConfigs}
               style={styles.cardInHand}
+              onAnimationComplete={card.onFlipComplete || (() => {})}
             />
           </Animated.View>
         );

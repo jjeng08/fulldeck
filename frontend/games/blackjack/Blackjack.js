@@ -29,13 +29,11 @@ const gameConfigs = {
   // Timing
   durations: {
     cardDeal: 1000,
-    delay: 500,
-    handUpdate: 200
-  },
-  buffers: {
-    initialDeal: 500,
-    dealerTurn: 1000,
+    flip: 500,
+    playerToDealer: 500,
+    handUpdate: 200,
     splitSpread: 600,
+
   },
   
   // Layout (ratios and absolute values only)
@@ -706,7 +704,7 @@ export default function Blackjack({ route }) {
         sendMessage('playerAction', {
           type: 'splitDeal'
         });
-      }, gameConfigs.buffers.splitSpread); // Wait for spread animation
+      }, gameConfigs.durations.splitSpread); // Wait for spread animation
     }, 100); // Small delay for initial render
   };
 
