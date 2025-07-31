@@ -3,6 +3,13 @@ node_modules
 logs/
 backend/logs/
 
+# Database files
+*.db
+backend/prisma/*.db
+
+# Claude settings
+.claude/
+
 # Generated/synced files from core/ - do not commit
 frontend/shared/text.js
 backend/src/shared/text.js
