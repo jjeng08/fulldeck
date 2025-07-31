@@ -72,15 +72,24 @@ const Hand = forwardRef(({
   const [nextCardId, setNextCardId] = useState(0);
   const [queueTrigger, setQueueTrigger] = useState(0);
   
-  // Track when we should notify parent
-  const shouldNotifyParent = useRef(false);
-  
   // Check if all animations are complete and notify parent
-  const checkAnimationsComplete = () => {
-    if (animationQueue.current.length === 0 && shouldNotifyParent.current) {
-      shouldNotifyParent.current = false;
-      onHandUpdate(internalCards);
+  const checkAnimationsComplete = (animationType) => {
+    // Determine delay based on animation type
+    let delay = 0;
+    if (animationType === 'flip') {
+      delay = gameConfigs.durations.flipDelay || 0;
     }
+    
+    setTimeout(() => {
+      // Remove completed animation from queue
+      animationQueue.current.shift();
+      
+      if (animationQueue.current.length === 0) {
+        onHandUpdate(internalCards);
+      } else {
+        setQueueTrigger(prev => prev + 1);
+      }
+    }, delay);
   };
   
   // Single source of truth for card positions
@@ -140,7 +149,7 @@ const Hand = forwardRef(({
   useEffect(() => {
     // If we have animations in queue
     if (animationQueue.current.length > 0) {
-      const nextAnimation = animationQueue.current.shift();      
+      const nextAnimation = animationQueue.current[0]; // Peek at first item, don't remove yet      
       if (nextAnimation.type === 'flip') {
         // Handle hole card flip - set up animation and wait for completion
         
@@ -161,7 +170,7 @@ const Hand = forwardRef(({
             ...nextAnimation.newCardData,
             id: nextAnimation.currentCardId,
             // Add completion callback to the card data
-            onFlipComplete: checkAnimationsComplete
+            onFlipComplete: () => checkAnimationsComplete('flip')
           };
           return newCards;
         });
@@ -176,7 +185,7 @@ const Hand = forwardRef(({
         dealCard(nextAnimation.cardData, nextAnimation.cardIndex, totalCards);
       }
     }
-  }, [internalCards, queueTrigger]);
+  }, [queueTrigger]);
 
 
   // Setup animation sequence when cards prop changes
@@ -238,7 +247,6 @@ const Hand = forwardRef(({
     
     // Set up animation queue and start processing
     if (newAnimations.length > 0) {
-      shouldNotifyParent.current = true;
       animationQueue.current = newAnimations;
       // Trigger the sequential processing useEffect
       setQueueTrigger(prev => prev + 1);
@@ -269,7 +277,6 @@ const Hand = forwardRef(({
     
     // Reset all refs to their initial values
     cardAnimations.current.clear();
-    shouldNotifyParent.current = false;
     currentPositions.current = [];
     animationQueue.current = [];
     targetCards.current = [];
@@ -330,7 +337,6 @@ const Hand = forwardRef(({
     
     // Update the ref with the new positions
     currentPositions.current = positions;
-    console.log(positions);
     return positions;
   };
   
@@ -492,7 +498,7 @@ const Hand = forwardRef(({
       setAnimatingCards(prev => prev.filter(c => c.id !== currentCardId));
       
       // Check if all animations are complete
-      checkAnimationsComplete();
+      checkAnimationsComplete('deal');
     });    
   };
 

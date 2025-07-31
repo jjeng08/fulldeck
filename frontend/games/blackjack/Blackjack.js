@@ -28,12 +28,9 @@ const cardConfigs = {
 const gameConfigs = {  
   // Timing
   durations: {
-    cardDeal: 1000,
-    flip: 500,
-    playerToDealer: 500,
-    handUpdate: 200,
+    cardDeal: 900,
+    flipDelay: 300,
     splitSpread: 600,
-
   },
   
   // Layout (ratios and absolute values only)
