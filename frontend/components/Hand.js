@@ -71,6 +71,7 @@ const Hand = forwardRef(({
   const [animatingCards, setAnimatingCards] = useState([]);
   const [nextCardId, setNextCardId] = useState(0);
   const [queueTrigger, setQueueTrigger] = useState(0);
+  const [shouldCallOnHandUpdate, setShouldCallOnHandUpdate] = useState(false);
   
   // Check if all animations are complete and notify parent
   const checkAnimationsComplete = (animationType) => {
@@ -85,7 +86,7 @@ const Hand = forwardRef(({
       animationQueue.current.shift();
       
       if (animationQueue.current.length === 0) {
-        onHandUpdate(internalCards);
+        setShouldCallOnHandUpdate(true);
       } else {
         setQueueTrigger(prev => prev + 1);
       }
@@ -106,6 +107,14 @@ const Hand = forwardRef(({
   useEffect(() => {
     return () => {cardAnimations.current.clear()};
   }, []);
+
+  // Call onHandUpdate when shouldCallOnHandUpdate is true
+  useEffect(() => {
+    if (shouldCallOnHandUpdate) {
+      onHandUpdate(internalCards);
+      setShouldCallOnHandUpdate(false);
+    }
+  }, [shouldCallOnHandUpdate, internalCards, onHandUpdate]);
 
     // Calculate totals from current cards state whenever cards change
   useEffect(() => {

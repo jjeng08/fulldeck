@@ -196,7 +196,6 @@ class Blackjack {
     
     // Multi-hand state with backward compatibility
     this.playerHands = [[]]; // Array of hands - index 0 for single-hand mode
-    this.playerValues = [0]; // Array of hand values
     this.currentBets = [0]; // Array of bets per hand
     this.activeHandIndex = 0; // Currently active hand (0 for single-hand)
     this.totalHands = 1; // Total number of hands (1 or 2)

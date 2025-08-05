@@ -58,7 +58,6 @@ export default function Blackjack({ route }) {
     totalHands: 1, // Total number of hands (1 or 2)
     handsCompleted: [], // Track which hands are completed
     playerHands: [[]], // Array of hands - index 0 for single-hand mode
-    playerValues: [0], // Array of hand values
     target: 'player',
     result: null, // 'win', 'lose', 'push', 'blackjack'
     payout: 0,
@@ -205,12 +204,11 @@ export default function Blackjack({ route }) {
   };
 
   const calculateUpdatedValues = (playerHands, dealerCards) => {
-    const newPlayerValues = playerHands.map(hand => calculateHandValue(hand));
     const newDealerValue = calculateHandValue(dealerCards);
-    return { newPlayerValues, newDealerValue };
+    return { newDealerValue };
   };
 
-  const updateGameStateFromAction = (data, playerHands, dealerCards, playerValues, dealerValue) => {
+  const updateGameStateFromAction = (data, playerHands, dealerCards, dealerValue) => {
     setGameState(prev => ({
       ...prev,
       currentBets: data.betAmount ? [data.betAmount] : 
@@ -218,7 +216,6 @@ export default function Blackjack({ route }) {
       gameStatus: data.gameStatus,
       playerHands: playerHands,
       dealerCards: dealerCards,
-      playerValues: playerValues,
       dealerValue: dealerValue,
       totalHands: data.playerHands ? data.playerHands.length : prev.totalHands,
       target: data.target || prev.target,
@@ -234,8 +231,8 @@ export default function Blackjack({ route }) {
     updatePlayerHandAnimations(data);
     updateDealerHandAnimation(data);
     
-    const { newPlayerValues, newDealerValue } = calculateUpdatedValues(newPlayerHands, newDealerCards);
-    updateGameStateFromAction(data, newPlayerHands, newDealerCards, newPlayerValues, newDealerValue);
+    const { newDealerValue } = calculateUpdatedValues(newPlayerHands, newDealerCards);
+    updateGameStateFromAction(data, newPlayerHands, newDealerCards, newDealerValue);
   };
 
   // Callback when deck shuffle completes
@@ -280,8 +277,7 @@ export default function Blackjack({ route }) {
       // Handle player hand updates
       setGameState(prev => ({
         ...prev,
-        playerHands: handsArray,
-        playerValues: handsArray.map(hand => calculateHandValue(hand))
+        playerHands: handsArray
       }));
             
       // ONLY for initial deal sequence - trigger dealer animation after player cards finish
@@ -410,7 +406,6 @@ export default function Blackjack({ route }) {
     const playerValue = calculateHandValue(getActivePlayerCards());
     const dealerValue = calculateHandValue(gameState.dealerCards || []);
     const playerCards = getActivePlayerCards();
-    
     switch (result) {
       case 'lose':
         if (playerValue > 21) {
@@ -645,11 +640,8 @@ export default function Blackjack({ route }) {
     // Start player animation first, dealer cards will be handled after
     setAnimationState('dealing_player');
     
-    // Calculate player card values in frontend - data.playerHands[0] is the first hand
-    const firstHand = data.playerHands[0];
-    const newPlayerValues = [calculateHandValue(firstHand)];
-    
     // Update player hand 1 state
+    const firstHand = data.playerHands[0];
     setPlayerHand1({animate: true, data: [firstHand]});
     
     // Update game state with both player and dealer cards (master copy)
@@ -659,7 +651,6 @@ export default function Blackjack({ route }) {
       gameStatus: data.gameStatus,
       playerHands: data.playerHands,
       dealerCards: data.dealerCards, // Store dealer cards in master state
-      playerValues: newPlayerValues,
       dealerValue: calculateHandValue(data.dealerCards),
       result: data.result || prev.result,
       payout: data.payout || prev.payout
@@ -683,7 +674,6 @@ export default function Blackjack({ route }) {
       ...prev,
       totalHands: 2,
       playerHands: data.playerHands, // First cards only
-      playerValues: data.playerHands.map(hand => calculateHandValue(hand)),
       currentBets: data.currentBets || [prev.currentBets[0], prev.currentBets[0]],
       target: data.target || 'player',
       gameStatus: data.gameStatus
@@ -718,7 +708,6 @@ export default function Blackjack({ route }) {
     setGameState(prev => ({
         ...prev,
         playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
-        playerValues: [calculateHandValue(completeHands[0]), prev.playerValues[1] || 0],
         target: data.target || prev.target
       }));
       
@@ -729,7 +718,6 @@ export default function Blackjack({ route }) {
         setGameState(prev => ({
           ...prev,
           playerHands: [completeHands[0], completeHands[1]], // Now update Hand 2
-          playerValues: completeHands.map(hand => calculateHandValue(hand)),
           target: data.target || prev.target
         }));
         
@@ -818,7 +806,7 @@ export default function Blackjack({ route }) {
             cards={playerHand1.data?.[0] || []}
             animate={playerHand1.animate}
             handLabel="Player Hand"
-            handValue={gameState.playerValues[0] || 0}
+            handValue={calculateHandValue(gameState.playerHands[0] || [])}
             betAmount={gameState.currentBets[0] || 0}
             position={singlePlayerPosition}
             animatePosition={false}
@@ -841,7 +829,7 @@ export default function Blackjack({ route }) {
                 cards={handCards}
                 animate={handAnimate}
                 handLabel={`Hand ${handIndex + 1}`}
-                handValue={gameState.playerValues[handIndex] || 0}
+                handValue={calculateHandValue(gameState.playerHands[handIndex] || [])}
                 betAmount={gameState.currentBets[handIndex] || 0}
                 position={position}
                 animatePosition={animationState === 'split_spread'}
@@ -877,7 +865,6 @@ export default function Blackjack({ route }) {
                   gameStatus: GAME_STATES.BETTING,
                   playerHands: [[]],
                   dealerCards: [],
-                  playerValues: [0],
                   dealerValue: 0,
                   currentBets: [0],
                   target: 'player',
