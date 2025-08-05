@@ -698,13 +698,11 @@ export default function Blackjack({ route }) {
   // Handle split deal - adding second cards to split hands
   const onSplitDealAction = (data) => {
     const completeHands = data.playerHands;
-    
     // Enable animations for card dealing
     setAnimationState('split_dealing');
     
     // Step 1: Update Hand 1 first with animation
     setPlayerHand1({animate: true, data: [completeHands[0]]});
-
     setGameState(prev => ({
         ...prev,
         playerHands: [completeHands[0], prev.playerHands[1] || []], // Update only Hand 1
@@ -714,7 +712,6 @@ export default function Blackjack({ route }) {
       // Step 2: After Hand 1 animates, update Hand 2
       setTimeout(() => {
         setPlayerHand2({animate: true, data: [completeHands[1]]});
-        
         setGameState(prev => ({
           ...prev,
           playerHands: [completeHands[0], completeHands[1]], // Now update Hand 2

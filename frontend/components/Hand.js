@@ -186,7 +186,7 @@ const Hand = forwardRef(({
         
       } else if (nextAnimation.type === 'deal') {
         // Calculate positions and reposition before dealing
-        const totalCards = nextAnimation.cardIndex + 1;
+        const totalCards = nextAnimation.finalTotalCards;
         calculateAllCardPositions(totalCards);
         repositionCards();
         
@@ -261,15 +261,12 @@ const Hand = forwardRef(({
       setQueueTrigger(prev => prev + 1);
       
     } else if (cardsData.length > currentCards.length && !shouldAnimate) {
-      // No animation - just add cards immediately
+      // No animation - just add cards immediately with animation entries
       const newCards = [];
       for (let i = currentCards.length; i < cardsData.length; i++) {
         const cardData = cardsData[i];
-        const cardWithId = {
-          ...cardData,
-          id: `card-${cardData.value}-${cardData.suit}-${i}`
-        };
-        newCards.push(cardWithId);
+        const cardWithAnimation = createCardWithAnimation(cardData, i);
+        newCards.push(cardWithAnimation);
       }
       setInternalCards(prev => [...prev, ...newCards]);
     }
@@ -374,6 +371,43 @@ const Hand = forwardRef(({
     });
   };
   
+  // Generic animation entry creation
+  const createAnimationEntry = (cardId, initialPosition) => {
+    const animKey = `card-${cardId}`;
+    if (!cardAnimations.current.has(animKey)) {
+      cardAnimations.current.set(animKey, {
+        x: new Animated.Value(initialPosition.x),
+        y: new Animated.Value(initialPosition.y)
+      });
+    }
+    return cardAnimations.current.get(animKey);
+  };
+
+  // Generic card creation with animation setup
+  const createCardWithAnimation = (cardData, cardIndex, initialPosition = null) => {
+    // Always generate fresh ID based on this hand's perspective
+    const cardWithId = {
+      ...cardData,
+      id: `hand-${nextCardId}-card-${cardIndex}`
+    };
+    setNextCardId(prev => prev + 1);
+    
+    // Ensure positions are calculated for the expected number of cards
+    const expectedCards = cardIndex + 1;
+    calculateAllCardPositions(expectedCards);
+    
+    // Always calculate fresh position for this hand - ignore any old position data
+    const position = initialPosition || currentPositions.current[cardIndex] || { x: 0, y: 0 };
+    
+    // Create animation entry
+    createAnimationEntry(cardWithId.id, position);
+    
+    return {
+      ...cardWithId,
+      position
+    };
+  };
+
   // Expose functions to parent component
   useImperativeHandle(ref, () => ({
     revealHoleCard
@@ -483,13 +517,7 @@ const Hand = forwardRef(({
       }),
     ]).start((finished) => {
       // Animation complete - create animation entry then add to hand
-      const animKey = `card-${currentCardId}`;
-      
-      // Create animation entry at the target position (where card just animated to)
-      cardAnimations.current.set(animKey, {
-        x: new Animated.Value(targetPosition.x),
-        y: new Animated.Value(targetPosition.y)
-      });
+      createAnimationEntry(currentCardId, targetPosition);
       
       setInternalCards(prev => {
         const cardWithId = {
