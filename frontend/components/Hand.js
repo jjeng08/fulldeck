@@ -45,14 +45,18 @@ const Hand = forwardRef(({
   const startingCards = gameConfigs.startingCards;
 
     // Dynamic styles using gameConfigs
+  const borderWidth = 3;
   const dynamicStyles = {
     handContainer: {
       position: 'absolute',
       top: 0,
       left: 0,
       width: handWidth,
-      height: cardHeight,
+      height: cardHeight + (borderWidth * 2), // Account for border
       pointerEvents: 'none',
+      borderWidth: borderWidth,
+      borderColor: 'transparent', // Default transparent border
+      borderRadius: 12,
     },
     handCard: {
       position: 'absolute',
@@ -337,7 +341,7 @@ const Hand = forwardRef(({
     for (let cardIndex = 0; cardIndex < totalCards; cardIndex++) {
       positions.push({
         x: centeredStartX + cardIndex * cardSpacingValue,
-        y: 0 // Relative to Hand container
+        y: 0 // Offset by border width to account for border space
       });
     }
     
@@ -558,9 +562,7 @@ const Hand = forwardRef(({
       dynamicStyles.handContainer, 
       containerAnimatedStyle,
       isActiveHand && {
-        borderWidth: 3,
-        borderColor: '#FFD700',
-        borderRadius: 12,
+        borderColor: '#FFD700', // Only change color, width and radius already set
       }
     ]}>
       {/* Bet Display - Above total */}
