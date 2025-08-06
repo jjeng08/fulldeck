@@ -56,8 +56,12 @@ async function onPlayerAction(ws, data, userId) {
         // Generate actionId for bet action
         const actionId = crypto.randomUUID();
         
-        // Log game action to BlackjackLogs
-        await DBUtils.logToBlackjackLogs(actionId, blackjack.gameId, userId, GAME_ACTIONS.BET, 'bet_placed', 0, 0, data.betAmount, '', null, 1);
+        // Start new blackjack game with the stored instance first
+        const gameResult = blackjack.startNewGame(userId, data.betAmount);
+        
+        // Log game action to BlackjackLogs with full game state after cards dealt
+        const gameStateAfterBet = blackjack.serializeGameState();
+        await DBUtils.logToBlackjackLogs(actionId, blackjack.gameId, userId, GAME_ACTIONS.BET, 'bet_placed', 0, calculateHandValue(blackjack.playerHands[0]), data.betAmount, blackjack.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), blackjack.dealerCards[0] ? `${blackjack.dealerCards[0].value}${blackjack.dealerCards[0].suit.charAt(0)}` : null, 1, gameStateAfterBet);
         
         // Log financial transaction to AccountsLogs
         await DBUtils.logToAccountsLogs(userId, {
@@ -67,9 +71,6 @@ async function onPlayerAction(ws, data, userId) {
           debit: data.betAmount,
           balance: updatedPlayer.balance
         });
-        
-        // Start new blackjack game with the stored instance
-        const gameResult = blackjack.startNewGame(userId, data.betAmount);
         
         result = {
           success: true,
@@ -252,6 +253,34 @@ class Blackjack {
   
   updateActiveHandValue(value) {
     this.playerValues[this.activeHandIndex] = value;
+  }
+
+  // Serialize complete game state for key logging moments
+  serializeGameState() {
+    return {
+      dealerCards: this.dealerCards || [],
+      playerHands: this.playerHands || [[]],
+      currentBets: this.currentBets || [0],
+      totalHands: this.totalHands || 1,
+      activeHandIndex: this.activeHandIndex || 0
+    };
+  }
+
+  // Determine if this action requires full game state logging
+  static shouldLogFullGameState(action) {
+    const fullStateActions = [
+      GAME_ACTIONS.BET,
+      GAME_ACTIONS.SPLIT,
+      GAME_ACTIONS.INSURANCE,
+      GAME_ACTIONS.INSURANCE_WIN,
+      GAME_ACTIONS.INSURANCE_LOSE,
+      GAME_ACTIONS.SURRENDER,
+      GAME_ACTIONS.GAME_WIN,
+      GAME_ACTIONS.GAME_LOSE,
+      GAME_ACTIONS.GAME_PUSH,
+      GAME_ACTIONS.GAME_BLACKJACK
+    ];
+    return fullStateActions.includes(action);
   }
 
   // Get next active hand index for split scenarios
@@ -672,8 +701,9 @@ class Blackjack {
       // Generate actionId for insurance action
       const actionId = crypto.randomUUID();
       
-      // Log game action to BlackjackLogs
-      await DBUtils.logToBlackjackLogs(actionId, this.gameId, userId, GAME_ACTIONS.INSURANCE, 'insurance_purchased', 0, calculateHandValue(this.playerHands[0]), insuranceAmount, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands);
+      // Log game action to BlackjackLogs with full game state for insurance
+      const gameStateForInsurance = this.serializeGameState();
+      await DBUtils.logToBlackjackLogs(actionId, this.gameId, userId, GAME_ACTIONS.INSURANCE, 'insurance_purchased', 0, calculateHandValue(this.playerHands[0]), insuranceAmount, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands, gameStateForInsurance);
       
       // Log financial transaction to AccountsLogs
       await DBUtils.logToAccountsLogs(userId, {
@@ -706,8 +736,9 @@ class Blackjack {
         // Generate actionId for insurance win
         const insuranceWinActionId = crypto.randomUUID();
         
-        // Log game action to BlackjackLogs
-        await DBUtils.logToBlackjackLogs(insuranceWinActionId, this.gameId, userId, GAME_ACTIONS.INSURANCE_WIN, 'insurance_win', 0, calculateHandValue(this.playerHands[0]), insurancePayout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands);
+        // Log game action to BlackjackLogs with full game state for insurance win
+        const gameStateForInsuranceWin = this.serializeGameState();
+        await DBUtils.logToBlackjackLogs(insuranceWinActionId, this.gameId, userId, GAME_ACTIONS.INSURANCE_WIN, 'insurance_win', 0, calculateHandValue(this.playerHands[0]), insurancePayout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands, gameStateForInsuranceWin);
         
         // Log financial transaction to AccountsLogs
         await DBUtils.logToAccountsLogs(userId, {
@@ -746,8 +777,9 @@ class Blackjack {
                         gameResult === 'dealer_blackjack' ? GAME_ACTIONS.GAME_LOSE : 
                         GAME_ACTIONS.GAME_WIN;
       
-      // Log game action to BlackjackLogs
-      await DBUtils.logToBlackjackLogs(mainBetActionId, this.gameId, userId, gameAction, gameResult, 0, calculateHandValue(this.playerHands[0]), mainBetPayout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), completeDealerCards[0] ? `${completeDealerCards[0].value}${completeDealerCards[0].suit.charAt(0)}` : null, this.totalHands);
+      // Log game action to BlackjackLogs with full game state for main bet result
+      const gameStateForMainBet = this.serializeGameState();
+      await DBUtils.logToBlackjackLogs(mainBetActionId, this.gameId, userId, gameAction, gameResult, 0, calculateHandValue(this.playerHands[0]), mainBetPayout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), completeDealerCards[0] ? `${completeDealerCards[0].value}${completeDealerCards[0].suit.charAt(0)}` : null, this.totalHands, gameStateForMainBet);
       
       // Log financial transaction to AccountsLogs
       await DBUtils.logToAccountsLogs(userId, {
@@ -779,8 +811,9 @@ class Blackjack {
         // Generate actionId for insurance lose
         const insuranceLoseActionId = crypto.randomUUID();
         
-        // Log game action to BlackjackLogs
-        await DBUtils.logToBlackjackLogs(insuranceLoseActionId, this.gameId, userId, GAME_ACTIONS.INSURANCE_LOSE, 'insurance_lose', 0, calculateHandValue(this.playerHands[0]), 0, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands);
+        // Log game action to BlackjackLogs with full game state for insurance lose
+        const gameStateForInsuranceLose = this.serializeGameState();
+        await DBUtils.logToBlackjackLogs(insuranceLoseActionId, this.gameId, userId, GAME_ACTIONS.INSURANCE_LOSE, 'insurance_lose', 0, calculateHandValue(this.playerHands[0]), 0, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands, gameStateForInsuranceLose);
         
         // Log financial transaction to AccountsLogs
         await DBUtils.logToAccountsLogs(userId, {
@@ -854,8 +887,9 @@ class Blackjack {
     // Generate actionId for split action
     const actionId = crypto.randomUUID();
     
-    // Log game action to BlackjackLogs
-    await DBUtils.logToBlackjackLogs(actionId, this.gameId, userId, GAME_ACTIONS.SPLIT, 'split_processed', activeHandIndex, calculateHandValue(playerCards), betAmount * 2, playerCards.map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, 2);
+    // Log game action to BlackjackLogs with full game state after split
+    const gameStateAfterSplit = this.serializeGameState();
+    await DBUtils.logToBlackjackLogs(actionId, this.gameId, userId, GAME_ACTIONS.SPLIT, 'split_processed', activeHandIndex, calculateHandValue(playerCards), betAmount * 2, playerCards.map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, 2, gameStateAfterSplit);
     
     // Log financial transaction to AccountsLogs
     await DBUtils.logToAccountsLogs(userId, {
@@ -1035,8 +1069,9 @@ class Blackjack {
                         result === 'win' ? GAME_ACTIONS.GAME_WIN :
                         GAME_ACTIONS.GAME_LOSE;
       
-      // Log game action to BlackjackLogs
-      await DBUtils.logToBlackjackLogs(finalActionId, this.gameId, userId, gameAction, result, 0, calculateHandValue(this.playerHands[0]), payout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands);
+      // Log game action to BlackjackLogs with full final game state
+      const finalGameState = this.serializeGameState();
+      await DBUtils.logToBlackjackLogs(finalActionId, this.gameId, userId, gameAction, result, 0, calculateHandValue(this.playerHands[0]), payout, this.playerHands[0].map(card => `${card.value}${card.suit.charAt(0)}`).join(','), this.dealerCards[0] ? `${this.dealerCards[0].value}${this.dealerCards[0].suit.charAt(0)}` : null, this.totalHands, finalGameState);
       
       // Log financial transaction to AccountsLogs
       await DBUtils.logToAccountsLogs(userId, {

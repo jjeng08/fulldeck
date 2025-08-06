@@ -54,9 +54,10 @@ model BlackjackLogs {
   handIndex     Int
   handValue     Int
   betAmount     Int
-  cards         String   // "8♠,8♥,7♣"
-  dealerShowing String?  // "5♥"
+  cards         String   // "8♠,8♥,7♣" - kept for regular actions
+  dealerShowing String?  // "5♥" - kept for regular actions
   totalHands    Int
+  gameState     Json?    // Complete game state: { dealerCards: [...], playerHands: [[...], [...]], currentBets: [...] } - only for key moments
   createdOn     DateTime @default(now())
   
   player Player @relation(fields: [playerId], references: [id])

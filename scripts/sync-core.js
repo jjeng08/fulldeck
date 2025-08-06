@@ -10,6 +10,11 @@ const coreFileMap = {
     'frontend/core/core.js',
     'backend/src/core/core.js'
   ],
+  // Environment configuration - shared across frontend and backend
+  'core/environments.js': [
+    'frontend/shared/environments.js',
+    'backend/src/shared/environments.js'
+  ],
   // Text files - universal across all games
   'core/text.js': [
     'frontend/shared/text.js',

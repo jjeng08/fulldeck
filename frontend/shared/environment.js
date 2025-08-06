@@ -1,30 +1,9 @@
-// Environment configuration for frontend
-const environments = {
-  development: {
-    websocketUrl: 'ws://localhost:8080',
-    apiBaseUrl: 'http://localhost:3000',
-    logLevel: 'debug'
-  },
-  qa: {
-    websocketUrl: 'ws://qa-backend-server:8080',
-    apiBaseUrl: 'http://qa-backend-server:3000',
-    logLevel: 'info'
-  },
-  stage: {
-    websocketUrl: 'wss://stage-api.fulldeck.example.com',
-    apiBaseUrl: 'https://stage-api.fulldeck.example.com',
-    logLevel: 'info'
-  },
-  production: {
-    websocketUrl: 'wss://api.fulldeck.example.com',
-    apiBaseUrl: 'https://api.fulldeck.example.com',
-    logLevel: 'error'
-  }
-};
+// Frontend environment configuration - now uses core environments
+import { getEnvironmentConfig } from './environments';
 
 function getEnvironment() {
   // Check if we're in Expo development
-  if (__DEV__) {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
     return 'development';
   }
   
@@ -37,15 +16,17 @@ function getEnvironment() {
 
 function getConfig() {
   const env = getEnvironment();
-  const config = environments[env];
-  
-  if (!config) {
-    console.warn(`Unknown environment: ${env}, falling back to development`);
-    return environments.development;
-  }
+  const config = getEnvironmentConfig(env);
   
   console.log(`Using environment config: ${env}`);
-  return config;
+  console.log(`WebSocket: ${config.websocketUrl}, API: ${config.apiBaseUrl}`);
+  
+  return {
+    websocketUrl: config.websocketUrl,
+    apiBaseUrl: config.apiBaseUrl,
+    frontendUrl: config.frontendUrl,
+    logLevel: config.logLevel
+  };
 }
 
 export { getConfig, getEnvironment };

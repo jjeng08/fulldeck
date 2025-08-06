@@ -160,7 +160,7 @@ const logToAccountsLogs = async (userId, metadata = {}) => {
 };
 
 // Blackjack-specific game action logging with pre-generated ID
-const logToBlackjackLogs = async (actionId, gameId, userId, action, result, handIndex, handValue, betAmount, cards, dealerShowing, totalHands) => {
+const logToBlackjackLogs = async (actionId, gameId, userId, action, result, handIndex, handValue, betAmount, cards, dealerShowing, totalHands, gameState = null) => {
   try {
     const blackjackLog = await prisma.blackjackLogs.create({
       data: {
@@ -174,7 +174,8 @@ const logToBlackjackLogs = async (actionId, gameId, userId, action, result, hand
         betAmount,
         cards,
         dealerShowing: dealerShowing || null,
-        totalHands
+        totalHands,
+        gameState: gameState || undefined // Only include if provided
       }
     });
     
@@ -186,7 +187,8 @@ const logToBlackjackLogs = async (actionId, gameId, userId, action, result, hand
       result,
       handIndex,
       handValue,
-      betAmount
+      betAmount,
+      hasFullGameState: !!gameState
     });
     
     return blackjackLog;
