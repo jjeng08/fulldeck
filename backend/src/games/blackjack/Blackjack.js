@@ -1,10 +1,8 @@
-const BettingUtils = require('../../shared/utils/BettingUtils');
 const crypto = require('crypto');
-const DBUtils = require('../../shared/utils/DBUtils');
-const logger = require('../../shared/utils/logger');
-const testLogger = require('../../shared/testLogger');
-const { text: t } = require('../../shared/text');
-const { GAME_STATES, GAME_ACTIONS, calculateHandValue, isBlackjack } = require('./blackjackCore');
+const DBUtils = require('../../shared/DBUtils');
+const logger = require('../../shared/logger');
+const { text: t } = require('../../core/text');
+const { GAME_STATES, GAME_ACTIONS, calculateHandValue, isBlackjack, validateBetAmount } = require('./blackjackCore');
 const { GAME_TYPES } = require('../../core/core');
 
 // Game type constant for this file
@@ -13,14 +11,7 @@ const gameTypeId = GAME_TYPES.BLACKJACK.id;
 // Game instance manager - stores active game instances by userId
 const activeGames = new Map();
 
-// Helper function to send centralized messages
-function sendMessage(userId, type, data) {
-  const WebSocketServer = require('../../websocket/server');
-  const wsServer = WebSocketServer.getInstance();
-  if (wsServer) {
-    wsServer.sendMessage(userId, type, data);
-  }
-}
+const { sendMessage } = require('../../websocket/server');
 
 // Unified player action handler
 async function onPlayerAction(ws, data, userId) {
@@ -382,7 +373,7 @@ class Blackjack {
       }
       
       // Validate bet amount
-      const validation = BettingUtils.validateBetAmount(amount, user.balance, 100, 10000); // Max $100 bet
+      const validation = validateBetAmount(amount, user.balance, 100, 10000); // Max $100 bet
       if (!validation.valid) {
         return { success: false, error: validation.error };
       }
@@ -478,7 +469,7 @@ class Blackjack {
       };
       
       // Test logging
-      testLogger.testLog('BACKEND', 'IMMEDIATE_BLACKJACK_RESULT', {
+      logger.logGameEvent('immediate_blackjack_result', gameSession.gameId, {
         result,
         payout,
         betAmount,

@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { GAME_TYPES, getGameTypeByName } = require('../../core/core');
+const { GAME_TYPES, getGameTypeByName } = require('../core/core');
 
 const prisma = new PrismaClient();
 
@@ -66,11 +66,8 @@ const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) =>
     logger.logUserAction('balance_updated', userId, { newBalance, reason, metadata });
     
     // Send balance update through centralized message system
-    const WebSocketServer = require('../../websocket/server');
-    const wsServer = WebSocketServer.getInstance();
-    if (wsServer) {
-      wsServer.sendMessage(userId, 'balance', { balance: updatedPlayer.balance });
-    }
+    const { sendMessage } = require('../websocket/server');
+    sendMessage(userId, 'balance', { balance: updatedPlayer.balance });
     
     return updatedPlayer;
   } catch (error) {

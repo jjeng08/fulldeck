@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { getEnvironmentConfig, buildDatabaseUrl } = require('../shared/environments');
+const { getEnvironmentConfig, buildDatabaseUrl } = require('../core/environments');
 
 function loadEnvironmentConfig() {
   const env = process.env.NODE_ENV || 'development';

@@ -1,5 +1,5 @@
 // Frontend environment configuration - now uses core environments
-import { getEnvironmentConfig } from './environments';
+import { getEnvironmentConfig } from '../core/environments';
 
 function getEnvironment() {
   // Check if we're in Expo development

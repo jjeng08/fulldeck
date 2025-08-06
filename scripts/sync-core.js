@@ -12,13 +12,13 @@ const coreFileMap = {
   ],
   // Environment configuration - shared across frontend and backend
   'core/environments.js': [
-    'frontend/shared/environments.js',
-    'backend/src/shared/environments.js'
+    'frontend/core/environments.js',
+    'backend/src/core/environments.js'
   ],
   // Text files - universal across all games
   'core/text.js': [
-    'frontend/shared/text.js',
-    'backend/src/shared/text.js'
+    'frontend/core/text.js',
+    'backend/src/core/text.js'
   ],
   // BlackJack game logic - placed directly in game folders
   'core/games/blackjack/blackjackCore.js': [

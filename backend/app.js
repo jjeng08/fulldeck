@@ -1,5 +1,5 @@
 const { loadEnvironmentConfig } = require('./src/environments/environment')
-const WebSocketServer = require('./src/websocket/server')
+const { WebSocketServer } = require('./src/websocket/server')
 const HttpServer = require('./src/http/server')
 
 // Load environment configuration

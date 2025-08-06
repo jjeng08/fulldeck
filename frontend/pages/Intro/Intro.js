@@ -6,7 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useApp } from 'systems/AppContext';
 import WebSocketService from 'systems/websocket';
 import { introStyles as s } from './IntroStyles';
-import { text as t } from 'shared/text';
+import { text as t } from 'core/text';
 import Button from 'components/Button';
 import TextInput from 'components/TextInput';
 import Toast from 'components/Toast';

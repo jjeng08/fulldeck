@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from '../../systems/AppContext';
 import { lobbyStyles as s } from './LobbyStyles';
-import { text as t } from '../../shared/text';
+import { text as t } from '../../core/text';
 import { formatCurrency } from '../../shared/utils';
 import Button from '../../components/Button';
 import GamesCarousel from '../../components/GamesCarousel';

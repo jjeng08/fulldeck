@@ -1,9 +1,12 @@
-const BasePlayer = require('../../shared/base/BasePlayer');
-const BettingUtils = require('../../shared/utils/BettingUtils');
+const { PrismaClient } = require('@prisma/client');
 
-class BaccaratPlayer extends BasePlayer {
+class BaccaratPlayer {
   constructor(userId, username, balance, status = 'active') {
-    super(userId, username, balance, status);
+    this.userId = userId;
+    this.username = username;
+    this.balance = balance;
+    this.status = status;
+    this.joinedAt = new Date();
     this.playerBet = 0;
     this.bankerBet = 0;
     this.tieBet = 0;

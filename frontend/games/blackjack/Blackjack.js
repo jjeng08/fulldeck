@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
-import { text as t } from 'shared/text';
+import { text as t } from 'core/text';
 import { formatCurrency, formatCurrencyButton } from 'shared/utils';
 import { GAME_STATES, PLAYER_ACTIONS, calculateHandValue } from './blackjackCore';
 import Button from 'components/Button';

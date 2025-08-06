@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
-const logger = require('../shared/utils/logger')
+const logger = require('../shared/logger')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
 

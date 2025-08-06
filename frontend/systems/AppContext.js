@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import WebSocketService from './websocket';
-import { text as t } from '../shared/text';
+import { text as t } from '../core/text';
 import logger from '../shared/logger';
 
 const AppContext = createContext();
@@ -185,8 +185,6 @@ export function AppProvider({ children }) {
     setConnected(true);
     
     // Initialize test logger now that WebSocket is connected
-    const testLogger = require('../shared/testLogger').default;
-    testLogger.onWebSocketConnected();
   };
 
   // ONLY place playerBalance is updated

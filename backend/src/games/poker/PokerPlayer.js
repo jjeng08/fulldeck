@@ -1,9 +1,12 @@
-const BasePlayer = require('../../shared/base/BasePlayer');
-const BettingUtils = require('../../shared/utils/BettingUtils');
+const { PrismaClient } = require('@prisma/client');
 
-class PokerPlayer extends BasePlayer {
+class PokerPlayer {
   constructor(userId, username, balance, status = 'active') {
-    super(userId, username, balance, status);
+    this.userId = userId;
+    this.username = username;
+    this.balance = balance;
+    this.status = status;
+    this.joinedAt = new Date();
     this.holeCards = [];
     this.currentBet = 0;
     this.totalBetThisRound = 0;

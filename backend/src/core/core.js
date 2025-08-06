@@ -22,9 +22,22 @@ const getAllGameTypes = () => {
   return Object.values(GAME_TYPES);
 };
 
+// Shared utility functions that should be identical in frontend and backend
+const formatCurrency = (amount) => {
+  const numericAmount = Number(amount) || 0;
+  const dollarsAmount = numericAmount / 100;
+  return `$${dollarsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const calculatePayout = (betAmount, multiplier) => {
+  return Math.floor(betAmount * multiplier);
+};
+
 module.exports = {
   GAME_TYPES,
+  calculatePayout,
+  formatCurrency,
+  getAllGameTypes,
   getGameTypeById,
-  getGameTypeByName,
-  getAllGameTypes
+  getGameTypeByName
 };

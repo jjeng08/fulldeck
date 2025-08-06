@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './blackjack/BlackjackStyles';
-import { text as t } from 'shared/text';
+import { text as t } from 'core/text';
 import { formatCurrency } from 'shared/utils';
 import logger from 'shared/logger';
 import Button from 'components/Button';

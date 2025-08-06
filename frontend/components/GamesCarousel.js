@@ -5,7 +5,7 @@ const { width: screenWidth } = Dimensions.get('window');
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
-import { text as t } from 'shared/text';
+import { text as t } from 'core/text';
 import { styleConstants as sc } from 'shared/styleConstants';
 import Button from 'components/Button';
 

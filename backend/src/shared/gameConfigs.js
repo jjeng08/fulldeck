@@ -1,4 +1,4 @@
-const logger = require('./utils/logger');
+const logger = require('./logger');
 
 // Game configurations - centrally managed on backend
 const gameConfigs = {

@@ -13,6 +13,25 @@ const GAME_STATES = {
   FINISHED: 'finished'
 };
 
+const GAME_ACTIONS = {
+  BET: 'bet',
+  HIT: 'hit',
+  STAND: 'stand',
+  DOUBLE_DOWN: 'doubleDown',
+  SPLIT: 'split',
+  SPLIT_DEAL: 'splitDeal',
+  INSURANCE: 'insurance',
+  INSURANCE_WIN: 'insuranceWin',
+  INSURANCE_LOSE: 'insuranceLose',
+  SURRENDER: 'surrender',
+  DEALER_COMPLETE: 'dealerComplete',
+  NEW_GAME: 'newGame',
+  GAME_WIN: 'gameWin',
+  GAME_LOSE: 'gameLose',
+  GAME_PUSH: 'gamePush',
+  GAME_BLACKJACK: 'gameBlackjack'
+};
+
 const calculateHandValue = (cards) => {
   if (!cards || cards.length === 0) return 0;
   
@@ -64,16 +83,40 @@ const isBlackjack = (cards) => {
   return hasAce && hasTen;
 };
 
+const validateBetAmount = (amount, balance, minBet = 100, maxBet = Infinity) => {
+  if (typeof amount !== 'number' || amount <= 0) {
+    return { valid: false, error: 'Invalid bet amount' };
+  }
+  
+  if (amount < minBet) {
+    return { valid: false, error: `Minimum bet is ${minBet}` };
+  }
+  
+  if (amount > maxBet) {
+    return { valid: false, error: `Maximum bet is ${maxBet}` };
+  }
+  
+  if (amount > balance) {
+    return { valid: false, error: 'Insufficient balance' };
+  }
+  
+  return { valid: true };
+};
+
 // Dual export for both CommonJS and ES6 compatibility
 module.exports = { 
   GAME_STATES, 
+  GAME_ACTIONS,
   calculateHandValue, 
-  isBlackjack 
+  isBlackjack,
+  validateBetAmount 
 };
 
 // ES6 named exports for modern environments
 if (typeof exports !== 'undefined') {
   exports.GAME_STATES = GAME_STATES;
+  exports.GAME_ACTIONS = GAME_ACTIONS;
   exports.calculateHandValue = calculateHandValue;
   exports.isBlackjack = isBlackjack;
+  exports.validateBetAmount = validateBetAmount;
 }
