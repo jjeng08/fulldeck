@@ -5,7 +5,7 @@ import { useApp } from 'systems/AppContext';
 import { tableStyles as s } from './BlackjackStyles';
 import { text as t } from 'shared/text';
 import { formatCurrency, formatCurrencyButton } from 'shared/utils';
-import { GAME_STATES, calculateHandValue } from './blackjackCore';
+import { GAME_STATES, PLAYER_ACTIONS, calculateHandValue } from './blackjackCore';
 import Button from 'components/Button';
 import Deck from 'components/Deck';
 import Hand from 'components/Hand';
@@ -89,41 +89,41 @@ export default function Blackjack({ route }) {
       const actionType = data.actionType;
       clearLoadingAction(actionType);
       switch (actionType) {
-        case 'bet':
+        case PLAYER_ACTIONS.BET:
           (data.playerHands && data.dealerCards) && onBetAction(data);
           if (data.handComplete) {
             sendMessage('playerAction', {
-              type: 'dealerComplete'
+              type: PLAYER_ACTIONS.DEALER_COMPLETE
             });
           }
           break;
-        case 'hit':
+        case PLAYER_ACTIONS.HIT:
           onDefaultAction(data);
           if (data.handComplete) {
             sendMessage('playerAction', {
-              type: 'stand',
+              type: PLAYER_ACTIONS.STAND,
               target: 'player',
               handIndex: activeHandIndex.current
             });
           }
           break;
-        case 'doubleDown':
+        case PLAYER_ACTIONS.DOUBLE_DOWN:
           onDefaultAction(data);
           if (data.handComplete) {
             sendMessage('playerAction', {
-              type: 'stand',
+              type: PLAYER_ACTIONS.STAND,
               target: 'player',
               handIndex: activeHandIndex.current
             });
           }
           break;
-        case 'split':
+        case PLAYER_ACTIONS.SPLIT:
           data.playerHands && onSplitAction(data);
           break;
-        case 'splitDeal':
+        case PLAYER_ACTIONS.SPLIT_DEAL:
           data.playerHands && onSplitDealAction(data);
           break;
-        case 'insurance':
+        case PLAYER_ACTIONS.INSURANCE:
           onDefaultAction(data);
           // If dealer had blackjack, game is finished
           if (data.gameStatus === GAME_STATES.FINISHED) {
@@ -267,7 +267,7 @@ export default function Blackjack({ route }) {
         // If dealer's turn just finished, send dealerComplete message
         if (gameState.gameStatus === GAME_STATES.DEALER_TURN && gameState.handComplete) {
           sendMessage('playerAction', {
-            type: 'dealerComplete'
+            type: PLAYER_ACTIONS.DEALER_COMPLETE
           });
         }
       } else if (gameState.gameStatus === 'finished' && animationState !== 'finalizing') {
@@ -483,7 +483,7 @@ export default function Blackjack({ route }) {
       setAnimationState('idle');
       addLoadingCallback();
       sendMessage('playerAction', {
-        type: 'bet',
+        type: PLAYER_ACTIONS.BET,
         betAmount: currentBet
       });
     }
@@ -564,7 +564,7 @@ export default function Blackjack({ route }) {
             label="Hit"
             onPress={() => {
               sendMessage('playerAction', {
-                type: 'hit',
+                type: PLAYER_ACTIONS.HIT,
                 target: 'player',
                 handIndex: activeHandIndex.current
               });
@@ -583,7 +583,7 @@ export default function Blackjack({ route }) {
                 
                 // Send split action to backend
                 sendMessage('playerAction', {
-                  type: 'split',
+                  type: PLAYER_ACTIONS.SPLIT,
                   playerHands: gameState.playerHands,
                   activeHandIndex: activeHandIndex.current,
                   currentBet: getActiveCurrentBet()
@@ -600,7 +600,7 @@ export default function Blackjack({ route }) {
               label="Double Down"
               onPress={() => {
                 sendMessage('playerAction', {
-                  type: 'doubleDown',
+                  type: PLAYER_ACTIONS.DOUBLE_DOWN,
                   target: 'player',
                   handIndex: activeHandIndex.current
                 });
@@ -615,7 +615,7 @@ export default function Blackjack({ route }) {
             label="Stand"
             onPress={() => {
               sendMessage('playerAction', {
-                type: 'stand',
+                type: PLAYER_ACTIONS.STAND,
                 target: 'player',
                 handIndex: activeHandIndex.current
               });
@@ -689,7 +689,7 @@ export default function Blackjack({ route }) {
       // After spread animation completes, request the second cards
       setTimeout(() => {
         sendMessage('playerAction', {
-          type: 'splitDeal'
+          type: PLAYER_ACTIONS.SPLIT_DEAL
         });
       }, gameConfigs.durations.splitSpread); // Wait for spread animation
     }, 100); // Small delay for initial render
@@ -903,7 +903,7 @@ export default function Blackjack({ route }) {
                 style={s.insuranceButton}
                 onPress={() => {
                   sendMessage('playerAction', {
-                    type: 'insurance',
+                    type: PLAYER_ACTIONS.INSURANCE,
                     buy: true
                   });
                 }}
@@ -918,7 +918,7 @@ export default function Blackjack({ route }) {
                 style={s.skipInsuranceButton}
                 onPress={() => {
                   sendMessage('playerAction', {
-                    type: 'insurance',
+                    type: PLAYER_ACTIONS.INSURANCE,
                     buy: false
                   });
                 }}

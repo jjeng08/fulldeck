@@ -1,7 +1,17 @@
 const { PrismaClient } = require('@prisma/client');
+const crypto = require('crypto');
 const logger = require('./logger');
+const { GAME_TYPES, getGameTypeByName } = require('../../core/core');
 
 const prisma = new PrismaClient();
+
+// Game ID generation - abstracted for all game types
+const generateGameId = (gameType) => {
+  // Accept either string name or game type object
+  const gameObj = typeof gameType === 'string' ? getGameTypeByName(gameType) : gameType;
+  const prefix = gameObj?.prefix || 'gm';
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+};
 
 // Player-related database operations
 const getPlayerById = async (userId) => {
@@ -107,14 +117,26 @@ const creditPlayerAccount = async (userId, amount, reason, metadata = {}) => {
   }
 };
 
-// Activity logging
-const logPlayerActivity = async (userId, username, activityType, metadata = {}) => {
+// Accounts logging (updated to support gameType, gameId, and actionId linking)
+const logToAccountsLogs = async (userId, metadata = {}) => {
   try {
-    const activity = await prisma.activityLog.create({
+    // Convert gameType string to ID if provided
+    let gameTypeId = null;
+    if (metadata.gameType) {
+      if (typeof metadata.gameType === 'string') {
+        const gameObj = getGameTypeByName(metadata.gameType);
+        gameTypeId = gameObj ? gameObj.id : null;
+      } else if (typeof metadata.gameType === 'number') {
+        gameTypeId = metadata.gameType;
+      }
+    }
+    
+    const activity = await prisma.accountsLogs.create({
       data: {
         playerId: userId,
-        username,
-        activityType,
+        gameType: gameTypeId,
+        gameId: metadata.gameId || null,
+        actionId: metadata.actionId || null,
         credit: metadata.credit || null,
         debit: metadata.debit || null,
         balance: metadata.balance,
@@ -122,76 +144,62 @@ const logPlayerActivity = async (userId, username, activityType, metadata = {}) 
       }
     });
     
-    logger.logInfo('Activity logged to database', { 
+    logger.logInfo('Accounts activity logged to database', { 
       playerId: userId, 
-      username, 
-      activityType,
+      gameType: gameTypeId,
+      gameId: metadata.gameId,
+      actionId: metadata.actionId,
       ...metadata
     });
     
     return activity;
   } catch (error) {
-    logger.logError(error, { userId, username, activityType, metadata, action: 'log_player_activity' });
+    logger.logError(error, { userId, metadata, action: 'log_to_accounts_logs' });
     throw error;
   }
 };
 
-// Game result logging
-const logGameResult = async (gameId, playerId, result, amountWonLost, playerHand, dealerHand) => {
+// Blackjack-specific game action logging with pre-generated ID
+const logToBlackjackLogs = async (actionId, gameId, userId, action, result, handIndex, handValue, betAmount, cards, dealerShowing, totalHands) => {
   try {
-    const gameResult = await prisma.gameResult.create({
+    const blackjackLog = await prisma.blackjackLogs.create({
       data: {
+        id: actionId,
         gameId,
-        playerId,
+        playerId: userId,
+        action,
         result,
-        amountWonLost,
-        playerHand,
-        dealerHand
+        handIndex,
+        handValue,
+        betAmount,
+        cards,
+        dealerShowing: dealerShowing || null,
+        totalHands
       }
     });
     
-    logger.logInfo('Game result logged to database', { 
+    logger.logInfo('Blackjack action logged to database', { 
+      actionId,
+      gameId,
+      playerId: userId,
+      action,
+      result,
+      handIndex,
+      handValue,
+      betAmount
+    });
+    
+    return blackjackLog;
+  } catch (error) {
+    logger.logError(error, { 
+      actionId,
       gameId, 
-      playerId, 
+      userId, 
+      action, 
       result, 
-      amountWonLost 
+      handIndex, 
+      action: 'log_to_blackjack_logs' 
     });
-    
-    return gameResult;
-  } catch (error) {
-    logger.logError(error, { gameId, playerId, result, amountWonLost, action: 'log_game_result' });
-    throw error;
-  }
-};
-
-// Game management
-const createGame = async (gameType = 'blackjack') => {
-  try {
-    const game = await prisma.game.create({
-      data: { gameType }
-    });
-    
-    logger.logInfo('Game created', { gameId: game.id, gameType });
-    
-    return game;
-  } catch (error) {
-    logger.logError(error, { gameType, action: 'create_game' });
-    throw error;
-  }
-};
-
-const completeGame = async (gameId) => {
-  try {
-    const game = await prisma.game.update({
-      where: { id: gameId },
-      data: { completedAt: new Date() }
-    });
-    
-    logger.logInfo('Game completed', { gameId });
-    
-    return game;
-  } catch (error) {
-    logger.logError(error, { gameId, action: 'complete_game' });
     throw error;
   }
 };
@@ -207,14 +215,13 @@ const disconnect = async () => {
 };
 
 module.exports = {
-  completeGame,
-  createGame,
   creditPlayerAccount,
   debitPlayerAccount,
   disconnect,
+  generateGameId,
   getPlayerById,
   getPlayerByUsername,
-  logGameResult,
-  logPlayerActivity,
+  logToBlackjackLogs,
+  logToAccountsLogs,
   updatePlayerBalance
 };

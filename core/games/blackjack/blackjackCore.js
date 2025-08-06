@@ -13,6 +13,25 @@ const GAME_STATES = {
   FINISHED: 'finished'
 };
 
+const GAME_ACTIONS = {
+  BET: 'bet',
+  HIT: 'hit',
+  STAND: 'stand',
+  DOUBLE_DOWN: 'doubleDown',
+  SPLIT: 'split',
+  SPLIT_DEAL: 'splitDeal',
+  INSURANCE: 'insurance',
+  INSURANCE_WIN: 'insuranceWin',
+  INSURANCE_LOSE: 'insuranceLose',
+  SURRENDER: 'surrender',
+  DEALER_COMPLETE: 'dealerComplete',
+  NEW_GAME: 'newGame',
+  GAME_WIN: 'gameWin',
+  GAME_LOSE: 'gameLose',
+  GAME_PUSH: 'gamePush',
+  GAME_BLACKJACK: 'gameBlackjack'
+};
+
 const calculateHandValue = (cards) => {
   if (!cards || cards.length === 0) return 0;
   
@@ -67,6 +86,7 @@ const isBlackjack = (cards) => {
 // Dual export for both CommonJS and ES6 compatibility
 module.exports = { 
   GAME_STATES, 
+  GAME_ACTIONS,
   calculateHandValue, 
   isBlackjack 
 };
@@ -74,6 +94,7 @@ module.exports = {
 // ES6 named exports for modern environments
 if (typeof exports !== 'undefined') {
   exports.GAME_STATES = GAME_STATES;
+  exports.GAME_ACTIONS = GAME_ACTIONS;
   exports.calculateHandValue = calculateHandValue;
   exports.isBlackjack = isBlackjack;
 }

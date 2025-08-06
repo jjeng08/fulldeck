@@ -9,53 +9,31 @@ datasource db {
 }
 
 model Player {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String
-  balance   Int      @default(10000)
-  winnings  Int      @default(0)
-  createdOn DateTime @default(now())
-  lastSeen  DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  username      String   @unique
+  email         String?  @unique
+  phoneNumber   String?
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  balance       Int      @default(0)
+  winnings      Int      @default(0)
+  emailVerified Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdOn     DateTime @default(now())
+  lastSeen      DateTime @default(now())
   
-  gameResults GameResult[]
-  activityLogs ActivityLog[]
+  accountsLogs AccountsLogs[]
+  blackjackLogs BlackjackLogs[]
   
+  @@index([username])
   @@map("players")
 }
 
-model Game {
-  id          String   @id @default(cuid())
-  gameType    String   @default("blackjack")
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
-  
-  results GameResult[]
-  
-  @@map("games")
-}
-
-model GameResult {
-  id           String  @id @default(cuid())
-  gameId       String
-  playerId     String
-  result       String
-  amountWonLost Float
-  playerHand   String
-  dealerHand   String
-  createdAt    DateTime @default(now())
-  
-  game   Game   @relation(fields: [gameId], references: [id])
-  player Player @relation(fields: [playerId], references: [id])
-  
-  @@map("game_results")
-}
-
-model ActivityLog {
+model AccountsLogs {
   id           String   @id @default(cuid())
   playerId     String
-  username     String
-  activityType String
+  gameType     Int?     // 1=blackjack, 2=poker, 3=baccarat - null for non-game activities
+  gameId       String?  // Links to specific game instance - null for non-game activities
+  actionId     String?  // Links to BlackjackLogs.id for game actions - null for non-game activities
   credit       Int?
   debit        Int?
   balance      Int
@@ -64,5 +42,24 @@ model ActivityLog {
   
   player Player @relation(fields: [playerId], references: [id])
   
-  @@map("activity_log")
+  @@map("accounts_logs")
+}
+
+model BlackjackLogs {
+  id            String   @id @default(cuid())
+  gameId        String   // Links to Game and AccountsLogs entries
+  playerId      String
+  action        String   // "hit", "stand", "double_down", "split"
+  result        String   // "bust", "continue", "stand", "complete"
+  handIndex     Int
+  handValue     Int
+  betAmount     Int
+  cards         String   // "8♠,8♥,7♣"
+  dealerShowing String?  // "5♥"
+  totalHands    Int
+  createdOn     DateTime @default(now())
+  
+  player Player @relation(fields: [playerId], references: [id])
+  
+  @@map("blackjack_logs")
 }

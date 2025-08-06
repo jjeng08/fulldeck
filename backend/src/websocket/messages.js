@@ -1,5 +1,4 @@
 const jwt = require('jsonwebtoken')
-const gameManager = require('../games/GameManager');
 const logger = require('../shared/utils/logger');
 const { PrismaClient } = require('@prisma/client')
 const { text: t } = require('../shared/text')
@@ -187,9 +186,6 @@ const messages = {
   'gameConfigs': onGameConfigs,
   'gameState': onGameState,
   
-  // General table management
-  'joinTable': onJoinTable,
-  'leaveTable': onLeaveTable,
   
   // User actions
   'logout': onLogout,
@@ -221,7 +217,7 @@ async function onLogin(ws, data) {
     }
     
     // Verify password
-    const passwordMatch = await bcrypt.compare(data.password, user.password)
+    const passwordMatch = await bcrypt.compare(data.password, user.passwordHash)
     if (!passwordMatch) {
       const response = {
         type: 'login',
@@ -325,8 +321,7 @@ async function onRegister(ws, data) {
     const newUser = await prisma.player.create({
       data: {
         username: data.username,
-        password: hashedPassword,
-        balance: 1000,
+        passwordHash: hashedPassword,
         createdOn: new Date(),
         lastSeen: new Date()
       }
@@ -489,83 +484,7 @@ async function onRefreshToken(ws, data) {
 }
 
 
-async function onJoinTable(ws, data) {
-  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
-    logger.logUserAction('table_join_request', userId, { userId });
-    
-    const { PrismaClient } = require('@prisma/client')
-    const prisma = new PrismaClient()
-    
-    // Get user data
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    })
-    
-    if (!user) {
-      sendMessage(userId, 'tableJoinResult', {
-        success: false,
-        message: 'User not found'
-      });
-      await prisma.$disconnect()
-      return
-    }
-    
-    // Register player connection for broadcasting
-    gameManager.registerPlayerConnection(userId, ws);
-    
-    // Add player to table using GameManager (defaults to blackjack multiplayer)
-    const result = gameManager.addPlayerToTable(userId, user.username, user.balance, 'blackjack', 'multiplayer')
-    
-    if (result.success) {
-      sendMessage(userId, 'tableJoinResult', {
-        success: true,
-        tableId: result.table.getId(),
-        rejoined: result.rejoined,
-        tableState: result.table.getTableState()
-      });
-      logger.logUserAction('table_joined', userId, { userId, username: user.username, tableId: result.table.getId() });
-    } else {
-      sendMessage(userId, 'tableJoinResult', {
-        success: false,
-        message: result.error
-      });
-    }
-    
-    await prisma.$disconnect()
-  });
-}
 
-async function onLeaveTable(ws, data) {
-  return handleAuthenticatedMessage(ws, data, async (ws, data, userId) => {
-    logger.logUserAction('table_leave_request', userId, { userId });
-    
-    const { PrismaClient } = require('@prisma/client')
-    const prisma = new PrismaClient()
-    
-    // Get user data for logging
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    })
-    
-    // Remove player from table using GameManager
-    const result = gameManager.removePlayerFromTable(userId)
-    
-    if (result.success) {
-      sendMessage(userId, 'tableLeaveResult', {
-        success: true,
-        message: 'Successfully left table'
-      });
-      logger.logUserAction('table_left', userId, { userId, username: user?.username });
-    } else {
-      sendMessage(userId, 'tableLeaveResult', {
-        success: false,
-        message: result.error || 'Failed to leave table'
-      });
-    }
-    
-    await prisma.$disconnect()
-  });
-}
 
 function onMessage(ws, message, connectionUserId) {
   logger.logWebSocketEvent('message_received', null, { action: 'message_processing' });

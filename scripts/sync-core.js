@@ -5,6 +5,11 @@ const path = require('path');
 
 // Core file mappings - source to destination
 const coreFileMap = {
+  // Core shared constants and utilities
+  'core/core.js': [
+    'frontend/core/core.js',
+    'backend/src/core/core.js'
+  ],
   // Text files - universal across all games
   'core/text.js': [
     'frontend/shared/text.js',
