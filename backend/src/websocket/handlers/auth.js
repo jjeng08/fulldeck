@@ -76,7 +76,6 @@ async function onLogin(ws, data) {
         }
       };
       ws.send(JSON.stringify(response));
-      await prisma.$disconnect();
       return;
     }
     
@@ -91,7 +90,6 @@ async function onLogin(ws, data) {
         }
       };
       ws.send(JSON.stringify(response));
-      await prisma.$disconnect();
       return;
     }
     
@@ -156,7 +154,6 @@ async function onRegister(ws, data) {
         }
       };
       ws.send(JSON.stringify(response));
-      await prisma.$disconnect();
       return;
     }
     
@@ -170,7 +167,6 @@ async function onRegister(ws, data) {
         }
       };
       ws.send(JSON.stringify(response));
-      await prisma.$disconnect();
       return;
     }
     

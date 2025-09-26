@@ -112,8 +112,6 @@ async function onCreditAccount(req, res) {
       error: 'Failed to credit account',
       message: error.message
     })
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
@@ -170,8 +168,6 @@ async function onDebitAccount(req, res) {
       error: 'Failed to debit account',
       message: error.message
     })
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
@@ -202,8 +198,6 @@ async function onGetBalance(req, res) {
       error: 'Failed to get balance',
       message: error.message
     })
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
@@ -238,8 +232,6 @@ async function onGetPlayer(req, res) {
       error: 'Failed to get player',
       message: error.message
     })
-  } finally {
-    await prisma.$disconnect()
   }
 }
 

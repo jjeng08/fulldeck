@@ -1,5 +1,3 @@
-const { PrismaClient } = require('@prisma/client');
-
 class PokerPlayer {
   constructor(userId, username, balance, status = 'active') {
     this.userId = userId;

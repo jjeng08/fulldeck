@@ -1,12 +1,22 @@
-// HARDCODED DATABASE CONNECTION - NO MORE ENVIRONMENT BULLSHIT
-process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5434/fulldeck_dev?schema=dev';
+const { loadEnvironmentConfig } = require('../../database/environment');
+const config = loadEnvironmentConfig();
 
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const logger = require('./logger');
 const { GAME_TYPES, getGameTypeByName } = require('../core/core');
 
-const prisma = new PrismaClient();
+// Singleton Prisma client
+let prisma = null;
+
+// Initialize database connection
+const initialize = () => {
+  if (!prisma) {
+    prisma = new PrismaClient();
+    logger.logInfo('Database connection initialized via DBUtils');
+  }
+  return prisma;
+};
 
 // Game ID generation - abstracted for all game types
 const generateGameId = (gameType) => {
@@ -67,10 +77,6 @@ const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) =>
     });
     
     logger.logUserAction('balance_updated', userId, { newBalance, reason, metadata });
-    
-    // Send balance update through centralized message system
-    const { sendMessage } = require('../websocket/server');
-    sendMessage(userId, 'balance', { balance: updatedPlayer.balance });
     
     return updatedPlayer;
   } catch (error) {
@@ -159,8 +165,23 @@ const logToAccountsLogs = async (userId, metadata = {}) => {
   }
 };
 
-// Blackjack-specific game action logging with pre-generated ID
-const logToBlackjackLogs = async (actionId, gameId, userId, action, result, handIndex, handValue, betAmount, cards, dealerShowing, totalHands, gameState = null) => {
+// Blackjack-specific game action logging with options object
+const logToBlackjackLogs = async (options) => {
+  const {
+    actionId,
+    gameId,
+    userId,
+    action,
+    result,
+    handIndex = 0,
+    handValue = 0,
+    betAmount = 0,
+    cards = '',
+    dealerShowing = null,
+    totalHands = 1,
+    gameState = null
+  } = options;
+
   try {
     const blackjackLog = await prisma.blackjackLogs.create({
       data: {
@@ -175,7 +196,7 @@ const logToBlackjackLogs = async (actionId, gameId, userId, action, result, hand
         cards,
         dealerShowing: dealerShowing || null,
         totalHands,
-        gameState: gameState || undefined // Only include if provided
+        gameState: gameState || undefined
       }
     });
     
@@ -209,14 +230,19 @@ const logToBlackjackLogs = async (actionId, gameId, userId, action, result, hand
 // Cleanup function
 const disconnect = async () => {
   try {
-    await prisma.$disconnect();
-    logger.logInfo('Database connection closed');
+    if (prisma) {
+      await prisma.$disconnect();
+      logger.logInfo('Database connection closed');
+    } else {
+      logger.logInfo('No database connection to close');
+    }
   } catch (error) {
     logger.logError(error, { action: 'database_disconnect' });
   }
 };
 
 module.exports = {
+  initialize,
   prisma,
   creditPlayerAccount,
   debitPlayerAccount,

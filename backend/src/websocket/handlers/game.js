@@ -1,6 +1,7 @@
 const logger = require('../../shared/logger');
 const { getAllGames } = require('../../shared/gameConfigs');
 const { sendMessage } = require('../server');
+const { prisma } = require('../../shared/DBUtils');
 
 // Helper function to send available games - use direct WebSocket to avoid circular dependency
 function sendAvailableGames(ws, userId) {
@@ -23,9 +24,6 @@ function sendAvailableGames(ws, userId) {
 // Helper function to send current balance for a user
 async function sendBalanceUpdate(userId) {
   try {
-    const { PrismaClient } = require('@prisma/client');
-    const { prisma } = require('../../shared/DBUtils');
-    
     const user = await prisma.player.findUnique({
       where: { id: userId }
     });
@@ -38,8 +36,6 @@ async function sendBalanceUpdate(userId) {
     } else {
       logger.logError(new Error('User not found for balance update'), { userId });
     }
-    
-    await prisma.$disconnect();
   } catch (error) {
     logger.logError(error, { userId, action: 'send_balance_update' });
   }

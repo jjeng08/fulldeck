@@ -1,7 +1,6 @@
 const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
-const { PrismaClient } = require('@prisma/client')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
 
@@ -255,7 +254,6 @@ class HttpServer {
         this.server.close(resolve)
       })
     }
-    await this.prisma.$disconnect()
     console.log('HTTP server closed')
   }
 }

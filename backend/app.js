@@ -2,17 +2,17 @@
 const { loadEnvironmentConfig } = require('./database/environment')
 const config = loadEnvironmentConfig()
 
-// Initialize database connection
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+// Initialize database connection via DBUtils
+const DBUtils = require('./src/shared/DBUtils')
+DBUtils.initialize()
 
 // Now import everything else after environment is loaded
 const { WebSocketServer } = require('./src/websocket/server')
 const HttpServer = require('./src/http/server')
 
-// Start both servers with database connection
-const wsServer = new WebSocketServer(config.websocketPort, prisma)
-const httpServer = new HttpServer(config.httpPort, config.corsOrigin, prisma)
+// Start both servers (no database parameters needed)
+const wsServer = new WebSocketServer(config.websocketPort)
+const httpServer = new HttpServer(config.httpPort, config.corsOrigin)
 
 httpServer.start()
 
@@ -23,7 +23,7 @@ process.on('SIGINT', async () => {
   console.log('Shutting down servers...')
   
   // Close database connection
-  await prisma.$disconnect()
+  await DBUtils.disconnect()
   console.log('Database connection closed')
   
   // Close WebSocket server
