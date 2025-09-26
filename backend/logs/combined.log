@@ -746,3 +746,13 @@
 {"category":"websocket","environment":"dev","event":"handler_called","handlerName":"onAvailableGames","level":"debug","message":"WebSocket event","messageType":"availableGames","service":"fulldeck-backend","timestamp":"2025-09-26T18:15:51.951Z","userId":null}
 {"count":3,"environment":"dev","level":"debug","message":"All games requested","service":"fulldeck-backend","timestamp":"2025-09-26T18:15:51.952Z"}
 {"balance":0,"environment":"dev","level":"info","message":"Sending balance update","service":"fulldeck-backend","timestamp":"2025-09-26T18:15:51.954Z","userId":"cmg15wqwf00001488rjwlbuqx"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T19:16:30.964Z"}
+{"environment":"dev","level":"info","message":"Database connection closed","service":"fulldeck-backend","timestamp":"2025-09-26T19:25:50.714Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T19:26:01.721Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T19:39:09.906Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T19:42:12.906Z"}
+{"environment":"dev","level":"info","message":"Database connection closed","service":"fulldeck-backend","timestamp":"2025-09-26T19:44:33.282Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T19:50:39.604Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T20:00:38.297Z"}
+{"environment":"dev","level":"info","message":"Database connection closed","service":"fulldeck-backend","timestamp":"2025-09-26T20:01:23.690Z"}
+{"environment":"dev","level":"info","message":"Database connection initialized via DBUtils","service":"fulldeck-backend","timestamp":"2025-09-26T20:01:27.475Z"}

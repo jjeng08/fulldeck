@@ -19,7 +19,6 @@ class WebSocketService {
     }
     // console.log('Connecting to WebSocket URL:', url);
     try {
-      // Store the URL for reconnections
       this.currentUrl = url
       
       // Connect without token - auth will be per-message

@@ -1,5 +1,5 @@
 // Load environment configuration FIRST before any other imports
-const { loadEnvironmentConfig } = require('./database/environment')
+const { loadEnvironmentConfig } = require('./core/environments')
 const config = loadEnvironmentConfig()
 
 // Initialize database connection via DBUtils

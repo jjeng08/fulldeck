@@ -28,6 +28,7 @@ const validateToken = async (token) => {
       balance: user.balance
     }
   } catch (error) {
+    logger.logError(error, { type: 'token_validation', action: 'validate_token_failed', token: token.substring(0, 20) + '...' });
     return { valid: false, error: error.message }
   }
 };

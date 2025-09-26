@@ -1,4 +1,4 @@
-const { loadEnvironmentConfig } = require('../database/environment');
+const { loadEnvironmentConfig } = require('../core/environments');
 const config = loadEnvironmentConfig();
 
 const { PrismaClient } = require('@prisma/client');

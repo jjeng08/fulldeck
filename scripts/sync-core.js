@@ -45,14 +45,14 @@ function copyFile(source, destination) {
     // For frontend, keep only ES6 exports
     if (sourceContent.includes('// CommonJS export for backend')) {
       destinationContent = sourceContent
-        .replace(/\/\/ CommonJS export for backend[\s\S]*?module\.exports = \{ text \};/g, '')
+        .replace(/\/\/ CommonJS export for backend[\s\S]*?module\.exports = \{[^}]*\};/g, '')
         .trim();
     }
   } else if (destination.includes('backend/')) {
     // For backend, keep only CommonJS exports
     if (sourceContent.includes('// ES6 export for frontend')) {
       destinationContent = sourceContent
-        .replace(/\/\/ ES6 export for frontend[\s\S]*?export \{ text \};/g, '')
+        .replace(/\/\/ ES6 export for frontend[\s\S]*?export \{[^}]*\};/g, '')
         .replace(/\/\/ CommonJS export for backend\s*/g, '')
         .trim();
     }

@@ -61,9 +61,31 @@ async function setup() {
     } catch (error) {
       // Container doesn't exist, create it
       console.log(`Creating container ${containerName}`);
-      await runCommand('docker-compose', ['up', '-d', serviceName], { 
-        cwd: 'backend/database' 
-      });
+      
+      // Create container with exact name using docker run
+      const ports = {
+        'postgres-dev': '5433',
+        'postgres-qa': '5434', 
+        'postgres-stage': '5435',
+        'postgres-prod': '5432'
+      };
+      const databases = {
+        'postgres-dev': 'fulldeck_dev',
+        'postgres-qa': 'fulldeck_qa',
+        'postgres-stage': 'fulldeck_stage', 
+        'postgres-prod': 'fulldeck_prod'
+      };
+      
+      await runCommand('docker', [
+        'run', '-d',
+        '--name', containerName,
+        '-p', `${ports[serviceName]}:5432`,
+        '-e', `POSTGRES_DB=${databases[serviceName]}`,
+        '-e', 'POSTGRES_USER=fulldeck_user',
+        '-e', 'POSTGRES_PASSWORD=fulldeck_password',
+        '-v', `fulldeck_postgres_${env}_data:/var/lib/postgresql/data`,
+        'postgres:15-alpine'
+      ]);
       
       // Wait for new container to initialize
       console.log('Waiting for database to initialize...');
@@ -77,7 +99,7 @@ async function setup() {
     
     // Push schema to database (using same approach as working manual command)
     const nodeEnv = env === 'dev' ? 'development' : env;
-    const envConfig = require('../backend/database/environment');
+    const envConfig = require('../backend/core/environments');
     const databaseUrl = envConfig.buildDatabaseUrl(nodeEnv);
     
     await runCommand('npx', ['prisma', 'db', 'push', '--schema=database/schema.prisma'], {

@@ -211,7 +211,6 @@ export function AppProvider({ children }) {
   const onConnected = (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
     setConnected(true);
-    
     // Only load saved token if we're not already authenticated
     if (!authState.user && !authState.authToken) {
       loadSavedToken();
@@ -272,8 +271,6 @@ export function AppProvider({ children }) {
   useEffect(() => {
     // Initialize WebSocket connection and set up message handlers
     try {
-      WebSocketService.connect();
-      
       // Set up incoming message handlers
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
@@ -283,7 +280,7 @@ export function AppProvider({ children }) {
       WebSocketService.onMessage('register', onRegister);
       WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
       WebSocketService.onMessage('tokenValidated', onTokenValidated);
-      
+      WebSocketService.connect();
     } catch (error) {
       logger.logError(error, { type: 'websocket_error', action: 'initialization_failed' });
       setConnected(false);
@@ -311,7 +308,6 @@ export function AppProvider({ children }) {
     try {
       const savedToken = await AsyncStorage.getItem('authToken');
       const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
-      
       if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {
         const savedUser = await AsyncStorage.getItem('userData');
         if (savedUser) {
@@ -319,7 +315,6 @@ export function AppProvider({ children }) {
           
           // VALIDATE FIRST - don't set any auth state until validation passes
           setAuthState(prev => ({ ...prev, status: 'validating' }));
-          
           // Send validation request
           WebSocketService.sendMessage('validateToken', { token: savedToken });
           

@@ -65,27 +65,43 @@ killProcessOnPort(3000); // Frontend port
 let frontendProcess = null;
 
 // Start backend first
-const backendProcess = spawn('npm', ['run', backendScript], {
+const isWindows = process.platform === 'win32';
+const backendProcess = spawn(isWindows ? 'npm.cmd' : 'npm', ['run', backendScript], {
   stdio: 'pipe',
   cwd: 'backend',
-  env: { ...process.env, NODE_ENV: env }
+  env: { ...process.env, NODE_ENV: env },
+  shell: isWindows
 });
+
+// Track which servers are ready
+let wsReady = false;
+let httpReady = false;
 
 // Monitor backend output for readiness
 backendProcess.stdout.on('data', (data) => {
   process.stdout.write(data);
+  const output = data.toString();
   
-  // Check if both servers are running
-  if (data.toString().includes('FullDeck WebSocket server is running') && 
-      data.toString().includes('FullDeck HTTP API server is running')) {
-    
+  // Check if WebSocket server is ready
+  if (output.includes('FullDeck WebSocket server is running')) {
+    wsReady = true;
+  }
+  
+  // Check if HTTP server is ready
+  if (output.includes('FullDeck HTTP API server is running')) {
+    httpReady = true;
+  }
+  
+  // Start frontend when both are ready
+  if (wsReady && httpReady && !frontendProcess) {
     console.log('Backend ready, starting frontend...');
     
     // Start frontend once backend is ready
-    frontendProcess = spawn('npm', ['run', 'web'], {
+    frontendProcess = spawn(isWindows ? 'npm.cmd' : 'npm', ['run', 'web'], {
       stdio: 'inherit',
       cwd: 'frontend', 
-      env: { ...process.env, NODE_ENV: env }
+      env: { ...process.env, NODE_ENV: env },
+      shell: isWindows
     });
     
     frontendProcess.on('exit', () => process.exit());

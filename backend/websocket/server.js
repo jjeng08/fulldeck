@@ -1,7 +1,7 @@
 const WebSocket = require('ws')
 const jwt = require('jsonwebtoken')
 const url = require('url')
-const { getEnvironmentConfig } = require('../database/environment')
+const { getEnvironmentConfig } = require('../core/environments')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'blackjack-secret-key'
 const config = getEnvironmentConfig()
@@ -75,7 +75,6 @@ class WebSocketServer {
       ws.connectionId = connectionId
       
       ws.on('message', (message) => {
-        console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
         if (connection && this.messageHandler) {
           this.messageHandler(ws, message.toString(), connection.userId)
