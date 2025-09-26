@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: fulldeck-postgres-dev
+    environment:
+      POSTGRES_DB: fulldeck_dev
+      POSTGRES_USER: fulldeck_user
+      POSTGRES_PASSWORD: fulldeck_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - fulldeck-network
+
+  postgres-qa:
+    image: postgres:15-alpine
+    container_name: fulldeck-postgres-qa
+    environment:
+      POSTGRES_DB: fulldeck_qa
+      POSTGRES_USER: fulldeck_user
+      POSTGRES_PASSWORD: fulldeck_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_qa_data:/var/lib/postgresql/data
+    networks:
+      - fulldeck-network
+
+  postgres-stage:
+    image: postgres:15-alpine
+    container_name: fulldeck-postgres-stage
+    environment:
+      POSTGRES_DB: fulldeck_stage
+      POSTGRES_USER: fulldeck_user
+      POSTGRES_PASSWORD: fulldeck_password
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_stage_data:/var/lib/postgresql/data
+    networks:
+      - fulldeck-network
+
+  postgres-prod:
+    image: postgres:15-alpine
+    container_name: fulldeck-postgres-prod
+    environment:
+      POSTGRES_DB: fulldeck_prod
+      POSTGRES_USER: fulldeck_user
+      POSTGRES_PASSWORD: fulldeck_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - fulldeck-network
+
+volumes:
+  postgres_dev_data:
+  postgres_qa_data:
+  postgres_stage_data:
+  postgres_prod_data:
+
+networks:
+  fulldeck-network:
+    driver: bridge

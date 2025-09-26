@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken')
-const { PrismaClient } = require('@prisma/client')
+const { prisma } = require('../shared/DBUtils')
 const logger = require('../shared/logger')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
@@ -74,7 +74,6 @@ async function onFrontendLogs(req, res) {
 }
 
 async function onCreditAccount(req, res) {
-  const prisma = new PrismaClient()
   
   try {
     const { playerId, amount, source } = req.body
@@ -119,7 +118,6 @@ async function onCreditAccount(req, res) {
 }
 
 async function onDebitAccount(req, res) {
-  const prisma = new PrismaClient()
   
   try {
     const { playerId, amount, source } = req.body
@@ -178,7 +176,6 @@ async function onDebitAccount(req, res) {
 }
 
 async function onGetBalance(req, res) {
-  const prisma = new PrismaClient()
   
   try {
     const { playerId } = req.params
@@ -211,7 +208,6 @@ async function onGetBalance(req, res) {
 }
 
 async function onGetPlayer(req, res) {
-  const prisma = new PrismaClient()
   
   try {
     const { playerId } = req.params

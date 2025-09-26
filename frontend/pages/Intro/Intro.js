@@ -4,7 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
-import WebSocketService from 'systems/websocket';
 import { introStyles as s } from './IntroStyles';
 import { text as t } from 'core/text';
 import Button from 'components/Button';
@@ -38,6 +37,8 @@ export default function IntroPage() {
       setErrorMessage('');
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
+      // TODO: REMOVE AFTER TESTING
+      // navigation.navigate('Lobby')
       navigation.navigate('Blackjack', {
         selectedTier: 0,
         tiers: [[100, 200, 500]],

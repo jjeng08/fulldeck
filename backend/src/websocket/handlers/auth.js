@@ -1,11 +1,8 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { PrismaClient } = require('@prisma/client');
 const logger = require('../../shared/logger');
 const { text: t } = require('../../core/text');
-const DBUtils = require('../../shared/DBUtils');
-
-const prisma = new PrismaClient();
+const { prisma } = require('../../shared/DBUtils');
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key';
 
 const validateToken = async (token) => {
@@ -30,23 +27,10 @@ const validateToken = async (token) => {
   }
 };
 
-const { sendMessage } = require('../server');
+// No imports from server to avoid circular dependency
 
-// Helper function to complete authentication process - associates connection and sends response
+// Helper function to complete authentication process - sends response and returns user info
 function completeAuthentication(ws, user, accessToken, refreshToken, responseType) {
-  // Associate this WebSocket connection with the user's ID FIRST
-  const WebSocketServer = require('../server');
-  const wsServer = WebSocketServer.getInstance();
-  if (!wsServer) {
-    throw new Error('WebSocket server not available');
-  }
-  
-  // Ensure association is complete before proceeding
-  const associationSuccess = wsServer.updateConnectionUserId(ws, user.id);
-  if (!associationSuccess) {
-    throw new Error('Failed to associate connection with user');
-  }
-  
   // Send auth response using the SAME message type as the request
   const authResponse = {
     type: responseType,
@@ -70,6 +54,9 @@ function completeAuthentication(ws, user, accessToken, refreshToken, responseTyp
     };
     ws.send(JSON.stringify(balanceMessage));
   }
+  
+  // Return user info so server can associate connection
+  return { userId: user.id, username: user.username };
 }
 
 async function onLogin(ws, data) {
@@ -135,9 +122,9 @@ async function onLogin(ws, data) {
       { expiresIn: '7d' }
     );
     
-    // Complete authentication - associate connection and send response
-    completeAuthentication(ws, user, accessToken, refreshToken, 'login');
-    await prisma.$disconnect();
+    // Complete authentication - send response and get user info
+    const userInfo = completeAuthentication(ws, user, accessToken, refreshToken, 'login');
+    return userInfo; // Return to router so it can associate connection
     
   } catch (error) {
     logger.logError(error, { username: data.username, action: 'login' });
@@ -221,9 +208,9 @@ async function onRegister(ws, data) {
       { expiresIn: '7d' }
     );
     
-    // Complete authentication - associate connection and send response
-    completeAuthentication(ws, newUser, accessToken, refreshToken, 'register');
-    await prisma.$disconnect();
+    // Complete authentication - send response and get user info
+    const userInfo = completeAuthentication(ws, newUser, accessToken, refreshToken, 'register');
+    return userInfo; // Return to router so it can associate connection
     
   } catch (error) {
     logger.logError(error, { username: data.username, action: 'register' });
@@ -282,9 +269,9 @@ async function onRefreshToken(ws, data) {
       { expiresIn: '1h' }
     );
     
-    // Complete authentication - associate connection and send response
-    completeAuthentication(ws, user, newAccessToken, data.refreshToken, 'tokenRefreshed');
-    await prisma.$disconnect();
+    // Complete authentication - send response and get user info
+    const userInfo = completeAuthentication(ws, user, newAccessToken, data.refreshToken, 'tokenRefreshed');
+    return userInfo; // Return to router so it can associate connection
     
   } catch (error) {
     logger.logError(error, { userId: user?.id || decoded?.userId || 'unknown', action: 'token_refresh' });
@@ -304,7 +291,12 @@ async function onValidateToken(ws, data, userId) {
   
   const validation = await validateToken(data.token);
   
-  sendMessage(userId, 'tokenValidated', validation);
+  // Send directly through WebSocket since user might not exist
+  const response = {
+    type: 'tokenValidated',
+    data: validation
+  };
+  ws.send(JSON.stringify(response));
 }
 
 async function onLogout(ws, data, userId) {
@@ -312,18 +304,26 @@ async function onLogout(ws, data, userId) {
   
   try {
     // Clear user session (if any session management needed)
-    // For now, just send success response
-    sendMessage(userId, 'logout', {
-      success: true,
-      message: 'Logged out successfully'
-    });
+    // Send success response directly through WebSocket to avoid circular dependency
+    const response = {
+      type: 'logout',
+      data: {
+        success: true,
+        message: 'Logged out successfully'
+      }
+    };
+    ws.send(JSON.stringify(response));
     logger.logAuthEvent('logout_completed', userId, { userId });
   } catch (error) {
     logger.logError(error, { userId, action: 'logout' });
-    sendMessage(userId, 'logout', {
-      success: false,
-      message: 'Logout failed'
-    });
+    const response = {
+      type: 'logout',
+      data: {
+        success: false,
+        message: 'Logout failed'
+      }
+    };
+    ws.send(JSON.stringify(response));
   }
 }
 

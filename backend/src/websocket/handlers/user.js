@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const logger = require('../../shared/logger');
 
-const prisma = new PrismaClient();
+const { prisma } = require('../../shared/DBUtils');
 
 const { sendMessage } = require('../server');
 

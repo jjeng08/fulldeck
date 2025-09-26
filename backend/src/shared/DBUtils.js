@@ -1,3 +1,6 @@
+// HARDCODED DATABASE CONNECTION - NO MORE ENVIRONMENT BULLSHIT
+process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5434/fulldeck_dev?schema=dev';
+
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const logger = require('./logger');
@@ -214,6 +217,7 @@ const disconnect = async () => {
 };
 
 module.exports = {
+  prisma,
   creditPlayerAccount,
   debitPlayerAccount,
   disconnect,

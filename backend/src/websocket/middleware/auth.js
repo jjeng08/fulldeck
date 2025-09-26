@@ -17,10 +17,10 @@ function extractUserIdFromToken(token) {
 }
 
 // Helper function for authenticated messages - extracts userId from JWT and calls handler
-async function handleAuthenticatedMessage(ws, data, handler) {
+async function handleAuthenticatedMessage(ws, data, handler, wsServer) {
   try {
     const userId = extractUserIdFromToken(data.token);
-    return await handler(ws, data, userId);
+    return await handler(ws, data, userId, wsServer);
   } catch (error) {
     logger.logError(error, { action: 'authenticated_message' });
     ws.send(JSON.stringify({
@@ -31,8 +31,15 @@ async function handleAuthenticatedMessage(ws, data, handler) {
 }
 
 // Helper function for unauthenticated messages - just calls handler directly
-async function handleUnauthenticatedMessage(ws, data, handler) {
-  return await handler(ws, data);
+async function handleUnauthenticatedMessage(ws, data, handler, wsServer) {
+  const result = await handler(ws, data);
+  
+  // If handler returned user info (successful auth), associate the connection
+  if (result && result.userId && wsServer) {
+    wsServer.updateConnectionUserId(ws, result.userId);
+  }
+  
+  return result;
 }
 
 module.exports = {

@@ -42,19 +42,21 @@ export function AppProvider({ children }) {
   const pendingOperations = React.useRef({
     refresh: null
   });
-  
 
   useEffect(() => {
-    // Load saved token on app startup
-    loadSavedToken();
-  }, []);
-
-  useEffect(() => {
-    // When both connected and authenticated, request fresh data
-    if (connected && authState.user && authState.authToken) {
-      sendMessage('availableGames');
+    // When WebSocket connects, validate cached token if we have one
+    if (connected && authState.user && authState.authToken && authState.status !== 'validating') {
+      setAuthState(prev => ({ ...prev, status: 'validating' }));
+      WebSocketService.sendMessage('validateToken', { token: authState.authToken });
     }
   }, [connected, authState.user, authState.authToken]);
+
+  useEffect(() => {
+    // Only request data AFTER token is validated (status is 'idle', not 'validating')
+    if (connected && authState.user && authState.authToken && authState.status === 'idle') {
+      sendMessage('availableGames');
+    }
+  }, [connected, authState.user, authState.authToken, authState.status]);
 
 
   const initiateLogin = (username, password) => {
@@ -180,11 +182,40 @@ export function AppProvider({ children }) {
     }
   };
 
+  const onTokenValidated = async (data) => {
+    const validationData = pendingOperations.current.validationData;
+    
+    if (data.valid && validationData) {
+      // Token is ALREADY VALIDATED - just proceed with login
+      setAuthState(prev => ({
+        ...prev,
+        user: validationData.userData,
+        authToken: validationData.token,
+        refreshToken: validationData.refreshToken,
+        status: 'idle'
+      }));
+      console.log(`Welcome back, ${validationData.userData.username}!`);
+      sendMessage('availableGames');
+    } else if (!data.valid) {
+      // Only clear auth if this was a startup validation that failed
+      if (validationData) {
+        console.log('Cached token is invalid. Please login again.', data.error);
+        await clearAuthData();
+      }
+    }
+    
+    // Clear validation data
+    pendingOperations.current.validationData = null;
+  };
+
   const onConnected = (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
     setConnected(true);
     
-    // Initialize test logger now that WebSocket is connected
+    // Only load saved token if we're not already authenticated
+    if (!authState.user && !authState.authToken) {
+      loadSavedToken();
+    }
   };
 
   // ONLY place playerBalance is updated
@@ -251,6 +282,7 @@ export function AppProvider({ children }) {
       WebSocketService.onMessage('logout', onLogout);
       WebSocketService.onMessage('register', onRegister);
       WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
+      WebSocketService.onMessage('tokenValidated', onTokenValidated);
       
     } catch (error) {
       logger.logError(error, { type: 'websocket_error', action: 'initialization_failed' });
@@ -267,6 +299,7 @@ export function AppProvider({ children }) {
         WebSocketService.removeMessageHandler('logout');
         WebSocketService.removeMessageHandler('register');
         WebSocketService.removeMessageHandler('tokenRefreshed');
+        WebSocketService.removeMessageHandler('tokenValidated');
         WebSocketService.disconnect();
       } catch (error) {
         logger.logError(error, { type: 'websocket_error', action: 'disconnect_failed' });
@@ -284,18 +317,26 @@ export function AppProvider({ children }) {
         if (savedUser) {
           const userData = JSON.parse(savedUser);
           
-          setAuthState(prev => ({
-            ...prev,
-            user: userData,
-            authToken: savedToken,
-            refreshToken: savedRefreshToken
-          }));
+          // VALIDATE FIRST - don't set any auth state until validation passes
+          setAuthState(prev => ({ ...prev, status: 'validating' }));
           
-          console.log(`Welcome back, ${userData.username}!`);
+          // Send validation request
+          WebSocketService.sendMessage('validateToken', { token: savedToken });
+          
+          // Store credentials temporarily for onTokenValidated to use
+          pendingOperations.current.validationData = {
+            token: savedToken,
+            refreshToken: savedRefreshToken,
+            userData: userData
+          };
         }
+      } else {
+        // No saved credentials, stay on intro
+        setAuthState(prev => ({ ...prev, status: 'idle' }));
       }
     } catch (error) {
       logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
+      setAuthState(prev => ({ ...prev, status: 'idle' }));
     } finally {
       setIsLoadingAuth(false);
     }
@@ -352,7 +393,7 @@ export function AppProvider({ children }) {
           messageQueue: []
         });
         console.log('Session expired. Please login again.');
-        clearAuthData();
+        setAuthState(prev => ({ ...prev, ...initialAuthState }));
         reject(new Error('No refresh token available'));
       }
     });

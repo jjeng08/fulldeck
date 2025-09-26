@@ -10,7 +10,8 @@ class HttpServer {
     this.app = express()
     this.port = port
     this.corsOrigin = corsOrigin
-    this.prisma = new PrismaClient()
+    const { prisma } = require('../shared/DBUtils');
+    this.prisma = prisma
     this.setupMiddleware()
     this.setupRoutes()
   }

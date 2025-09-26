@@ -43,7 +43,7 @@ const unauthenticatedMessages = [
   'refreshToken'
 ];
 
-function routeMessage(ws, message, connectionUserId) {
+function routeMessage(ws, message, connectionUserId, wsServer) {
   logger.logWebSocketEvent('message_received', null, { action: 'message_processing' });
   
   try {
@@ -60,9 +60,9 @@ function routeMessage(ws, message, connectionUserId) {
       });
       
       if (unauthenticatedMessages.includes(type)) {
-        handleUnauthenticatedMessage(ws, data, messageRoutes[type]);
+        handleUnauthenticatedMessage(ws, data, messageRoutes[type], wsServer);
       } else {
-        handleAuthenticatedMessage(ws, data, messageRoutes[type]);
+        handleAuthenticatedMessage(ws, data, messageRoutes[type], wsServer);
       }
     } 
     // Check for handler in blackjack messages
@@ -71,7 +71,7 @@ function routeMessage(ws, message, connectionUserId) {
         messageType: type, 
         handlerName: blackjackMessages[type].name 
       });
-      handleAuthenticatedMessage(ws, data, blackjackMessages[type]);
+      handleAuthenticatedMessage(ws, data, blackjackMessages[type], wsServer);
     }
     else {
       logger.logWebSocketEvent('unknown_message_type', null, { messageType: type });

@@ -1,28 +1,20 @@
 const logger = require('../../shared/logger');
 const { getAllGames } = require('../../shared/gameConfigs');
-
 const { sendMessage } = require('../server');
 
-// Helper function to send available games
+// Helper function to send available games - use direct WebSocket to avoid circular dependency
 function sendAvailableGames(ws, userId) {
   try {
     const games = getAllGames();
     
-    // Use centralized sendMessage if userId is available (authenticated users)
-    if (userId) {
-      sendMessage(userId, 'availableGames', {
+    // Send directly through WebSocket to avoid circular dependency
+    const response = {
+      type: 'availableGames',
+      data: {
         availableGames: games
-      });
-    } else {
-      // For unauthenticated users, use direct ws.send
-      const gamesResponse = {
-        type: 'availableGames',
-        data: {
-          availableGames: games
-        }
-      };
-      ws.send(JSON.stringify(gamesResponse));
-    }
+      }
+    };
+    ws.send(JSON.stringify(response));
   } catch (error) {
     logger.logError(error, { action: 'send_available_games' });
   }
@@ -32,7 +24,7 @@ function sendAvailableGames(ws, userId) {
 async function sendBalanceUpdate(userId) {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const { prisma } = require('../../shared/DBUtils');
     
     const user = await prisma.player.findUnique({
       where: { id: userId }
@@ -55,7 +47,7 @@ async function sendBalanceUpdate(userId) {
 
 async function onAvailableGames(ws, data, userId) {
   // Associate this connection with the user (in case it's not already associated)
-  const WebSocketServer = require('../server');
+  const { WebSocketServer } = require('../server');
   const wsServer = WebSocketServer.getInstance();
   if (wsServer) {
     wsServer.updateConnectionUserId(ws, userId);

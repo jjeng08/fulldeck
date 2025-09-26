@@ -73,7 +73,7 @@ class WebSocketServer {
         console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
         if (connection) {
-          routeMessage(ws, message.toString(), connection.userId)
+          routeMessage(ws, message.toString(), connection.userId, this)
         } else {
           console.log('NO CONNECTION FOUND FOR ID:', connectionId)
         }
@@ -146,7 +146,17 @@ const sendMessage = (userId, type, data = {}) => {
   }
 };
 
+// Helper function for updating connection userId - exported for use throughout backend
+const updateConnectionUserId = (ws, userId) => {
+  const instance = WebSocketServer.getInstance();
+  if (instance) {
+    return instance.updateConnectionUserId(ws, userId);
+  }
+  return false;
+};
+
 module.exports = {
   WebSocketServer,
-  sendMessage
+  sendMessage,
+  updateConnectionUserId
 };
