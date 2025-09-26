@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
-    "baseUrl": "./src",
+    "baseUrl": ".",
     "paths": {
       "*": ["*"],
       "shared/*": ["shared/*"],
       "games/*": ["games/*"],
       "websocket/*": ["websocket/*"],
-      "http/*": ["http/*"]
+      "http/*": ["http/*"],
+      "core/*": ["core/*"]
     },
     "target": "es2020",
     "module": "commonjs",
@@ -15,11 +16,11 @@
     "esModuleInterop": true
   },
   "include": [
-    "src/**/*"
+    "./**/*"
   ],
   "exclude": [
     "node_modules",
     "logs",
-    "prisma/migrations"
+    "database/migrations"
   ]
 }

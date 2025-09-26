@@ -3,12 +3,12 @@ const { loadEnvironmentConfig } = require('./database/environment')
 const config = loadEnvironmentConfig()
 
 // Initialize database connection via DBUtils
-const DBUtils = require('./src/shared/DBUtils')
+const DBUtils = require('./shared/DBUtils')
 DBUtils.initialize()
 
 // Now import everything else after environment is loaded
-const { WebSocketServer } = require('./src/websocket/server')
-const HttpServer = require('./src/http/server')
+const { WebSocketServer } = require('./websocket/server')
+const HttpServer = require('./http/server')
 
 // Start both servers (no database parameters needed)
 const wsServer = new WebSocketServer(config.websocketPort)
