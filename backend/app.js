@@ -9,10 +9,14 @@ DBUtils.initialize()
 // Now import everything else after environment is loaded
 const { WebSocketServer } = require('./websocket/server')
 const HttpServer = require('./http/server')
+const dispatcher = require('./websocket/dispatcher')
 
 // Start both servers (no database parameters needed)
 const wsServer = new WebSocketServer(config.websocketPort)
 const httpServer = new HttpServer(config.httpPort, config.corsOrigin)
+
+// Initialize message dispatcher after server is created
+dispatcher.initialize()
 
 httpServer.start()
 

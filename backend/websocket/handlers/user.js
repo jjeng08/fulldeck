@@ -1,15 +1,11 @@
 const logger = require('../../shared/logger');
-
-const { prisma } = require('../../shared/DBUtils');
-
+const DBUtils = require('../../shared/DBUtils');
 const { sendMessage } = require('../server');
 
 // Helper function to send current balance for a user
 async function sendBalanceUpdate(userId) {
   try {
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
+    const user = await DBUtils.getPlayerById(userId);
     
     if (user) {
       logger.logInfo('Sending balance update', { userId, balance: user.balance });
@@ -24,7 +20,7 @@ async function sendBalanceUpdate(userId) {
   }
 }
 
-async function onBalance(ws, data, userId) {
+async function onBalance(data, userId) {
   await sendBalanceUpdate(userId);
 }
 

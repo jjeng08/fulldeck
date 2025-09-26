@@ -2,7 +2,7 @@ const logger = require('../../shared/logger');
 
 
 // Handler for frontend log messages sent via WebSocket
-function onLog(ws, data, userId) {
+function onLog(data, userId) {
   try {
     const { level, type, message, logData } = data;
     

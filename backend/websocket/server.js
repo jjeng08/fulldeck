@@ -1,8 +1,7 @@
 const WebSocket = require('ws')
 const jwt = require('jsonwebtoken')
 const url = require('url')
-const { routeMessage } = require('./router')
-const { getEnvironmentConfig } = require('../core/environments')
+const { getEnvironmentConfig } = require('../database/environment')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'blackjack-secret-key'
 const config = getEnvironmentConfig()
@@ -11,6 +10,7 @@ class WebSocketServer {
   constructor(port = config.websocketPort) {
     this.wss = new WebSocket.Server({ port })
     this.connections = new Map()
+    this.messageHandler = null
     this.setupServer()
     
     // Store singleton instance
@@ -19,6 +19,11 @@ class WebSocketServer {
 
   static getInstance() {
     return WebSocketServer.instance
+  }
+
+  // Set handler for incoming messages
+  gotMessage(handler) {
+    this.messageHandler = handler
   }
 
   // Centralized message sending function
@@ -72,10 +77,10 @@ class WebSocketServer {
       ws.on('message', (message) => {
         console.log('MESSAGE EVENT FIRED!', message.toString());
         const connection = this.connections.get(connectionId)
-        if (connection) {
-          routeMessage(ws, message.toString(), connection.userId, this)
+        if (connection && this.messageHandler) {
+          this.messageHandler(ws, message.toString(), connection.userId)
         } else {
-          console.log('NO CONNECTION FOUND FOR ID:', connectionId)
+          console.log('NO CONNECTION OR HANDLER FOUND FOR ID:', connectionId)
         }
       })
 
@@ -146,6 +151,14 @@ const sendMessage = (userId, type, data = {}) => {
   }
 };
 
+// Helper function for setting message handler - exported for use by dispatcher
+const gotMessage = (handler) => {
+  const instance = WebSocketServer.getInstance();
+  if (instance) {
+    instance.gotMessage(handler);
+  }
+};
+
 // Helper function for updating connection userId - exported for use throughout backend
 const updateConnectionUserId = (ws, userId) => {
   const instance = WebSocketServer.getInstance();
@@ -158,5 +171,6 @@ const updateConnectionUserId = (ws, userId) => {
 module.exports = {
   WebSocketServer,
   sendMessage,
+  gotMessage,
   updateConnectionUserId
 };

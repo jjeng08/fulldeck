@@ -26,8 +26,12 @@ console.log(`Setting up environment: ${env}`);
 
 async function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const process = spawn(command, args, { stdio: 'inherit', ...options });
-    process.on('close', (code) => {
+    // Fix for Windows - use .cmd extension for npm/npx
+    const isWindows = process.platform === 'win32';
+    const actualCommand = (isWindows && (command === 'npm' || command === 'npx')) ? `${command}.cmd` : command;
+    
+    const childProcess = spawn(actualCommand, args, { stdio: 'inherit', shell: isWindows, ...options });
+    childProcess.on('close', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`Command failed with code ${code}`));
     });
@@ -48,20 +52,37 @@ async function setup() {
     // Backend setup
     await runCommand('npm', ['install'], { cwd: 'backend' });
     
-    // Start specific Docker container
-    await runCommand('docker-compose', ['up', '-d', serviceName], { 
-      cwd: 'backend/database' 
-    });
+    // Start specific Docker container (skip if already exists)
+    const containerName = `fulldeck-postgres-${env}`;
+    try {
+      // Check if container exists
+      await runCommand('docker', ['inspect', containerName]);
+      console.log(`Container ${containerName} already exists, skipping creation`);
+    } catch (error) {
+      // Container doesn't exist, create it
+      console.log(`Creating container ${containerName}`);
+      await runCommand('docker-compose', ['up', '-d', serviceName], { 
+        cwd: 'backend/database' 
+      });
+      
+      // Wait for new container to initialize
+      console.log('Waiting for database to initialize...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+    }
     
     // Generate Prisma client
     await runCommand('npx', ['prisma', 'generate', '--schema=database/schema.prisma'], {
       cwd: 'backend'
     });
     
-    // Run migrations
-    await runCommand('npx', ['prisma', 'migrate', 'dev', '--schema=database/schema.prisma'], {
+    // Push schema to database (using same approach as working manual command)
+    const nodeEnv = env === 'dev' ? 'development' : env;
+    const envConfig = require('../backend/database/environment');
+    const databaseUrl = envConfig.buildDatabaseUrl(nodeEnv);
+    
+    await runCommand('npx', ['prisma', 'db', 'push', '--schema=database/schema.prisma'], {
       cwd: 'backend',
-      env: { ...process.env, NODE_ENV: env }
+      env: { ...process.env, NODE_ENV: nodeEnv, DATABASE_URL: databaseUrl }
     });
     
     // Frontend setup  

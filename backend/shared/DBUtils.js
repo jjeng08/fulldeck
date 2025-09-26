@@ -1,4 +1,4 @@
-const { loadEnvironmentConfig } = require('../../database/environment');
+const { loadEnvironmentConfig } = require('../database/environment');
 const config = loadEnvironmentConfig();
 
 const { PrismaClient } = require('@prisma/client');
@@ -81,6 +81,42 @@ const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) =>
     return updatedPlayer;
   } catch (error) {
     logger.logError(error, { userId, newBalance, reason, metadata, action: 'update_player_balance' });
+    throw error;
+  }
+};
+
+// Update player's last seen timestamp
+const updatePlayerLastSeen = async (userId) => {
+  try {
+    const updatedPlayer = await prisma.player.update({
+      where: { id: userId },
+      data: { lastSeen: new Date() }
+    });
+    
+    logger.logUserAction('last_seen_updated', userId, { lastSeen: updatedPlayer.lastSeen });
+    return updatedPlayer;
+  } catch (error) {
+    logger.logError(error, { userId, action: 'update_player_last_seen' });
+    throw error;
+  }
+};
+
+// Create new player account
+const createPlayer = async (playerData) => {
+  try {
+    const newPlayer = await prisma.player.create({
+      data: {
+        username: playerData.username,
+        passwordHash: playerData.passwordHash,
+        createdOn: new Date(),
+        lastSeen: new Date()
+      }
+    });
+    
+    logger.logUserAction('player_created', newPlayer.id, { username: newPlayer.username });
+    return newPlayer;
+  } catch (error) {
+    logger.logError(error, { playerData: { username: playerData.username }, action: 'create_player' });
     throw error;
   }
 };
@@ -243,14 +279,16 @@ const disconnect = async () => {
 
 module.exports = {
   initialize,
-  prisma,
+  // prisma, // ❌ REMOVED - No direct database access allowed
+  createPlayer,
   creditPlayerAccount,
   debitPlayerAccount,
   disconnect,
   generateGameId,
   getPlayerById,
   getPlayerByUsername,
-  logToBlackjackLogs,
   logToAccountsLogs,
-  updatePlayerBalance
+  logToBlackjackLogs,
+  updatePlayerBalance,
+  updatePlayerLastSeen
 };

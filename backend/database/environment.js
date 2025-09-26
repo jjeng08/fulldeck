@@ -52,7 +52,9 @@ const getEnvironmentConfig = (env = 'development') => {
 
 const buildDatabaseUrl = (env = 'development') => {
   const config = ENVIRONMENTS[env] || ENVIRONMENTS.development;
-  return `postgresql://fulldeck_user:fulldeck_password@localhost:${config.databasePort}/fulldeck_${config.schema}`;
+  // Use 127.0.0.1 in Windows/WSL environments, localhost otherwise
+  const host = process.platform === 'win32' || process.env.WSL_DISTRO_NAME ? '127.0.0.1' : 'localhost';
+  return `postgresql://fulldeck_user:fulldeck_password@${host}:${config.databasePort}/fulldeck_${config.schema}`;
 };
 
 function loadEnvironmentConfig() {

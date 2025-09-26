@@ -2,8 +2,13 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const logger = require('../../shared/logger');
 const { text: t } = require('../../core/text');
-const { prisma } = require('../../shared/DBUtils');
+const DBUtils = require('../../shared/DBUtils');
+const { sendMessage } = require('../server');
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key';
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 const validateToken = async (token) => {
   try {
@@ -26,8 +31,6 @@ const validateToken = async (token) => {
     return { valid: false, error: error.message }
   }
 };
-
-// No imports from server to avoid circular dependency
 
 // Helper function to complete authentication process - sends response and returns user info
 function completeAuthentication(ws, user, accessToken, refreshToken, responseType) {
@@ -59,13 +62,16 @@ function completeAuthentication(ws, user, accessToken, refreshToken, responseTyp
   return { userId: user.id, username: user.username };
 }
 
+// ============================================================================
+// PRE-AUTHENTICATION HANDLERS (require direct WebSocket access)
+// These handlers deal with cases where no valid userId exists yet
+// ============================================================================
+
 async function onLogin(ws, data) {
   logger.logAuthEvent('login_attempt', null, { username: data.username });
   try {
     // Find user by username
-    const user = await prisma.player.findUnique({
-      where: { username: data.username }
-    });
+    const user = await DBUtils.getPlayerByUsername(data.username);
     
     if (!user) {
       const response = {
@@ -94,10 +100,7 @@ async function onLogin(ws, data) {
     }
     
     // Update last seen
-    await prisma.player.update({
-      where: { id: user.id },
-      data: { lastSeen: new Date() }
-    });
+    await DBUtils.updatePlayerLastSeen(user.id);
     
     // Generate JWT tokens
     const accessToken = jwt.sign(
@@ -141,9 +144,7 @@ async function onRegister(ws, data) {
   logger.logAuthEvent('registration_attempt', null, { username: data.username });
   try {
     // Check if username already exists
-    const existingUser = await prisma.player.findUnique({
-      where: { username: data.username }
-    });
+    const existingUser = await DBUtils.getPlayerByUsername(data.username);
     
     if (existingUser) {
       const response = {
@@ -174,13 +175,9 @@ async function onRegister(ws, data) {
     const hashedPassword = await bcrypt.hash(data.password, 12);
     
     // Create new user
-    const newUser = await prisma.player.create({
-      data: {
-        username: data.username,
-        passwordHash: hashedPassword,
-        createdOn: new Date(),
-        lastSeen: new Date()
-      }
+    const newUser = await DBUtils.createPlayer({
+      username: data.username,
+      passwordHash: hashedPassword
     });
     
     // Generate JWT tokens
@@ -246,9 +243,7 @@ async function onRefreshToken(ws, data) {
     }
     
     // Verify user still exists
-    user = await prisma.player.findUnique({
-      where: { id: decoded.userId }
-    });
+    user = await DBUtils.getPlayerById(decoded.userId);
     
     if (!user) {
       throw new Error('User not found');
@@ -282,44 +277,35 @@ async function onRefreshToken(ws, data) {
   }
 }
 
-async function onValidateToken(ws, data, userId) {
+// ============================================================================
+// POST-AUTHENTICATION HANDLERS (use sendMessage)
+// These handlers have valid userId from middleware and can use broadcast messaging
+// ============================================================================
+
+async function onValidateToken(data, userId) {
   logger.logAuthEvent('token_validation_request', userId, { userId });
   
   const validation = await validateToken(data.token);
   
-  // Send directly through WebSocket since user might not exist
-  const response = {
-    type: 'tokenValidated',
-    data: validation
-  };
-  ws.send(JSON.stringify(response));
+  sendMessage(userId, 'tokenValidated', validation);
 }
 
-async function onLogout(ws, data, userId) {
+async function onLogout(data, userId) {
   logger.logAuthEvent('logout_request', userId, { userId });
   
   try {
     // Clear user session (if any session management needed)
-    // Send success response directly through WebSocket to avoid circular dependency
-    const response = {
-      type: 'logout',
-      data: {
-        success: true,
-        message: 'Logged out successfully'
-      }
-    };
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'logout', {
+      success: true,
+      message: 'Logged out successfully'
+    });
     logger.logAuthEvent('logout_completed', userId, { userId });
   } catch (error) {
     logger.logError(error, { userId, action: 'logout' });
-    const response = {
-      type: 'logout',
-      data: {
-        success: false,
-        message: 'Logout failed'
-      }
-    };
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'logout', {
+      success: false,
+      message: 'Logout failed'
+    });
   }
 }
 

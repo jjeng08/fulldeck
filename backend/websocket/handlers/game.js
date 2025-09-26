@@ -1,21 +1,16 @@
 const logger = require('../../shared/logger');
 const { getAllGames } = require('../../shared/gameConfigs');
 const { sendMessage } = require('../server');
-const { prisma } = require('../../shared/DBUtils');
+const DBUtils = require('../../shared/DBUtils');
 
-// Helper function to send available games - use direct WebSocket to avoid circular dependency
-function sendAvailableGames(ws, userId) {
+// Helper function to send available games using sendMessage
+function sendAvailableGames(userId) {
   try {
     const games = getAllGames();
     
-    // Send directly through WebSocket to avoid circular dependency
-    const response = {
-      type: 'availableGames',
-      data: {
-        availableGames: games
-      }
-    };
-    ws.send(JSON.stringify(response));
+    sendMessage(userId, 'availableGames', {
+      availableGames: games
+    });
   } catch (error) {
     logger.logError(error, { action: 'send_available_games' });
   }
@@ -24,9 +19,7 @@ function sendAvailableGames(ws, userId) {
 // Helper function to send current balance for a user
 async function sendBalanceUpdate(userId) {
   try {
-    const user = await prisma.player.findUnique({
-      where: { id: userId }
-    });
+    const user = await DBUtils.getPlayerById(userId);
     
     if (user) {
       logger.logInfo('Sending balance update', { userId, balance: user.balance });
@@ -41,19 +34,12 @@ async function sendBalanceUpdate(userId) {
   }
 }
 
-async function onAvailableGames(ws, data, userId) {
-  // Associate this connection with the user (in case it's not already associated)
-  const { WebSocketServer } = require('../server');
-  const wsServer = WebSocketServer.getInstance();
-  if (wsServer) {
-    wsServer.updateConnectionUserId(ws, userId);
-  }
-  
-  sendAvailableGames(ws, userId);
+async function onAvailableGames(data, userId) {
+  sendAvailableGames(userId);
   await sendBalanceUpdate(userId);
 }
 
-async function onGameConfigs(ws, data, userId) {
+async function onGameConfigs(data, userId) {
   logger.logUserAction('game_configs_request', userId, { userId });
   
   sendMessage(userId, 'gameConfigs', {
@@ -61,7 +47,7 @@ async function onGameConfigs(ws, data, userId) {
   });
 }
 
-async function onGameState(ws, data, userId) {
+async function onGameState(data, userId) {
   sendMessage(userId, 'gameState', {
     gameActive: false,
     playerHand: [],
