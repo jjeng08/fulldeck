@@ -82,4 +82,12 @@ export const introStyles = StyleSheet.create({
     padding: sc.size.sm,
     borderRadius: sc.borderRadius.sm,
   },
+  adminTrigger: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 100,
+    height: 100,
+    backgroundColor: 'transparent',
+  },
 });

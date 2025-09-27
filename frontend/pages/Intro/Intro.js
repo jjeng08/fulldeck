@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text, Image, Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
 import { introStyles as s } from './IntroStyles';
 import { text as t } from 'core/text';
+import AdminModal from 'pages/AdminModal/AdminModal';
 import Button from 'components/Button';
 import TextInput from 'components/TextInput';
 import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, hideToast, isLoadingAuth, sendMessage, toast, user } = useApp();
+  const { connected, hideToast, isLoadingAuth, initiateLogin, initiateRegistration, toast, user } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
@@ -27,6 +28,12 @@ export default function IntroPage() {
     password: '',
     confirmPassword: ''
   });
+
+  // Admin modal state
+  // TODO: RESTORE AFTER DEV
+  const [showAdminModal, setShowAdminModal] = useState(true);
+  const [clickCount, setClickCount] = useState(0);
+  const [clickTimer, setClickTimer] = useState(null);
 
   useEffect(() => {
     // Navigate to blackjack when user successfully logs in
@@ -46,6 +53,31 @@ export default function IntroPage() {
       });
     }
   }, [user, navigation]);
+
+  const onAdminTrigger = () => {
+    const newCount = clickCount + 1;
+    setClickCount(newCount);
+
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+    }
+
+    if (newCount >= 3) {
+      setShowAdminModal(true);
+      setClickCount(0);
+      setClickTimer(null);
+    } else {
+      const timer = setTimeout(() => {
+        setClickCount(0);
+        setClickTimer(null);
+      }, 3000);
+      setClickTimer(timer);
+    }
+  };
+
+  const onCloseAdminModal = () => {
+    setShowAdminModal(false);
+  };
 
   const onShowLoginForm = () => {
     setShowLoginForm(true);
@@ -87,31 +119,23 @@ export default function IntroPage() {
     }
   };
 
-  const onLoginSubmit = (addLoadingCallback) => {
+  const onLoginSubmit = () => {
     if (loginData.username && loginData.password) {
-      addLoadingCallback();
       // Store navigation reference for auto-redirect after login
       global.navigation = navigation;
-      sendMessage('login', {
-        username: loginData.username,
-        password: loginData.password
-      });
+      initiateLogin(loginData.username, loginData.password);
     } else {
       setErrorMessage(t.enterUsernameAndPassword);
     }
   };
 
-  const onRegisterSubmit = (addLoadingCallback) => {
+  const onRegisterSubmit = () => {
     if (registerData.username && registerData.password && registerData.confirmPassword) {
       if (registerData.password === registerData.confirmPassword) {
-        addLoadingCallback();
         // Store navigation reference for auto-redirect after registration
         global.navigation = navigation;
         
-        sendMessage('register', {
-          username: registerData.username,
-          password: registerData.password
-        });
+        initiateRegistration(registerData.username, registerData.password);
       } else {
         setErrorMessage(t.passwordMismatch);
       }
@@ -238,6 +262,17 @@ export default function IntroPage() {
         type={toast.type}
         visible={toast.visible}
         onHide={hideToast}
+      />
+      
+      <Pressable 
+        style={s.adminTrigger}
+        onPress={onAdminTrigger}
+        testID="adminTrigger"
+      />
+      
+      <AdminModal 
+        visible={showAdminModal}
+        onClose={onCloseAdminModal}
       />
       
       <StatusBar style='auto' />

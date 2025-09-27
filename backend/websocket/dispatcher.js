@@ -17,8 +17,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key';
 // Message routing table
 const messageRoutes = {
   // Authentication handlers (unauthenticated)
-  'login': authHandlers.onLogin,
-  'register': authHandlers.onRegister,
   'refreshToken': authHandlers.onRefreshToken,
   'validateToken': authHandlers.onValidateToken,
   
@@ -39,8 +37,6 @@ const messageRoutes = {
 
 // Messages that don't require authentication
 const unauthenticatedMessages = [
-  'login',
-  'register', 
   'refreshToken',
   'validateToken'
 ];

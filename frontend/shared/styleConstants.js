@@ -70,6 +70,7 @@ export const styleConstants = {
     surfaceActive: '#333',
     background: '#121212',
     overlay: 'rgba(0, 0, 0, 0.7)',
+    overlayOnRed: '#2A0B10', // overlay rgba(0,0,0,0.7) combined with red #8B2635
     
     // Text Colors
     text: '#ffffff',

@@ -15,20 +15,15 @@ class WebSocketService {
     // Use environment config if no URL provided
     if (!url) {
       const config = getConfig()
-      console.log('WebSocket config:', config);
-      console.log('WebSocket URL from config:', config.websocketUrl);
       url = config.websocketUrl
     }
     console.log('Final WebSocket URL:', url);
-    // console.log('Connecting to WebSocket URL:', url);
     try {
       this.currentUrl = url
-      
-      // Connect without token - auth will be per-message
       this.ws = new WebSocket(url)
       
       this.ws.onopen = () => {
-        // console.log('WebSocket connected')
+        console.log('WebSocket connected')
         this.connected = true
         this.reconnectAttempts = 0
       }
@@ -38,35 +33,33 @@ class WebSocketService {
           const message = JSON.parse(event.data)
           this.handleMessage(message)
         } catch (error) {
-          // console.error('Error parsing WebSocket message:', error)
+          console.error('Error parsing WebSocket message:', error)
         }
       }
 
       this.ws.onclose = (event) => {
-        // console.log('WebSocket disconnected', { code: event.code, reason: event.reason, wasClean: event.wasClean })
+        console.log('WebSocket disconnected', { code: event.code, reason: event.reason, wasClean: event.wasClean })
         this.connected = false
         this.attemptReconnect()
       }
 
       this.ws.onerror = (error) => {
-        // console.error('WebSocket error:', error)
+        console.error('WebSocket error:', error)
       }
 
     } catch (error) {
-      // console.error('Failed to connect to WebSocket:', error)
+      console.error('Failed to connect to WebSocket:', error)
     }
   }
 
   attemptReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      // console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-      
       setTimeout(() => {
         this.connect(this.currentUrl)
       }, this.reconnectDelay * this.reconnectAttempts)
     } else {
-      // console.log('Max reconnection attempts reached')
+      console.log('Max reconnection attempts reached')
     }
   }
 
@@ -130,13 +123,6 @@ class WebSocketService {
     this.sendMessage('placeBet', { amount })
   }
 
-  login(username, password) {
-    this.sendMessage('login', { username, password })
-  }
-
-  register(username, password) {
-    this.sendMessage('register', { username, password })
-  }
 
   getBalance() {
     this.sendMessage('getBalance')

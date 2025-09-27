@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import WebSocketService from './websocket';
 import { text as t } from '../core/text';
+import { getConfig } from '../shared/environment';
 import logger from '../shared/logger';
 
 const AppContext = createContext();
@@ -70,15 +71,30 @@ export function AppProvider({ children }) {
     setAuthState(prev => ({ ...prev, status: 'logging_in' }));
     addLoadingAction('login');
     
-    try {
-      // Send login request
-      WebSocketService.sendMessage('login', { username, password });
-    } catch (error) {
-      // Handle send failure
+    // Make HTTP login request directly
+    const config = getConfig();
+    const apiBaseUrl = config.apiBaseUrl;
+    
+    fetch(`${apiBaseUrl}/api/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 200) {
+        onLogin({ success: true, ...data.data });
+      } else {
+        onLogin({ success: false, message: data.errorMessage });
+      }
+    })
+    .catch(error => {
+      console.error('Login request failed:', error);
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       clearLoadingAction('login');
-      console.log('Failed to send login request');
-    }
+    });
   };
 
   const onLogin = (data) => {
@@ -107,15 +123,30 @@ export function AppProvider({ children }) {
     setAuthState(prev => ({ ...prev, status: 'logging_in' }));
     addLoadingAction('register');
     
-    try {
-      // Send registration request
-      WebSocketService.sendMessage('register', { username, password });
-    } catch (error) {
-      // Handle send failure
+    // Make HTTP registration request directly
+    const config = getConfig();
+    const apiBaseUrl = config.apiBaseUrl;
+    
+    fetch(`${apiBaseUrl}/api/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 200) {
+        onRegister({ success: true, ...data.data });
+      } else {
+        onRegister({ success: false, message: data.errorMessage });
+      }
+    })
+    .catch(error => {
+      console.error('Registration request failed:', error);
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       clearLoadingAction('register');
-      console.log('Failed to send registration request');
-    }
+    });
   };
 
   const onRegister = (data) => {
@@ -210,10 +241,18 @@ export function AppProvider({ children }) {
 
   const onConnected = (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
+    console.log('WebSocket connected. Current auth state:', {
+      hasUser: !!authState.user,
+      hasAuthToken: !!authState.authToken,
+      status: authState.status
+    });
     setConnected(true);
     // Only load saved token if we're not already authenticated
     if (!authState.user && !authState.authToken) {
+      console.log('No existing auth, loading saved token...');
       loadSavedToken();
+    } else {
+      console.log('Already have auth, skipping loadSavedToken');
     }
   };
 
@@ -275,9 +314,7 @@ export function AppProvider({ children }) {
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
       WebSocketService.onMessage('connected', onConnected);
-      WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
-      WebSocketService.onMessage('register', onRegister);
       WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
       WebSocketService.onMessage('tokenValidated', onTokenValidated);
       WebSocketService.connect();
@@ -292,9 +329,7 @@ export function AppProvider({ children }) {
         WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
         WebSocketService.removeMessageHandler('connected');
-        WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');
-        WebSocketService.removeMessageHandler('register');
         WebSocketService.removeMessageHandler('tokenRefreshed');
         WebSocketService.removeMessageHandler('tokenValidated');
         WebSocketService.disconnect();
@@ -306,13 +341,22 @@ export function AppProvider({ children }) {
 
   const loadSavedToken = async () => {
     try {
-      debugger;
+      console.log('Loading saved token from AsyncStorage...');
       const savedToken = await AsyncStorage.getItem('authToken');
       const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
+      const savedUser = await AsyncStorage.getItem('userData');
+      
+      console.log('Saved auth data:', {
+        hasToken: !!savedToken,
+        hasRefreshToken: !!savedRefreshToken,
+        hasUserData: !!savedUser,
+        tokenPreview: savedToken ? savedToken.substring(0, 20) + '...' : 'none'
+      });
+      
       if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {
-        const savedUser = await AsyncStorage.getItem('userData');
         if (savedUser) {
           const userData = JSON.parse(savedUser);
+          console.log('Found valid saved auth, validating token...');
           
           // VALIDATE FIRST - don't set any auth state until validation passes
           setAuthState(prev => ({ ...prev, status: 'validating' }));
@@ -327,10 +371,12 @@ export function AppProvider({ children }) {
           };
         }
       } else {
+        console.log('No saved credentials found, staying on intro');
         // No saved credentials, stay on intro
         setAuthState(prev => ({ ...prev, status: 'idle' }));
       }
     } catch (error) {
+      console.log('Error loading saved token:', error);
       logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
       setAuthState(prev => ({ ...prev, status: 'idle' }));
     } finally {
@@ -501,6 +547,8 @@ export function AppProvider({ children }) {
     // State
     connected,
     user: authState.user,
+    authToken: authState.authToken,
+    refreshToken: authState.refreshToken,
     isLoadingAuth,
     availableGames,
     playerBalance,

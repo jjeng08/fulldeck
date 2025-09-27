@@ -112,6 +112,8 @@ const text = {
   invalidBetAmount: 'Invalid bet amount.',
   userNotFound: 'User not found.',
   gameNotFound: 'Game not found.',
+
+  close: 'Close',
 };
 
 

@@ -9,7 +9,7 @@ async function startServer() {
 
   // Now import everything else after environment is loaded
   const { WebSocketServer } = require('./websocket/server')
-  const HttpServer = require('./http/server')
+  const HttpServer = require('./api/server')
   const dispatcher = require('./websocket/dispatcher')
 
   // Start both servers (no database parameters needed)
