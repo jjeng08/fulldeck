@@ -15,8 +15,11 @@ class WebSocketService {
     // Use environment config if no URL provided
     if (!url) {
       const config = getConfig()
+      console.log('WebSocket config:', config);
+      console.log('WebSocket URL from config:', config.websocketUrl);
       url = config.websocketUrl
     }
+    console.log('Final WebSocket URL:', url);
     // console.log('Connecting to WebSocket URL:', url);
     try {
       this.currentUrl = url

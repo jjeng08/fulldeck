@@ -1,6 +1,6 @@
 // Master environment configuration - synced to frontend and backend
 const ENVIRONMENTS = {
-  development: {
+  dev: {
     schema: 'dev',
     websocketPort: 8090,
     httpPort: 3001,
@@ -22,7 +22,7 @@ const ENVIRONMENTS = {
     logLevel: 'info',
     databasePort: 5434
   },
-  staging: {
+  stage: {
     schema: 'stage',
     websocketPort: 8090,
     httpPort: 3001,
@@ -33,7 +33,7 @@ const ENVIRONMENTS = {
     logLevel: 'info',
     databasePort: 5435
   },
-  production: {
+  prod: {
     schema: 'prod',
     websocketPort: 8090,
     httpPort: 3001,
@@ -46,19 +46,17 @@ const ENVIRONMENTS = {
   }
 };
 
-const getEnvironmentConfig = (env = 'development') => {
-  return ENVIRONMENTS[env] || ENVIRONMENTS.development;
+const getEnvironmentConfig = (env = 'dev') => {
+  return ENVIRONMENTS[env] || ENVIRONMENTS.dev;
 };
 
-const buildDatabaseUrl = (env = 'development') => {
-  const config = ENVIRONMENTS[env] || ENVIRONMENTS.development;
-  // Use 127.0.0.1 in Windows/WSL environments, localhost otherwise
-  const host = process.platform === 'win32' || process.env.WSL_DISTRO_NAME ? '127.0.0.1' : 'localhost';
-  return `postgresql://fulldeck_user:fulldeck_password@${host}:${config.databasePort}/fulldeck_${config.schema}`;
+const buildDatabaseUrl = (env = 'dev') => {
+  const config = ENVIRONMENTS[env] || ENVIRONMENTS.dev;
+  return `file:./database/fulldeck_${config.schema}.db`;
 };
 
 function loadEnvironmentConfig() {
-  const env = process.env.NODE_ENV || 'development';
+  const env = process.env.NODE_ENV || 'dev';
   process.env.DATABASE_URL = buildDatabaseUrl(env);
   
   const config = getEnvironmentConfig(env);

@@ -306,6 +306,7 @@ export function AppProvider({ children }) {
 
   const loadSavedToken = async () => {
     try {
+      debugger;
       const savedToken = await AsyncStorage.getItem('authToken');
       const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
       if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {

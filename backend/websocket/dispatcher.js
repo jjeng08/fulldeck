@@ -20,9 +20,9 @@ const messageRoutes = {
   'login': authHandlers.onLogin,
   'register': authHandlers.onRegister,
   'refreshToken': authHandlers.onRefreshToken,
+  'validateToken': authHandlers.onValidateToken,
   
   // Authentication handlers (authenticated)
-  'validateToken': authHandlers.onValidateToken,
   'logout': authHandlers.onLogout,
   
   // User handlers (authenticated)
@@ -41,7 +41,8 @@ const messageRoutes = {
 const unauthenticatedMessages = [
   'login',
   'register', 
-  'refreshToken'
+  'refreshToken',
+  'validateToken'
 ];
 
 // Define handlers that need direct WebSocket access (currently none for authenticated handlers)

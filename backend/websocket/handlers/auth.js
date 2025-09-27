@@ -283,12 +283,16 @@ async function onRefreshToken(ws, data) {
 // These handlers have valid userId from middleware and can use broadcast messaging
 // ============================================================================
 
-async function onValidateToken(data, userId) {
-  logger.logAuthEvent('token_validation_request', userId, { userId });
+async function onValidateToken(ws, data) {
+  logger.logAuthEvent('token_validation_request', null, { tokenProvided: !!data.token });
   
   const validation = await validateToken(data.token);
   
-  sendMessage(userId, 'tokenValidated', validation);
+  const response = {
+    type: 'tokenValidated',
+    data: validation
+  };
+  ws.send(JSON.stringify(response));
 }
 
 async function onLogout(data, userId) {

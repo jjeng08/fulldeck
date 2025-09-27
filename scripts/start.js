@@ -62,6 +62,16 @@ killProcessOnPort(8090); // WebSocket port
 killProcessOnPort(3001); // API port
 killProcessOnPort(3000); // Frontend port
 
+// Sync core files to ensure frontend and backend have latest environment config
+console.log('Syncing core files...');
+try {
+  const { execSync } = require('child_process');
+  execSync('npm run sync-core', { stdio: 'inherit' });
+} catch (error) {
+  console.error('Error syncing core files:', error.message);
+  process.exit(1);
+}
+
 let frontendProcess = null;
 
 // Start backend first
@@ -98,10 +108,29 @@ backendProcess.stdout.on('data', (data) => {
     
     // Start frontend once backend is ready
     frontendProcess = spawn(isWindows ? 'npm.cmd' : 'npm', ['run', 'web'], {
-      stdio: 'inherit',
+      stdio: 'pipe',
       cwd: 'frontend', 
       env: { ...process.env, NODE_ENV: env },
       shell: isWindows
+    });
+    
+    // Monitor frontend output to auto-open correct URL
+    frontendProcess.stdout.on('data', (data) => {
+      process.stdout.write(data);
+      const output = data.toString();
+      
+      // Look for Metro's web URL and auto-open it
+      const webMatch = output.match(/Web is waiting on (http:\/\/[^\s]+)/);
+      if (webMatch) {
+        const webUrl = webMatch[1];
+        console.log(`\n🌐 Opening browser to: ${webUrl}`);
+        const openCommand = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+        require('child_process').exec(`${openCommand} ${webUrl}`);
+      }
+    });
+    
+    frontendProcess.stderr.on('data', (data) => {
+      process.stderr.write(data);
     });
     
     frontendProcess.on('exit', () => process.exit());

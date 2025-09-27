@@ -5,19 +5,19 @@ const path = require('path');
 
 const env = process.argv[2] || 'development';
 
-// Map environment to container service name
-const containerMap = {
-  development: 'postgres-dev',
-  dev: 'postgres-dev',
-  qa: 'postgres-qa',
-  staging: 'postgres-stage',
-  stage: 'postgres-stage',
-  production: 'postgres-prod',
-  prod: 'postgres-prod'
+// Map environment to database names
+const databaseMap = {
+  development: 'fulldeck_dev',
+  dev: 'fulldeck_dev',
+  qa: 'fulldeck_qa',
+  staging: 'fulldeck_stage',
+  stage: 'fulldeck_stage',
+  production: 'fulldeck_prod',
+  prod: 'fulldeck_prod'
 };
 
-const serviceName = containerMap[env];
-if (!serviceName) {
+const databaseName = databaseMap[env];
+if (!databaseName) {
   console.error(`Unknown environment: ${env}`);
   process.exit(1);
 }
@@ -52,44 +52,71 @@ async function setup() {
     // Backend setup
     await runCommand('npm', ['install'], { cwd: 'backend' });
     
-    // Start specific Docker container (skip if already exists)
-    const containerName = `fulldeck-postgres-${env}`;
+    // Create database for environment if it doesn't exist
+    console.log(`Setting up database: ${databaseName}`);
+    
     try {
-      // Check if container exists
-      await runCommand('docker', ['inspect', containerName]);
-      console.log(`Container ${containerName} already exists, skipping creation`);
-    } catch (error) {
-      // Container doesn't exist, create it
-      console.log(`Creating container ${containerName}`);
-      
-      // Create container with exact name using docker run
-      const ports = {
-        'postgres-dev': '5433',
-        'postgres-qa': '5434', 
-        'postgres-stage': '5435',
-        'postgres-prod': '5432'
-      };
-      const databases = {
-        'postgres-dev': 'fulldeck_dev',
-        'postgres-qa': 'fulldeck_qa',
-        'postgres-stage': 'fulldeck_stage', 
-        'postgres-prod': 'fulldeck_prod'
-      };
-      
-      await runCommand('docker', [
-        'run', '-d',
-        '--name', containerName,
-        '-p', `${ports[serviceName]}:5432`,
-        '-e', `POSTGRES_DB=${databases[serviceName]}`,
-        '-e', 'POSTGRES_USER=fulldeck_user',
-        '-e', 'POSTGRES_PASSWORD=fulldeck_password',
-        '-v', `fulldeck_postgres_${env}_data:/var/lib/postgresql/data`,
-        'postgres:15-alpine'
+      // Check if database exists using full path to psql
+      const psqlPath = 'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe';
+      await runCommand(psqlPath, [
+        '-U', 'postgres',
+        '-h', 'localhost',
+        '-p', '5432',
+        '-lqt'
       ]);
       
-      // Wait for new container to initialize
-      console.log('Waiting for database to initialize...');
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      // Check if our specific database exists
+      const { spawn } = require('child_process');
+      const checkDb = spawn(psqlPath, [
+        '-U', 'postgres',
+        '-h', 'localhost', 
+        '-p', '5432',
+        '-lqt'
+      ]);
+      
+      let dbExists = false;
+      checkDb.stdout.on('data', (data) => {
+        if (data.toString().includes(databaseName)) {
+          dbExists = true;
+        }
+      });
+      
+      await new Promise((resolve) => {
+        checkDb.on('close', resolve);
+      });
+      
+      if (!dbExists) {
+        console.log(`Creating database ${databaseName}...`);
+        await runCommand(psqlPath, [
+          '-U', 'postgres',
+          '-h', 'localhost',
+          '-p', '5432',
+          '-c', `CREATE DATABASE ${databaseName};`
+        ]);
+        
+        console.log('Creating fulldeck_user...');
+        await runCommand(psqlPath, [
+          '-U', 'postgres', 
+          '-h', 'localhost',
+          '-p', '5432',
+          '-c', "CREATE USER fulldeck_user WITH PASSWORD 'fulldeck_password';"
+        ]);
+        
+        console.log('Granting privileges...');
+        await runCommand(psqlPath, [
+          '-U', 'postgres',
+          '-h', 'localhost', 
+          '-p', '5432',
+          '-c', `GRANT ALL PRIVILEGES ON DATABASE ${databaseName} TO fulldeck_user;`
+        ]);
+      } else {
+        console.log(`Database ${databaseName} already exists`);
+      }
+      
+    } catch (error) {
+      console.error('Failed to connect to Postgres. Make sure PostgreSQL is installed and running on port 5432.');
+      console.error('Error:', error.message);
+      process.exit(1);
     }
     
     // Generate Prisma client

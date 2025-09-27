@@ -1,6 +1,3 @@
-const { loadEnvironmentConfig } = require('../core/environments');
-const config = loadEnvironmentConfig();
-
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const logger = require('./logger');
@@ -10,10 +7,42 @@ const { GAME_TYPES, getGameTypeByName } = require('../core/core');
 let prisma = null;
 
 // Initialize database connection
-const initialize = () => {
+const initialize = async () => {
   if (!prisma) {
-    prisma = new PrismaClient();
-    logger.logInfo('Database connection initialized via DBUtils');
+    console.log('ACTUAL DATABASE_URL AT INIT TIME:', process.env.DATABASE_URL);
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL environment variable not set');
+    }
+    console.log('Creating PrismaClient with URL:', process.env.DATABASE_URL);
+    prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL
+        }
+      },
+      log: [
+        { emit: 'stdout', level: 'query' },
+        { emit: 'stdout', level: 'error' },
+        { emit: 'stdout', level: 'info' },
+        { emit: 'stdout', level: 'warn' }
+      ]
+    });
+    
+    // Test the connection immediately and fail fast
+    console.log('PrismaClient created, testing connection...');
+    try {
+      await prisma.$connect();
+      console.log('✅ Database connection successful!');
+    } catch (err) {
+      console.error('❌ CRITICAL: Database connection failed!');
+      console.error('CONNECTION ERROR:', err.message);
+      console.error('DATABASE_URL:', process.env.DATABASE_URL);
+      console.error('This is a fatal error. Exiting...');
+      process.exit(1);
+    }
+    logger.logInfo('Database connection initialized via DBUtils', { 
+      databaseUrl: process.env.DATABASE_URL 
+    });
   }
   return prisma;
 };

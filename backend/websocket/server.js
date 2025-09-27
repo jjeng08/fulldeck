@@ -8,7 +8,7 @@ const config = getEnvironmentConfig()
 
 class WebSocketServer {
   constructor(port = config.websocketPort) {
-    this.wss = new WebSocket.Server({ port })
+    this.wss = new WebSocket.Server({ port, host: '0.0.0.0' })
     this.connections = new Map()
     this.messageHandler = null
     this.setupServer()
