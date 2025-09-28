@@ -28,7 +28,7 @@ const validateToken = async (token) => {
       balance: user.balance
     }
   } catch (error) {
-    logger.logError(error, { type: 'token_validation', action: 'validate_token_failed', token: token.substring(0, 20) + '...' });
+    logger.logError(error, { type: 'token_validation', action: 'validate_token_failed', token: token ? token.substring(0, 20) + '...' : 'none' });
     return { valid: false, error: error.message }
   }
 };
@@ -287,6 +287,12 @@ async function onValidateToken(ws, data) {
   logger.logAuthEvent('token_validation_request', null, { tokenProvided: !!data.token });
   
   const validation = await validateToken(data.token);
+  
+  // If token is valid, associate this connection with the user
+  if (validation.valid) {
+    const { updateConnectionUserId } = require('../server');
+    updateConnectionUserId(ws, validation.userId);
+  }
   
   const response = {
     type: 'tokenValidated',

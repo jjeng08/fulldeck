@@ -13,7 +13,7 @@ import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, hideToast, isLoadingAuth, initiateLogin, initiateRegistration, toast, user } = useApp();
+  const { connected, hideToast, initiateLogin, initiateRegistration, toast, user } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
@@ -144,15 +144,6 @@ export default function IntroPage() {
     }
   };
 
-  // Show loading while checking saved auth
-  if (isLoadingAuth) {
-    return (
-      <View style={s.container}>
-        <Image source={require('../../assets/logo-fulldeck.png')} style={s.logo} resizeMode="contain" />
-        <Text style={s.subtitle}>Loading...</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={s.container}>

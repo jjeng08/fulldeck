@@ -9,6 +9,7 @@ class WebSocketService {
     this.maxReconnectAttempts = 5
     this.reconnectDelay = 1000
     this.currentUrl = null
+    this.shouldReconnect = false
   }
 
   connect(url) {
@@ -53,13 +54,27 @@ class WebSocketService {
   }
 
   attemptReconnect() {
+    if (!this.shouldReconnect) {
+      console.log('WebSocket disconnected - no auto-reconnect (not authenticated)')
+      return
+    }
+    
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
+      console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
       setTimeout(() => {
         this.connect(this.currentUrl)
       }, this.reconnectDelay * this.reconnectAttempts)
     } else {
       console.log('Max reconnection attempts reached')
+      this.shouldReconnect = false
+    }
+  }
+
+  setShouldReconnect(shouldReconnect) {
+    this.shouldReconnect = shouldReconnect
+    if (shouldReconnect) {
+      this.reconnectAttempts = 0 // Reset attempts when enabling reconnect
     }
   }
 

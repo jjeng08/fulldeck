@@ -24,7 +24,6 @@ export function AppProvider({ children }) {
     type: 'success'
   });
   
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   
   // Unified auth state management - ALL auth data in one place
   const [authState, setAuthState] = useState({
@@ -44,21 +43,13 @@ export function AppProvider({ children }) {
     refresh: null
   });
 
-  useEffect(() => {
-    // When WebSocket connects, validate cached token if we have one
-    if (connected && authState.user && authState.authToken && authState.status !== 'validating') {
-      setAuthState(prev => ({ ...prev, status: 'validating' }));
-      WebSocketService.sendMessage('validateToken', { token: authState.authToken });
-    }
-  }, [connected, authState.user, authState.authToken]);
 
   useEffect(() => {
-    // Only request data AFTER token is validated (status is 'idle', not 'validating')
-    if (connected && authState.user && authState.authToken && authState.status === 'idle') {
+    // Only request availableGames after authState is fully populated with validated data
+    if (authState.user && authState.authToken && authState.status === 'idle') {
       sendMessage('availableGames');
     }
-  }, [connected, authState.user, authState.authToken, authState.status]);
-
+  }, [authState.user, authState.authToken, authState.status]);
 
   const initiateLogin = (username, password) => {
     // Only allow login if currently idle
@@ -105,7 +96,18 @@ export function AppProvider({ children }) {
     });
     
     if (data.success) {
-      handleAuthSuccess(data, 'idle');
+      // Store validation data for onTokenValidated to use
+      pendingOperations.current.validationData = {
+        token: data.accessToken,
+        refreshToken: data.refreshToken,
+        userData: {
+          id: data.userId,
+          username: data.username
+        }
+      };
+      
+      // Send token through validation flow for consistency
+      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
     } else {
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       console.log('Login failed:', data.message);
@@ -153,7 +155,18 @@ export function AppProvider({ children }) {
     clearLoadingAction('register');
     
     if (data.success) {
-      handleAuthSuccess(data, 'idle');
+      // Store validation data for onTokenValidated to use
+      pendingOperations.current.validationData = {
+        token: data.accessToken,
+        refreshToken: data.refreshToken,
+        userData: {
+          id: data.userId,
+          username: data.username
+        }
+      };
+      
+      // Send token through validation flow for consistency
+      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
       console.log(`Registration successful! Welcome, ${data.username}!`);
     } else {
       setAuthState(prev => ({ ...prev, status: 'idle' }));
@@ -163,7 +176,16 @@ export function AppProvider({ children }) {
 
   const onTokenRefreshed = (data) => {
     if (data.success) {
-      handleAuthSuccess(data, 'processing_queue', true);
+      // Store validation data for onTokenValidated to use
+      pendingOperations.current.validationData = {
+        token: data.accessToken,
+        refreshToken: authState.refreshToken, // Keep existing refresh token
+        userData: authState.user
+      };
+      
+      // Send token through validation flow for consistency
+      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
+      
       processMessageQueue();
       
       // Resolve the pending promise
@@ -217,42 +239,69 @@ export function AppProvider({ children }) {
     const validationData = pendingOperations.current.validationData;
     
     if (data.valid && validationData) {
-      // Token is ALREADY VALIDATED - just proceed with login
-      setAuthState(prev => ({
-        ...prev,
+      // Token validated - set authState with confirmed data
+      setAuthState({
         user: validationData.userData,
         authToken: validationData.token,
         refreshToken: validationData.refreshToken,
-        status: 'idle'
-      }));
+        status: 'idle',
+        attempts: 0,
+        messageQueue: []
+      });
       console.log(`Welcome back, ${validationData.userData.username}!`);
-      sendMessage('availableGames');
-    } else if (!data.valid) {
-      // Only clear auth if this was a startup validation that failed
+      
+      // Save to AsyncStorage for future auto-login
+      saveAuthData(validationData.token, validationData.refreshToken, validationData.userData);
+      
+      // Enable auto-reconnect for authenticated users
+      WebSocketService.setShouldReconnect(true);
+    } else {
+      // No valid token or validation failed - stay on intro screen
+      console.log(data.valid === false ? 'Token validation failed' : 'No token provided');
       if (validationData) {
-        console.log('Cached token is invalid. Please login again.', data.error);
+        // Clear invalid saved data
         await clearAuthData();
       }
+      // authState remains with default empty values (user stays on intro)
     }
     
     // Clear validation data
     pendingOperations.current.validationData = null;
   };
 
-  const onConnected = (data) => {
+  const onConnected = async (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
-    console.log('WebSocket connected. Current auth state:', {
-      hasUser: !!authState.user,
-      hasAuthToken: !!authState.authToken,
-      status: authState.status
-    });
     setConnected(true);
-    // Only load saved token if we're not already authenticated
-    if (!authState.user && !authState.authToken) {
-      console.log('No existing auth, loading saved token...');
-      loadSavedToken();
-    } else {
-      console.log('Already have auth, skipping loadSavedToken');
+    
+    // Check AsyncStorage for saved credentials
+    try {
+      const savedToken = await AsyncStorage.getItem('authToken');
+      const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
+      const savedUser = await AsyncStorage.getItem('userData');
+      
+      if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null' && savedUser) {
+        const userData = JSON.parse(savedUser);
+        console.log('Found saved credentials, validating token...');
+        
+        // Store validation data for onTokenValidated to use
+        pendingOperations.current.validationData = {
+          token: savedToken,
+          refreshToken: savedRefreshToken,
+          userData: userData
+        };
+        
+        // Send validation request
+        WebSocketService.sendMessage('validateToken', { token: savedToken });
+      } else {
+        console.log('No saved credentials found, staying on intro');
+        // Send empty validation to indicate no token
+        WebSocketService.sendMessage('validateToken', {});
+      }
+    } catch (error) {
+      console.log('Error loading saved token:', error);
+      logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
+      // Send empty validation on error
+      WebSocketService.sendMessage('validateToken', {});
     }
   };
 
@@ -261,31 +310,10 @@ export function AppProvider({ children }) {
     setPlayerBalance(data.balance);
   };
 
-  // ONLY place availableGames is updated  
-  // Helper function to consolidate auth success handling
-  const handleAuthSuccess = (data, status, useCurrentRefreshToken = false) => {
-    const userData = {
-      id: data.userId,
-      username: data.username
-    };
-    
-    setAuthState(prev => ({
-      ...prev,
-      user: userData,
-      authToken: data.accessToken,
-      refreshToken: useCurrentRefreshToken ? prev.refreshToken : data.refreshToken,
-      status,
-      attempts: 0
-    }));
-    
-    const refreshToken = useCurrentRefreshToken ? authState.refreshToken : data.refreshToken;
-    saveAuthData(data.accessToken, refreshToken, userData);
-  };
 
   const onAvailableGames = (data) => {
     setAvailableGames(data.availableGames);
   };
-
 
   const onLogout = (data) => {
     clearLoadingAction('logout');
@@ -303,6 +331,9 @@ export function AppProvider({ children }) {
     // Reset global states
     setPlayerBalance(0);
     setAvailableGames([]);
+    
+    // Disable auto-reconnect when logged out
+    WebSocketService.setShouldReconnect(false);
     
     clearAuthData();
   };
@@ -339,50 +370,6 @@ export function AppProvider({ children }) {
     };
   }, []);
 
-  const loadSavedToken = async () => {
-    try {
-      console.log('Loading saved token from AsyncStorage...');
-      const savedToken = await AsyncStorage.getItem('authToken');
-      const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
-      const savedUser = await AsyncStorage.getItem('userData');
-      
-      console.log('Saved auth data:', {
-        hasToken: !!savedToken,
-        hasRefreshToken: !!savedRefreshToken,
-        hasUserData: !!savedUser,
-        tokenPreview: savedToken ? savedToken.substring(0, 20) + '...' : 'none'
-      });
-      
-      if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null') {
-        if (savedUser) {
-          const userData = JSON.parse(savedUser);
-          console.log('Found valid saved auth, validating token...');
-          
-          // VALIDATE FIRST - don't set any auth state until validation passes
-          setAuthState(prev => ({ ...prev, status: 'validating' }));
-          // Send validation request
-          WebSocketService.sendMessage('validateToken', { token: savedToken });
-          
-          // Store credentials temporarily for onTokenValidated to use
-          pendingOperations.current.validationData = {
-            token: savedToken,
-            refreshToken: savedRefreshToken,
-            userData: userData
-          };
-        }
-      } else {
-        console.log('No saved credentials found, staying on intro');
-        // No saved credentials, stay on intro
-        setAuthState(prev => ({ ...prev, status: 'idle' }));
-      }
-    } catch (error) {
-      console.log('Error loading saved token:', error);
-      logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
-      setAuthState(prev => ({ ...prev, status: 'idle' }));
-    } finally {
-      setIsLoadingAuth(false);
-    }
-  };
 
   const saveAuthData = async (accessToken, refreshToken, userData) => {
     try {
@@ -549,7 +536,6 @@ export function AppProvider({ children }) {
     user: authState.user,
     authToken: authState.authToken,
     refreshToken: authState.refreshToken,
-    isLoadingAuth,
     availableGames,
     playerBalance,
     toast,
