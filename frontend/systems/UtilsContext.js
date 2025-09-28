@@ -33,6 +33,10 @@ export function UtilsProvider({ children }) {
       method: 'GET',
       url: (params) => `player-by-username/${params.username}`
     },
+    getAccountLogsByUsername: {
+      method: 'GET',
+      url: (params) => `account-logs-by-username/${params.username}`
+    },
     login: {
       method: 'POST',
       url: 'login'

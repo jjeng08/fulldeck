@@ -1194,12 +1194,17 @@ class Blackjack {
       // Use consistent transaction type based on result
       const transactionType = `hand_${result === 'dealer_blackjack' ? 'lose' : result}`;
       
-      // Update database balance
+      // Calculate winnings increment (only positive profits count as winnings)
+      const profit = payout - betAmount;
+      const winningsIncrement = profit > 0 ? profit : 0;
+      
+      // Update database balance and winnings
       const finalPlayer = payout > 0 ? 
         await DBUtils.creditPlayerAccount(userId, payout, transactionType, { 
           result, 
           payout, 
-          originalBet: betAmount 
+          originalBet: betAmount,
+          winningsIncrement: winningsIncrement
         }) : user;
       
       // Send balance update to frontend
@@ -1239,7 +1244,8 @@ class Blackjack {
         gameType: gameTypeId,
         gameId: this.gameId,
         credit: payout,
-        balance: finalPlayer.balance
+        balance: finalPlayer.balance,
+        winnings: finalPlayer.winnings
       });
       
       logger.logInfo('Game result processed', { 

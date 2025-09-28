@@ -70,6 +70,7 @@ class HttpServer {
     this.app.get('/api/balance/:playerId', validateRequest(HttpServer.getBalanceSchema), this.getBalance.bind(this))
     this.app.get('/api/player/:playerId', validateRequest(HttpServer.getPlayerSchema), this.getPlayer.bind(this))
     this.app.get('/api/player-by-username/:username', validateRequest(HttpServer.getPlayerByUsernameSchema), this.getPlayerByUsername.bind(this))
+    this.app.get('/api/account-logs-by-username/:username', validateRequest(HttpServer.getAccountLogsByUsernameSchema), this.getAccountLogsByUsername.bind(this))
 
     // Error handling
     this.app.use((err, req, res, next) => {
@@ -316,6 +317,35 @@ class HttpServer {
     } catch (error) {
       console.error('Get player by username error:', error)
       return this.sendResponse(res, 500, null, 'Failed to get player by username')
+    }
+  }
+
+  // Validation schema for getAccountLogsByUsername
+  static getAccountLogsByUsernameSchema = (req) => {
+    const { username } = req.params;
+    
+    if (!username) {
+      return { isValid: false, errorMessage: 'username parameter is required' };
+    }
+    
+    if (username.trim().length === 0) {
+      return { isValid: false, errorMessage: 'username cannot be empty' };
+    }
+    
+    return { isValid: true };
+  }
+
+  async getAccountLogsByUsername(req, res) {
+    try {
+      const { username } = req.params
+
+      const accountLogs = await DBUtils.getAccountLogsByUsername(username)
+
+      const responseData = accountLogs
+      return this.sendResponse(res, 200, responseData)
+    } catch (error) {
+      console.error('Get account logs by username error:', error)
+      return this.sendResponse(res, 500, null, 'Failed to get account logs')
     }
   }
 

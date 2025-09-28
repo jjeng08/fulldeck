@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const logger = require('./logger');
-const { GAME_TYPES, getGameTypeByName } = require('../core/core');
+const { GAME_TYPES, getGameTypeByName, getGameTypeById } = require('../core/core');
 
 // Singleton Prisma client
 let prisma = null;
@@ -92,24 +92,33 @@ const getPlayerByUsername = async (username) => {
   }
 };
 
-const updatePlayerBalance = async (userId, newBalance, reason, metadata = {}) => {
+const updatePlayer = async (userId, updates, reason, metadata = {}) => {
   try {
-    logger.logInfo('updatePlayerBalance called', { userId, newBalance, reason, metadata });
+    logger.logInfo('updatePlayer called', { userId, updates, reason, metadata });
     
-    if (newBalance === undefined || newBalance === null) {
-      throw new Error('newBalance cannot be undefined or null');
+    if (updates.balance !== undefined && (updates.balance === null || updates.balance < 0)) {
+      throw new Error('balance cannot be null or negative');
+    }
+    
+    // Build the update object
+    const updateData = {};
+    if (updates.balance !== undefined) {
+      updateData.balance = updates.balance;
+    }
+    if (updates.winningsIncrement !== undefined && updates.winningsIncrement !== 0) {
+      updateData.winnings = { increment: updates.winningsIncrement };
     }
     
     const updatedPlayer = await prisma.player.update({
       where: { id: userId },
-      data: { balance: newBalance }
+      data: updateData
     });
     
-    logger.logUserAction('balance_updated', userId, { newBalance, reason, metadata });
+    logger.logUserAction('player_updated', userId, { updates, reason, metadata, newBalance: updatedPlayer.balance, newWinnings: updatedPlayer.winnings });
     
     return updatedPlayer;
   } catch (error) {
-    logger.logError(error, { userId, newBalance, reason, metadata, action: 'update_player_balance' });
+    logger.logError(error, { userId, updates, reason, metadata, action: 'update_player' });
     throw error;
   }
 };
@@ -162,7 +171,9 @@ const debitPlayerAccount = async (userId, amount, reason, metadata = {}) => {
     }
     
     const newBalance = player.balance - amount;
-    const updatedPlayer = await updatePlayerBalance(userId, newBalance, reason, { ...metadata, debitAmount: amount });
+    const updatedPlayer = await updatePlayer(userId, { 
+      balance: newBalance 
+    }, reason, { ...metadata, debitAmount: amount });
     
     return updatedPlayer;
   } catch (error) {
@@ -179,7 +190,11 @@ const creditPlayerAccount = async (userId, amount, reason, metadata = {}) => {
     }
     
     const newBalance = player.balance + amount;
-    const updatedPlayer = await updatePlayerBalance(userId, newBalance, reason, { ...metadata, creditAmount: amount });
+    const winningsIncrement = metadata.winningsIncrement || 0;
+    const updatedPlayer = await updatePlayer(userId, { 
+      balance: newBalance, 
+      winningsIncrement: winningsIncrement 
+    }, reason, { ...metadata, creditAmount: amount });
     
     return updatedPlayer;
   } catch (error) {
@@ -191,6 +206,8 @@ const creditPlayerAccount = async (userId, amount, reason, metadata = {}) => {
 // Accounts logging (updated to support gameType, gameId, and actionId linking)
 const logToAccountsLogs = async (userId, metadata = {}) => {
   try {
+    await initialize();
+    
     // Convert gameType string to ID if provided
     let gameTypeId = null;
     if (metadata.gameType) {
@@ -202,6 +219,13 @@ const logToAccountsLogs = async (userId, metadata = {}) => {
       }
     }
     
+    // Auto-fetch current winnings if not provided
+    let winnings = metadata.winnings;
+    if (winnings === undefined || winnings === null) {
+      const player = await getPlayerById(userId);
+      winnings = player ? player.winnings : null;
+    }
+    
     const activity = await prisma.accountsLogs.create({
       data: {
         playerId: userId,
@@ -211,7 +235,7 @@ const logToAccountsLogs = async (userId, metadata = {}) => {
         credit: metadata.credit || null,
         debit: metadata.debit || null,
         balance: metadata.balance,
-        winnings: metadata.winnings || null
+        winnings: winnings
       }
     });
     
@@ -292,6 +316,74 @@ const logToBlackjackLogs = async (options) => {
   }
 };
 
+// Get account logs by username
+const getAccountLogsByUsername = async (username) => {
+  try {
+    await initialize();
+    
+    // First get the player by username
+    const player = await prisma.player.findFirst({
+      where: { username }
+    });
+    
+    if (!player) {
+      throw new Error('Player not found');
+    }
+    
+    // Get account logs for this player with action labels from game-specific logs
+    const accountLogs = await prisma.accountsLogs.findMany({
+      where: { playerId: player.id },
+      orderBy: { createdOn: 'desc' },
+      select: {
+        gameType: true,
+        gameId: true,
+        actionId: true,
+        credit: true,
+        debit: true,
+        balance: true,
+        winnings: true
+      }
+    });
+
+    // Join with BlackjackLogs to get readable action labels
+    const logsWithActions = await Promise.all(
+      accountLogs.map(async (log) => {
+        let actionLabel = log.actionId; // Fallback to actionId if no match found
+        
+        if (log.actionId && log.gameType === GAME_TYPES.BLACKJACK.id) {
+          // Look up action from BlackjackLogs
+          const blackjackLog = await prisma.blackjackLogs.findFirst({
+            where: { id: log.actionId },
+            select: { action: true }
+          });
+          
+          if (blackjackLog) {
+            actionLabel = blackjackLog.action;
+          }
+        }
+        // TODO: Add similar lookups for other game types (Poker, Baccarat) when implemented
+        
+        return {
+          ...log,
+          actionLabel
+        };
+      })
+    );
+    
+    // Map gameType IDs to display names
+    const mappedLogs = logsWithActions.map(log => ({
+      ...log,
+      gameType: log.gameType ? (getGameTypeById(log.gameType)?.displayName || `Unknown (${log.gameType})`) : null
+    }));
+    
+    return mappedLogs;
+  } catch (error) {
+    logger.logError(error, { username, action: 'get_account_logs_by_username' });
+    throw error;
+  }
+};
+
+
 // Cleanup function
 const disconnect = async () => {
   try {
@@ -314,10 +406,11 @@ module.exports = {
   debitPlayerAccount,
   disconnect,
   generateGameId,
+  getAccountLogsByUsername,
   getPlayerById,
   getPlayerByUsername,
   logToAccountsLogs,
   logToBlackjackLogs,
-  updatePlayerBalance,
+  updatePlayer,
   updatePlayerLastSeen
 };

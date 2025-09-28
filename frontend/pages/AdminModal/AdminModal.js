@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, ScrollView } from 'react-native';
 
 import { adminModalStyles as s } from './AdminModalStyles';
 import { text as t } from 'core/text';
@@ -9,11 +9,15 @@ import Input from 'components/Input';
 
 export default function AdminModal({ visible, onClose }) {
   const { callAPI } = useUtils();
-  const [activeSection, setActiveSection] = useState('buyCredits');
+  const defaultSection = 'buyCredits';
+  const [activeSection, setActiveSection] = useState(defaultSection);
   const [searchValue, setSearchValue] = useState('');
   const [playerData, setPlayerData] = useState(null);
   const [searchError, setSearchError] = useState('');
   const [creditAmount, setCreditAmount] = useState(0);
+  const [activitySearchValue, setActivitySearchValue] = useState('');
+  const [activityPlayerData, setActivityPlayerData] = useState(null);
+  const [activitySearchError, setActivitySearchError] = useState('');
 
   if (!visible) return null;
 
@@ -81,6 +85,53 @@ export default function AdminModal({ visible, onClose }) {
   const onClearPlayer = () => {
     setPlayerData(null);
     setCreditAmount(0);
+  };
+
+  const resetAllStates = () => {
+    // Buy Credits section
+    setSearchValue('');
+    setPlayerData(null);
+    setSearchError('');
+    setCreditAmount(0);
+    
+    // Player Activity section
+    setActivitySearchValue('');
+    setActivityPlayerData(null);
+    setActivitySearchError('');
+    
+    // Reset active section to default
+    setActiveSection(defaultSection);
+  };
+
+  const handleClose = () => {
+    resetAllStates();
+    onClose();
+  };
+
+  const onActivitySearch = async () => {
+    if (!activitySearchValue.trim()) {
+      setActivitySearchError('Please enter a username');
+      return;
+    }
+
+    setActivitySearchError('');
+    setActivityPlayerData(null);
+
+    callAPI(
+      'getAccountLogsByUsername',
+      handleActivitySearchResponse,
+      { username: activitySearchValue },
+      { token: 'exterminatus' }
+    );
+  };
+
+  const handleActivitySearchResponse = (response) => {
+    if (response.status !== 200) {
+      setActivitySearchError(response.errorMessage);
+      return;
+    }
+
+    setActivityPlayerData(response.data);
   };
 
   const renderSectionContent = () => {
@@ -193,7 +244,53 @@ export default function AdminModal({ visible, onClose }) {
           </>
         );
       case 'playerActivity':
-        return null;
+        return (
+          <>
+            <View style={s.searchRow}>
+              <Input
+                label="Search User"
+                placeholder="Enter username"
+                value={activitySearchValue}
+                onChangeText={setActivitySearchValue}
+                style={s.searchInputContainer}
+                classes={s.searchInputCustom}
+              />
+              <Button
+                label="Search"
+                onPress={onActivitySearch}
+                style={s.searchButton}
+              />
+            </View>
+            {activitySearchError && (
+              <Text style={s.errorText}>{activitySearchError}</Text>
+            )}
+            {activityPlayerData && (
+              <View style={s.activityTableContainer}>
+                <Text style={s.activityTableTitle}>Account Logs for {activitySearchValue}</Text>
+                <View style={s.tableHeader}>
+                  <Text style={s.tableHeaderCell}>Game Type</Text>
+                  <Text style={s.tableHeaderCell}>Action</Text>
+                  <Text style={s.tableHeaderCell}>Credit</Text>
+                  <Text style={s.tableHeaderCell}>Debit</Text>
+                  <Text style={s.tableHeaderCell}>Balance</Text>
+                  <Text style={s.tableHeaderCell}>Winnings</Text>
+                </View>
+                <ScrollView style={s.tableScrollView} contentContainerStyle={s.tableScrollContent}>
+                  {activityPlayerData.map((log, index) => (
+                    <View key={index} style={s.tableRow}>
+                      <Text style={s.tableCell}>{log.gameType || '-'}</Text>
+                      <Text style={s.tableCell}>{log.actionLabel || log.actionId || '-'}</Text>
+                      <Text style={s.tableCell}>{log.credit ? `$${(log.credit / 100).toLocaleString()}` : '-'}</Text>
+                      <Text style={s.tableCell}>{log.debit ? `$${(log.debit / 100).toLocaleString()}` : '-'}</Text>
+                      <Text style={s.tableCell}>${(log.balance / 100).toLocaleString()}</Text>
+                      <Text style={s.tableCell}>{log.winnings ? `$${(log.winnings / 100).toLocaleString()}` : '-'}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </>
+        );
       case 'leaderBoard':
         return null;
       case 'gameReport':
@@ -232,7 +329,7 @@ export default function AdminModal({ visible, onClose }) {
         <View style={s.footer}>
           <Button 
             label={t.close}
-            onPress={onClose}
+            onPress={handleClose}
             style={s.closeButton}
           />
         </View>
