@@ -24,7 +24,6 @@ export function AppProvider({ children }) {
     type: 'success'
   });
   
-  
   // Unified auth state management - ALL auth data in one place
   const [authState, setAuthState] = useState({
     // User data
@@ -43,50 +42,12 @@ export function AppProvider({ children }) {
     refresh: null
   });
 
-
   useEffect(() => {
     // Only request availableGames after authState is fully populated with validated data
     if (authState.user && authState.authToken && authState.status === 'idle') {
       sendMessage('availableGames');
     }
   }, [authState.user, authState.authToken, authState.status]);
-
-  const initiateLogin = (username, password) => {
-    // Only allow login if currently idle
-    if (authState.status !== 'idle') {
-      console.log('Auth operation already in progress');
-      return;
-    }
-    
-    // Set status to logging_in
-    setAuthState(prev => ({ ...prev, status: 'logging_in' }));
-    addLoadingAction('login');
-    
-    // Make HTTP login request directly
-    const config = getConfig();
-    const apiBaseUrl = config.apiBaseUrl;
-    
-    fetch(`${apiBaseUrl}/api/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ username, password })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.status === 200) {
-        onLogin({ success: true, ...data.data });
-      } else {
-        onLogin({ success: false, message: data.errorMessage });
-      }
-    })
-    .catch(error => {
-      console.error('Login request failed:', error);
-      setAuthState(prev => ({ ...prev, status: 'idle' }));
-      clearLoadingAction('login');
-    });
-  };
 
   const onLogin = (data) => {
     clearLoadingAction('login');
@@ -96,77 +57,61 @@ export function AppProvider({ children }) {
     });
     
     if (data.success) {
-      // Store validation data for onTokenValidated to use
-      pendingOperations.current.validationData = {
-        token: data.accessToken,
-        refreshToken: data.refreshToken,
-        userData: {
-          id: data.userId,
-          username: data.username
-        }
+      const userData = {
+        id: data.userId,
+        username: data.username
       };
       
-      // Send token through validation flow for consistency
-      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
+      // Directly set auth state - no validation needed
+      setAuthState({
+        user: userData,
+        authToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        status: 'idle',
+        attempts: 0,
+        messageQueue: []
+      });
+      
+      // Save to AsyncStorage for future auto-login
+      saveAuthData(data.accessToken, data.refreshToken, userData);
+      
+      // Enable auto-reconnect for authenticated users
+      WebSocketService.setShouldReconnect(true);
+      
+      console.log(`Welcome back, ${data.username}!`);
     } else {
       setAuthState(prev => ({ ...prev, status: 'idle' }));
       console.log('Login failed:', data.message);
     }
   };
 
-  const initiateRegistration = (username, password) => {
-    // Only allow registration if currently idle
-    if (authState.status !== 'idle') {
-      console.log('Auth operation already in progress');
-      return;
-    }
-    
-    // Set status to logging_in (registration uses same flow as login)
-    setAuthState(prev => ({ ...prev, status: 'logging_in' }));
-    addLoadingAction('register');
-    
-    // Make HTTP registration request directly
-    const config = getConfig();
-    const apiBaseUrl = config.apiBaseUrl;
-    
-    fetch(`${apiBaseUrl}/api/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ username, password })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.status === 200) {
-        onRegister({ success: true, ...data.data });
-      } else {
-        onRegister({ success: false, message: data.errorMessage });
-      }
-    })
-    .catch(error => {
-      console.error('Registration request failed:', error);
-      setAuthState(prev => ({ ...prev, status: 'idle' }));
-      clearLoadingAction('register');
-    });
-  };
+  // Registration initiation removed - now handled directly by components via WebSocket
 
   const onRegister = (data) => {
     clearLoadingAction('register');
     
     if (data.success) {
-      // Store validation data for onTokenValidated to use
-      pendingOperations.current.validationData = {
-        token: data.accessToken,
-        refreshToken: data.refreshToken,
-        userData: {
-          id: data.userId,
-          username: data.username
-        }
+      const userData = {
+        id: data.userId,
+        username: data.username
       };
       
-      // Send token through validation flow for consistency
-      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
+      // Directly set auth state - no validation needed
+      setAuthState({
+        user: userData,
+        authToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        status: 'idle',
+        attempts: 0,
+        messageQueue: []
+      });
+      
+      // Save to AsyncStorage for future auto-login
+      saveAuthData(data.accessToken, data.refreshToken, userData);
+      
+      // Enable auto-reconnect for authenticated users
+      WebSocketService.setShouldReconnect(true);
+      
       console.log(`Registration successful! Welcome, ${data.username}!`);
     } else {
       setAuthState(prev => ({ ...prev, status: 'idle' }));
@@ -176,15 +121,15 @@ export function AppProvider({ children }) {
 
   const onTokenRefreshed = (data) => {
     if (data.success) {
-      // Store validation data for onTokenValidated to use
-      pendingOperations.current.validationData = {
-        token: data.accessToken,
-        refreshToken: authState.refreshToken, // Keep existing refresh token
-        userData: authState.user
-      };
+      // Update auth state directly with new access token
+      setAuthState(prev => ({
+        ...prev,
+        authToken: data.accessToken,
+        status: 'idle'
+      }));
       
-      // Send token through validation flow for consistency
-      WebSocketService.sendMessage('validateToken', { token: data.accessToken });
+      // Save updated token to AsyncStorage
+      saveAuthData(data.accessToken, authState.refreshToken, authState.user);
       
       processMessageQueue();
       
@@ -235,45 +180,13 @@ export function AppProvider({ children }) {
     }
   };
 
-  const onTokenValidated = async (data) => {
-    const validationData = pendingOperations.current.validationData;
-    
-    if (data.valid && validationData) {
-      // Token validated - set authState with confirmed data
-      setAuthState({
-        user: validationData.userData,
-        authToken: validationData.token,
-        refreshToken: validationData.refreshToken,
-        status: 'idle',
-        attempts: 0,
-        messageQueue: []
-      });
-      console.log(`Welcome back, ${validationData.userData.username}!`);
-      
-      // Save to AsyncStorage for future auto-login
-      saveAuthData(validationData.token, validationData.refreshToken, validationData.userData);
-      
-      // Enable auto-reconnect for authenticated users
-      WebSocketService.setShouldReconnect(true);
-    } else {
-      // No valid token or validation failed - stay on intro screen
-      console.log(data.valid === false ? 'Token validation failed' : 'No token provided');
-      if (validationData) {
-        // Clear invalid saved data
-        await clearAuthData();
-      }
-      // authState remains with default empty values (user stays on intro)
-    }
-    
-    // Clear validation data
-    pendingOperations.current.validationData = null;
-  };
+  // Token validation removed - auth state set directly by login/register handlers
 
   const onConnected = async (data) => {
     logger.logWebSocketEvent('server_connected', { connectionId: data.connectionId });
     setConnected(true);
     
-    // Check AsyncStorage for saved credentials
+    // Check AsyncStorage for saved credentials and restore auth state directly
     try {
       const savedToken = await AsyncStorage.getItem('authToken');
       const savedRefreshToken = await AsyncStorage.getItem('refreshToken');
@@ -281,27 +194,26 @@ export function AppProvider({ children }) {
       
       if (savedToken && savedRefreshToken && savedToken !== 'null' && savedRefreshToken !== 'null' && savedUser) {
         const userData = JSON.parse(savedUser);
-        console.log('Found saved credentials, validating token...');
+        console.log('Found saved credentials, restoring auth state...');
         
-        // Store validation data for onTokenValidated to use
-        pendingOperations.current.validationData = {
-          token: savedToken,
+        // Directly restore auth state - no validation needed
+        setAuthState({
+          user: userData,
+          authToken: savedToken,
           refreshToken: savedRefreshToken,
-          userData: userData
-        };
+          status: 'idle',
+          attempts: 0,
+          messageQueue: []
+        });
         
-        // Send validation request
-        WebSocketService.sendMessage('validateToken', { token: savedToken });
+        // Enable auto-reconnect for authenticated users
+        WebSocketService.setShouldReconnect(true);
       } else {
         console.log('No saved credentials found, staying on intro');
-        // Send empty validation to indicate no token
-        WebSocketService.sendMessage('validateToken', {});
       }
     } catch (error) {
       console.log('Error loading saved token:', error);
       logger.logError(error, { type: 'authentication_error', action: 'load_saved_auth' });
-      // Send empty validation on error
-      WebSocketService.sendMessage('validateToken', {});
     }
   };
 
@@ -345,9 +257,10 @@ export function AppProvider({ children }) {
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
       WebSocketService.onMessage('connected', onConnected);
+      WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
+      WebSocketService.onMessage('register', onRegister);
       WebSocketService.onMessage('tokenRefreshed', onTokenRefreshed);
-      WebSocketService.onMessage('tokenValidated', onTokenValidated);
       WebSocketService.connect();
     } catch (error) {
       logger.logError(error, { type: 'websocket_error', action: 'initialization_failed' });
@@ -360,9 +273,10 @@ export function AppProvider({ children }) {
         WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
         WebSocketService.removeMessageHandler('connected');
+        WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');
+        WebSocketService.removeMessageHandler('register');
         WebSocketService.removeMessageHandler('tokenRefreshed');
-        WebSocketService.removeMessageHandler('tokenValidated');
         WebSocketService.disconnect();
       } catch (error) {
         logger.logError(error, { type: 'websocket_error', action: 'disconnect_failed' });
@@ -546,9 +460,7 @@ export function AppProvider({ children }) {
     addLoadingAction,
     clearLoadingAction,
     showToast,
-    hideToast,
-    initiateLogin,
-    initiateRegistration
+    hideToast
   };
 
   return (

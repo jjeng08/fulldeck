@@ -1,11 +1,9 @@
 const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
-const bcrypt = require('bcryptjs')
 const DBUtils = require('../shared/DBUtils')
 const { getEnvironmentConfig } = require('../core/environments')
 const { validateRequest } = require('./middleware/validation')
-const { text: t } = require('../core/text')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key'
 
@@ -61,9 +59,7 @@ class HttpServer {
       this.sendResponse(res, 200, responseData)
     })
     
-    // Authentication endpoints (no auth required)
-    this.app.post('/api/login', validateRequest(HttpServer.loginSchema), this.login.bind(this))
-    this.app.post('/api/register', validateRequest(HttpServer.registerSchema), this.register.bind(this))
+    // Authentication moved to WebSocket - no HTTP auth endpoints needed
 
     // Protected routes - require authentication
     this.app.use('/api/*', this.authenticateToken.bind(this))
@@ -323,151 +319,7 @@ class HttpServer {
     }
   }
 
-  // Validation schema for login
-  static loginSchema = (req) => {
-    const { username, password } = req.body;
-    
-    if (!username) {
-      return { isValid: false, errorMessage: 'Username is required' };
-    }
-    
-    if (!password) {
-      return { isValid: false, errorMessage: 'Password is required' };
-    }
-    
-    return { isValid: true };
-  }
-
-  async login(req, res) {
-    try {
-      const { username, password } = req.body
-
-      // Find user by username
-      const user = await DBUtils.getPlayerByUsername(username)
-      
-      if (!user) {
-        return this.sendResponse(res, 401, null, t.loginFailed)
-      }
-      
-      // Verify password
-      const passwordMatch = await bcrypt.compare(password, user.passwordHash)
-      if (!passwordMatch) {
-        return this.sendResponse(res, 401, null, t.loginFailed)
-      }
-      
-      // Update last seen
-      await DBUtils.updatePlayerLastSeen(user.id)
-      
-      // Generate JWT tokens
-      const accessToken = jwt.sign(
-        {
-          userId: user.id,
-          username: user.username,
-          type: 'access'
-        },
-        JWT_SECRET,
-        { expiresIn: '1h' }
-      )
-      
-      const refreshToken = jwt.sign(
-        {
-          userId: user.id,
-          username: user.username,
-          type: 'refresh'
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      )
-
-      const responseData = {
-        userId: user.id,
-        username: user.username,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        balance: user.balance
-      }
-
-      return this.sendResponse(res, 200, responseData)
-    } catch (error) {
-      console.error('Login error:', error)
-      return this.sendResponse(res, 500, null, t.unableToLogin)
-    }
-  }
-
-  // Validation schema for register
-  static registerSchema = (req) => {
-    const { username, password } = req.body;
-    
-    if (!username) {
-      return { isValid: false, errorMessage: 'Username is required' };
-    }
-    
-    if (!password) {
-      return { isValid: false, errorMessage: 'Password is required' };
-    }
-    
-    if (password.length < 3) {
-      return { isValid: false, errorMessage: t.passwordTooShort };
-    }
-    
-    return { isValid: true };
-  }
-
-  async register(req, res) {
-    try {
-      const { username, password } = req.body
-
-      // Check if username already exists
-      const existingUser = await DBUtils.getPlayerByUsername(username)
-      
-      if (existingUser) {
-        return this.sendResponse(res, 409, null, t.usernameExists)
-      }
-      
-      // Hash password securely
-      const hashedPassword = await bcrypt.hash(password, 12)
-      
-      // Create new user
-      const newUser = await DBUtils.createPlayer({
-        username: username,
-        passwordHash: hashedPassword
-      })
-      
-      // Generate JWT tokens
-      const accessToken = jwt.sign(
-        {
-          userId: newUser.id,
-          username: newUser.username,
-          type: 'access'
-        },
-        JWT_SECRET,
-        { expiresIn: '1h' }
-      )
-      
-      const refreshToken = jwt.sign(
-        {
-          userId: newUser.id,
-          username: newUser.username,
-          type: 'refresh'
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      )
-
-      const responseData = {
-        userId: newUser.id,
-        username: newUser.username,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        balance: newUser.balance
-      }
-
-      return this.sendResponse(res, 200, responseData)
-    } catch (error) {
-      console.error('Register error:', error)
-      return this.sendResponse(res, 500, null, t.unableToRegister)
-    }
-  }
+  // Authentication methods removed - now handled via WebSocket
 
   start() {
     this.server = this.app.listen(this.port, () => {

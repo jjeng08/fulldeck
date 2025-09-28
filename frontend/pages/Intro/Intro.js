@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 
 import { useApp } from 'systems/AppContext';
+import WebSocketService from 'systems/websocket';
 import { introStyles as s } from './IntroStyles';
 import { text as t } from 'core/text';
 import AdminModal from 'pages/AdminModal/AdminModal';
@@ -13,7 +14,7 @@ import Toast from 'components/Toast';
 
 export default function IntroPage() {
   const navigation = useNavigation();
-  const { connected, hideToast, initiateLogin, initiateRegistration, toast, user } = useApp();
+  const { connected, hideToast, addLoadingAction, toast, user } = useApp();
   
   // Form state
   const [showLoginForm, setShowLoginForm] = useState(false);
@@ -123,7 +124,11 @@ export default function IntroPage() {
     if (loginData.username && loginData.password) {
       // Store navigation reference for auto-redirect after login
       global.navigation = navigation;
-      initiateLogin(loginData.username, loginData.password);
+      addLoadingAction('login');
+      WebSocketService.sendMessage('login', { 
+        username: loginData.username, 
+        password: loginData.password 
+      });
     } else {
       setErrorMessage(t.enterUsernameAndPassword);
     }
@@ -134,8 +139,11 @@ export default function IntroPage() {
       if (registerData.password === registerData.confirmPassword) {
         // Store navigation reference for auto-redirect after registration
         global.navigation = navigation;
-        
-        initiateRegistration(registerData.username, registerData.password);
+        addLoadingAction('register');
+        WebSocketService.sendMessage('register', { 
+          username: registerData.username, 
+          password: registerData.password 
+        });
       } else {
         setErrorMessage(t.passwordMismatch);
       }

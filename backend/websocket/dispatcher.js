@@ -17,8 +17,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fulldeck-secret-key';
 // Message routing table
 const messageRoutes = {
   // Authentication handlers (unauthenticated)
+  'login': authHandlers.onLogin,
+  'register': authHandlers.onRegister,
   'refreshToken': authHandlers.onRefreshToken,
-  'validateToken': authHandlers.onValidateToken,
   
   // Authentication handlers (authenticated)
   'logout': authHandlers.onLogout,
@@ -37,8 +38,9 @@ const messageRoutes = {
 
 // Messages that don't require authentication
 const unauthenticatedMessages = [
-  'refreshToken',
-  'validateToken'
+  'login',
+  'register',
+  'refreshToken'
 ];
 
 // Define handlers that need direct WebSocket access (currently none for authenticated handlers)
@@ -63,6 +65,10 @@ function extractUserIdFromToken(token) {
 async function handleAuthenticatedMessage(ws, data, handler) {
   try {
     const userId = extractUserIdFromToken(data.token);
+    
+    // Associate this connection with the authenticated user
+    const { updateConnectionUserId } = require('./server');
+    updateConnectionUserId(ws, userId);
     
     // Check if handler explicitly needs ws parameter
     if (WS_REQUIRED_HANDLERS.has(handler.name)) {
