@@ -261,7 +261,7 @@ const logToBlackjackLogs = async (options) => {
         cards,
         dealerShowing: dealerShowing || null,
         totalHands,
-        gameState: gameState || undefined
+        gameState: gameState ? JSON.stringify(gameState) : null
       }
     });
     

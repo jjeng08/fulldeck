@@ -14,7 +14,7 @@ const activeGames = new Map();
 const { sendMessage } = require('../../websocket/server');
 
 // Unified player action handler
-async function onPlayerAction(ws, data, userId) {
+async function onPlayerAction(data, userId) {
   logger.logGameEvent('player_action', null, { userId, actionType: data.type, data });
   
   try {
@@ -31,13 +31,23 @@ async function onPlayerAction(ws, data, userId) {
         const user = await DBUtils.getPlayerById(userId);
         
         if (!user) {
-          result = { success: false, errorMessage: t.userNotFound };
+          sendMessage(userId, 'blackJackChannel', {
+          success: false,
+          actionType: data.type,
+          errorMessage: t.userNotFound
+        });
+        return;
           break;
         }
         
         // Check if user has enough balance
         if (user.balance < data.betAmount) {
-          result = { success: false, errorMessage: t.insufficientBalance };
+          sendMessage(userId, 'blackJackChannel', {
+          success: false,
+          actionType: data.type,
+          errorMessage: t.insufficientBalance
+        });
+        return;
           break;
         }
         
@@ -76,8 +86,9 @@ async function onPlayerAction(ws, data, userId) {
           balance: updatedPlayer.balance
         });
         
-        result = {
+        sendMessage(userId, 'blackJackChannel', {
           success: true,
+          actionType: GAME_ACTIONS.BET,
           gameStatus: gameResult.gameState.gameStatus,
           playerHands: gameResult.gameState.playerHands,
           dealerCards: gameResult.gameState.dealerCards,
@@ -86,119 +97,163 @@ async function onPlayerAction(ws, data, userId) {
           betAmount: data.betAmount,
           newBalance: updatedPlayer.balance,
           handComplete: gameResult.immediateResult // Signal immediate completion
-        };
-        break;
+        });
+        return;
       case GAME_ACTIONS.HIT:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
         if (data.target === 'player') {
-          result = blackjack.hit(data.handIndex, data.handIndex, data.target);
+          const hitResult = blackjack.hit(data.handIndex, data.handIndex, data.target);
+          sendMessage(userId, 'blackJackChannel', {
+            ...hitResult,
+            actionType: GAME_ACTIONS.HIT
+          });
         }
-        break;
+        return;
       case GAME_ACTIONS.STAND:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
         if (data.target === 'player') {
-          result = await blackjack.stand(userId, data.handIndex);
+          const standResult = await blackjack.stand(userId, data.handIndex);
+          sendMessage(userId, 'blackJackChannel', {
+            ...standResult,
+            actionType: standResult.actionType || GAME_ACTIONS.STAND
+          });
         }
-        break;
+        return;
       case GAME_ACTIONS.DOUBLE_DOWN:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
         logger.logInfo('Double down call params', { userId, target: data.target, handIndex: data.handIndex });
         if (data.target === 'player') {
-          result = await blackjack.doubleDown(userId, data.handIndex, data.handIndex);
+          const doubleDownResult = await blackjack.doubleDown(userId, data.handIndex, data.handIndex);
+          sendMessage(userId, 'blackJackChannel', {
+            ...doubleDownResult,
+            actionType: GAME_ACTIONS.DOUBLE_DOWN
+          });
         }
-        break;
+        return;
       case GAME_ACTIONS.SPLIT:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
-        result = await blackjack.split(userId, data.playerHands, data.activeHandIndex, data.currentBet);
-        break;
+        const splitResult = await blackjack.split(userId, data.playerHands, data.activeHandIndex, data.currentBet);
+        sendMessage(userId, 'blackJackChannel', {
+          ...splitResult,
+          actionType: GAME_ACTIONS.SPLIT
+        });
+        return;
       case GAME_ACTIONS.SPLIT_DEAL:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
-        result = await blackjack.splitDeal(userId);
-        break;
+        const splitDealResult = await blackjack.splitDeal(userId);
+        sendMessage(userId, 'blackJackChannel', {
+          ...splitDealResult,
+          actionType: GAME_ACTIONS.SPLIT_DEAL
+        });
+        return;
       case GAME_ACTIONS.INSURANCE:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
-        result = await blackjack.handleInsurance(userId, data.buy);
-        break;
+        const insuranceResult = await blackjack.handleInsurance(userId, data.buy);
+        sendMessage(userId, 'blackJackChannel', {
+          ...insuranceResult,
+          actionType: GAME_ACTIONS.INSURANCE
+        });
+        return;
       case GAME_ACTIONS.SURRENDER:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
-        result = await blackjack.surrender(userId);
-        break;
+        const surrenderResult = await blackjack.surrender(userId);
+        sendMessage(userId, 'blackJackChannel', {
+          ...surrenderResult,
+          actionType: GAME_ACTIONS.SURRENDER
+        });
+        return;
       case GAME_ACTIONS.DEALER_COMPLETE:
         blackjack = activeGames.get(userId);
         if (!blackjack) {
-          result = { success: false, errorMessage: 'No active game found. Please start a new game.' };
-          break;
+          sendMessage(userId, 'blackJackChannel', {
+            success: false,
+            actionType: data.type,
+            errorMessage: 'No active game found. Please start a new game.'
+          });
+          return;
         }
         
         // Calculate final game results
-        result = await blackjack.finishGame(userId);
-        break;
+        const finishResult = await blackjack.finishGame(userId);
+        sendMessage(userId, 'blackJackChannel', {
+          ...finishResult,
+          actionType: finishResult.actionType || GAME_ACTIONS.DEALER_COMPLETE
+        });
+        return;
       case GAME_ACTIONS.NEW_GAME:
         activeGames.delete(userId);
         blackjack = new Blackjack();
         activeGames.set(userId, blackjack);
-        result = blackjack.startGame(userId);
-        break;
+        const startResult = blackjack.startGame(userId);
+        sendMessage(userId, 'blackJackChannel', {
+          ...startResult,
+          actionType: GAME_ACTIONS.NEW_GAME
+        });
+        return;
       default:
-        result = { success: false, errorMessage: `Unknown action type: ${data.type}` };
+        sendMessage(userId, 'blackJackChannel', {
+          success: false,
+          actionType: data.type,
+          errorMessage: `Unknown action type: ${data.type}`
+        });
+        return;
     }
-    
-    // Transform result to unified format with proper card handling
-    const response = {
-      type: 'actionResult',
-      data: {
-        success: result.success,
-        actionType: result.actionType || data.type,
-        gameStatus: result.gameStatus,
-        playerValue: result.playerValue,
-        dealerValue: result.dealerValue,
-        playerHands: result.playerHands,
-        dealerCards: result.dealerCards,
-        result: result.result,
-        payout: result.profit || result.payout, // Send profit for frontend display
-        betAmount: result.betAmount || data.betAmount,
-        // Only send activeHandIndex when it's explicitly provided (hand transitions)
-        // Handle split-specific data
-        ...(result.playerHands ? { 
-          playerHands: result.playerHands,
-          playerValues: result.playerValues,
-          currentBets: result.currentBets,
-          totalHands: result.totalHands,
-        } : {}),
-        // Handle hand completion flag
-        ...(result.handComplete ? { handComplete: true } : {})
-      }
-    };
-    
-    sendMessage(userId, 'blackJackChannel', response.data);
   } catch (error) {
     logger.logError(error, { userId, actionType: data.type, action: 'player_action' });
     sendMessage(userId, 'blackJackChannel', {
