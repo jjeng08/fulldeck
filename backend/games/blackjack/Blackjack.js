@@ -54,6 +54,11 @@ async function onPlayerAction(data, userId) {
         // Debit user balance
         const updatedPlayer = await DBUtils.debitPlayerAccount(userId, data.betAmount, 'bet_placed', { betAmount: data.betAmount });
         
+        // Send balance update to frontend
+        sendMessage(userId, 'balance', {
+          balance: updatedPlayer.balance
+        });
+        
         // Generate actionId for bet action
         const actionId = crypto.randomUUID();
         
@@ -633,6 +638,9 @@ class Blackjack {
         workingDealerCards.push(testCard);
       }
       
+      // CRITICAL: Save the final dealer cards back to the game instance
+      this.dealerCards = workingDealerCards;
+      
       // Send response as dealer turn with dealer cards for animation
       return {
         success: true,
@@ -1193,6 +1201,11 @@ class Blackjack {
           payout, 
           originalBet: betAmount 
         }) : user;
+      
+      // Send balance update to frontend
+      sendMessage(userId, 'balance', {
+        balance: finalPlayer.balance
+      });
       
       // Generate actionId for final game result
       const finalActionId = crypto.randomUUID();
