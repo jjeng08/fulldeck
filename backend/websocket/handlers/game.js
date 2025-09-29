@@ -2,6 +2,7 @@ const logger = require('../../shared/logger');
 const { getAllGames } = require('../../shared/gameConfigs');
 const { sendMessage } = require('../server');
 const DBUtils = require('../../shared/DBUtils');
+const { getCachedLeaderboards } = require('../../services/leaderboardService');
 
 // Helper function to send available games using sendMessage
 function sendAvailableGames(userId) {
@@ -56,8 +57,35 @@ async function onGameState(data, userId) {
   });
 }
 
+async function onLeaderboards(data, userId) {
+  try {
+    logger.logUserAction('leaderboards_request', userId, { userId });
+    
+    const leaderboardData = getCachedLeaderboards();
+    
+    if (leaderboardData) {
+      sendMessage(userId, 'leaderboards', {
+        success: true,
+        data: leaderboardData
+      });
+    } else {
+      sendMessage(userId, 'leaderboards', {
+        success: false,
+        data: { errorMessage: 'Leaderboard data not available' }
+      });
+    }
+  } catch (error) {
+    logger.logError(error, { userId, action: 'on_leaderboards' });
+    sendMessage(userId, 'leaderboards', {
+      success: false,
+      data: { errorMessage: 'Error retrieving leaderboard data' }
+    });
+  }
+}
+
 module.exports = {
   onAvailableGames,
   onGameConfigs,
-  onGameState
+  onGameState,
+  onLeaderboards
 };

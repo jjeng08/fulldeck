@@ -316,6 +316,96 @@ const logToBlackjackLogs = async (options) => {
   }
 };
 
+// Leaderboard calculation functions
+const getLeaderboards = async (limit = 10) => {
+  try {
+    await initialize();
+    
+    const timePeriods = {
+      today: {
+        gte: new Date(new Date().setHours(0, 0, 0, 0)),
+        lt: new Date(new Date().setHours(23, 59, 59, 999))
+      },
+      thisWeek: {
+        gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      },
+      thisMonth: {
+        gte: (() => {
+          const date = new Date();
+          date.setDate(1);
+          date.setHours(0, 0, 0, 0);
+          return date;
+        })()
+      },
+      thisYear: {
+        gte: (() => {
+          const date = new Date();
+          date.setMonth(0, 1);
+          date.setHours(0, 0, 0, 0);
+          return date;
+        })()
+      },
+      allTime: {} // No date filter
+    };
+
+    const leaderboards = {};
+
+    // Calculate each time period
+    for (const [periodName, whereClause] of Object.entries(timePeriods)) {
+      const playerWinningsData = await prisma.accountsLogs.groupBy({
+        by: ['playerId'],
+        where: Object.keys(whereClause).length > 0 ? { createdOn: whereClause } : {},
+        _min: { winnings: true },
+        _max: { winnings: true },
+      });
+
+      // Calculate net winnings for each player and get their usernames
+      const leaderboardPromises = playerWinningsData.map(async (data) => {
+        const netWinnings = (data._max.winnings || 0) - (data._min.winnings || 0);
+        
+        // Only include players with positive net winnings
+        if (netWinnings > 0) {
+          const player = await prisma.player.findUnique({
+            where: { id: data.playerId },
+            select: { username: true }
+          });
+          
+          return {
+            username: player?.username || 'Unknown',
+            winnings: `$${(netWinnings / 100).toLocaleString()}`,
+            netWinnings: netWinnings // Keep for sorting
+          };
+        }
+        return null;
+      });
+
+      const leaderboardData = (await Promise.all(leaderboardPromises))
+        .filter(item => item !== null)
+        .sort((a, b) => b.netWinnings - a.netWinnings)
+        .slice(0, limit)
+        .map((item, index) => ({
+          username: item.username,
+          winnings: item.winnings
+        }));
+
+      leaderboards[periodName] = leaderboardData;
+    }
+
+    logger.logInfo('All leaderboard data calculated', { 
+      periods: Object.keys(leaderboards),
+      counts: Object.fromEntries(Object.entries(leaderboards).map(([k, v]) => [k, v.length]))
+    });
+    
+    return {
+      leaderboards,
+      lastUpdated: new Date().toISOString()
+    };
+  } catch (error) {
+    logger.logError(error, { action: 'get_all_leaderboard_data' });
+    throw error;
+  }
+};
+
 // Get account logs by username
 const getAccountLogsByUsername = async (username) => {
   try {
@@ -407,6 +497,7 @@ module.exports = {
   disconnect,
   generateGameId,
   getAccountLogsByUsername,
+  getLeaderboards,
   getPlayerById,
   getPlayerByUsername,
   logToAccountsLogs,

@@ -132,6 +132,20 @@ class WebSocketServer {
     }
   }
 
+  // Broadcast message to all connected clients
+  broadcastToAll(type, data = {}) {
+    const message = {
+      type,
+      data
+    };
+
+    for (const [connectionId, connection] of this.connections) {
+      if (connection.connected && connection.ws.readyState === WebSocket.OPEN) {
+        connection.ws.send(JSON.stringify(message));
+      }
+    }
+  }
+
   getActiveConnections() {
     return this.connections.size
   }

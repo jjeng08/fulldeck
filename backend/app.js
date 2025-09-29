@@ -19,6 +19,10 @@ async function startServer() {
   // Initialize message dispatcher after server is created
   dispatcher.initialize()
 
+  // Start leaderboard service
+  const { startLeaderboardService } = require('./services/leaderboardService')
+  startLeaderboardService()
+
   // Start the HTTP server
   httpServer.start()
 
@@ -36,6 +40,10 @@ startServer().catch(err => {
 
 process.on('SIGINT', async () => {
   console.log('Shutting down servers...')
+  
+  // Stop leaderboard service
+  const { stopLeaderboardService } = require('./services/leaderboardService')
+  stopLeaderboardService()
   
   // Close database connection
   await DBUtils.disconnect()

@@ -31,6 +31,7 @@ const messageRoutes = {
   'availableGames': gameHandlers.onAvailableGames,
   'gameConfigs': gameHandlers.onGameConfigs,
   'gameState': gameHandlers.onGameState,
+  'leaderboards': gameHandlers.onLeaderboards,
   
   // System handlers
   'log': systemHandlers.onLog

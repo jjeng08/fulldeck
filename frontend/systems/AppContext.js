@@ -16,6 +16,7 @@ export function AppProvider({ children }) {
   // Global state for balance and games - ONLY updated by their respective handlers
   const [playerBalance, setPlayerBalance] = useState(0);
   const [availableGames, setAvailableGames] = useState([]);
+  const [leaderboards, setLeaderboards] = useState(null);
   
   // Toast state
   const [toast, setToast] = useState({
@@ -227,6 +228,12 @@ export function AppProvider({ children }) {
     setAvailableGames(data.availableGames);
   };
 
+  const onLeaderboards = (data) => {
+    if (data.success) {
+      setLeaderboards(data.data);
+    }
+  };
+
   const onLogout = (data) => {
     clearLoadingAction('logout');
     
@@ -243,6 +250,7 @@ export function AppProvider({ children }) {
     // Reset global states
     setPlayerBalance(0);
     setAvailableGames([]);
+    setLeaderboards(null);
     
     // Disable auto-reconnect when logged out
     WebSocketService.setShouldReconnect(false);
@@ -257,6 +265,7 @@ export function AppProvider({ children }) {
       WebSocketService.onMessage('availableGames', onAvailableGames);
       WebSocketService.onMessage('balance', onBalance);
       WebSocketService.onMessage('connected', onConnected);
+      WebSocketService.onMessage('leaderboards', onLeaderboards);
       WebSocketService.onMessage('login', onLogin);
       WebSocketService.onMessage('logout', onLogout);
       WebSocketService.onMessage('register', onRegister);
@@ -273,6 +282,7 @@ export function AppProvider({ children }) {
         WebSocketService.removeMessageHandler('availableGames');
         WebSocketService.removeMessageHandler('balance');
         WebSocketService.removeMessageHandler('connected');
+        WebSocketService.removeMessageHandler('leaderboards');
         WebSocketService.removeMessageHandler('login');
         WebSocketService.removeMessageHandler('logout');
         WebSocketService.removeMessageHandler('register');
@@ -451,6 +461,7 @@ export function AppProvider({ children }) {
     authToken: authState.authToken,
     refreshToken: authState.refreshToken,
     availableGames,
+    leaderboards,
     playerBalance,
     toast,
     loadingActions,
