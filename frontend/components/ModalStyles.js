@@ -1,0 +1,97 @@
+import { StyleSheet } from 'react-native';
+
+import { styleConstants as sc } from '../shared/styleConstants';
+
+export const modalStyles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  container: {
+    width: '90%',
+    height: '90%',
+    backgroundColor: sc.colors.overlayOnRed,
+    borderWidth: 2,
+    borderColor: sc.colors.gold,
+    borderRadius: sc.borderRadius.md,
+    padding: sc.size.lg,
+    flexDirection: 'column',
+  },
+  content: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingTop: sc.size.lg,
+  },
+  closeButton: {
+    backgroundColor: '#8B4513',
+    borderWidth: 2,
+    borderColor: sc.colors.gold,
+    minWidth: 100,
+    paddingHorizontal: sc.size.lg,
+    paddingVertical: sc.size.base,
+  },
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: sc.size.md,
+    borderBottomWidth: 2,
+    borderBottomColor: sc.colors.gold,
+  },
+  navButton: {
+    backgroundColor: '#8B4513',
+    paddingVertical: sc.size.base,
+    paddingHorizontal: sc.size.md,
+    borderRadius: sc.borderRadius.base,
+    minWidth: 80,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: sc.colors.gold,
+    marginBottom: 0,
+  },
+  navButtonSelected: {
+    borderColor: '#FF8C00',
+    borderWidth: 3,
+  },
+  navButtonText: {
+    color: sc.colors.text,
+    fontSize: sc.fontSizes.sm,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  contentArea: {
+    flex: 1,
+    width: '95%',
+    height: '95%',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionContent: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    backgroundColor: sc.colors.green,
+    borderRadius: sc.borderRadius.md,
+    padding: sc.size.lg,
+  },
+  sectionTitle: {
+    fontSize: sc.fontSizes.xl,
+    fontWeight: 'bold',
+    color: sc.colors.gold,
+    textAlign: 'center',
+    marginBottom: sc.size.lg,
+  },
+});

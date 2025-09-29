@@ -33,6 +33,10 @@ export const lobbyStyles = StyleSheet.create({
     marginBottom: sc.size.md,
     paddingVertical: sc.size.base,
   },
+  menuButtonActive: {
+    borderColor: '#FF8C00',
+    borderWidth: 3,
+  },
   centerContent: {
     flex: 1,
   },

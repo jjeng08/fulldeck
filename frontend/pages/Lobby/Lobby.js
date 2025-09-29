@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -8,10 +8,13 @@ import { text as t } from '../../core/text';
 import { formatCurrency } from '../../shared/utils';
 import Button from '../../components/Button';
 import GamesCarousel from '../../components/GamesCarousel';
+import LobbyModal from '../LobbyModal/LobbyModal';
 
 export default function LobbyPage() {
   const navigation = useNavigation();
   const { user, sendMessage, playerBalance } = useApp();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [activeModalSection, setActiveModalSection] = useState('viewAccount');
 
   useEffect(() => {
     // Get current balance when entering lobby
@@ -20,19 +23,29 @@ export default function LobbyPage() {
 
   // Table navigation will be handled by individual game components
 
-  const onViewAccount = () => {
-    // TODO: Navigate to account details or show modal
-    console.log('View account info');
+  const onViewAccountClick = () => {
+    setActiveModalSection('viewAccount');
+    setModalVisible(true);
   };
 
-  const onDeposit = () => {
-    // TODO: Handle deposit transaction
-    console.log('Handle deposit');
+  const onLeaderBoardClick = () => {
+    setActiveModalSection('leaderBoard');
+    setModalVisible(true);
   };
 
-  const onWithdraw = () => {
-    // TODO: Handle withdraw transaction
-    console.log('Handle withdraw');
+  const onDailyQuestsClick = () => {
+    setActiveModalSection('dailyQuests');
+    setModalVisible(true);
+  };
+
+  const onSwagClick = () => {
+    setActiveModalSection('swag');
+    setModalVisible(true);
+  };
+
+  const onCloseModal = () => {
+    setModalVisible(false);
+    setActiveModalSection(null);
   };
 
   const onLogout = () => {
@@ -46,18 +59,35 @@ export default function LobbyPage() {
         <Text style={s.menuTitle}>{t.Account}</Text>
         <Button 
           label={t.viewAccount}
-          onPress={onViewAccount}
-          style={s.menuButton}
+          onPress={onViewAccountClick}
+          style={[
+            s.menuButton,
+            activeModalSection === 'viewAccount' && s.menuButtonActive
+          ]}
         />
         <Button 
-          label={t.deposit}
-          onPress={onDeposit}
-          style={s.menuButton}
+          label={'Leader Board'}
+          onPress={onLeaderBoardClick}
+          style={[
+            s.menuButton,
+            activeModalSection === 'leaderBoard' && s.menuButtonActive
+          ]}
         />
         <Button 
-          label={t.withdraw}
-          onPress={onWithdraw}
-          style={s.menuButton}
+          label={'Daily Quests'}
+          onPress={onDailyQuestsClick}
+          style={[
+            s.menuButton,
+            activeModalSection === 'dailyQuests' && s.menuButtonActive
+          ]}
+        />
+        <Button 
+          label={'Swag'}
+          onPress={onSwagClick}
+          style={[
+            s.menuButton,
+            activeModalSection === 'swag' && s.menuButtonActive
+          ]}
         />
       </View>
 
@@ -79,7 +109,18 @@ export default function LobbyPage() {
         </View>
 
         <View style={s.mainContent}>
-          <GamesCarousel />
+          {modalVisible ? (
+            <LobbyModal
+              visible={modalVisible}
+              onClose={onCloseModal}
+              activeSection={activeModalSection}
+              setActiveSection={setActiveModalSection}
+              user={user}
+              playerBalance={playerBalance}
+            />
+          ) : (
+            <GamesCarousel />
+          )}
         </View>
       </View>
     </View>

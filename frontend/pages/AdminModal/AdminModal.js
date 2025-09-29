@@ -6,6 +6,7 @@ import { text as t } from 'core/text';
 import { useUtils } from 'systems/UtilsContext';
 import Button from 'components/Button';
 import Input from 'components/Input';
+import Modal from 'components/Modal';
 
 export default function AdminModal({ visible, onClose }) {
   const { callAPI } = useUtils();
@@ -301,39 +302,14 @@ export default function AdminModal({ visible, onClose }) {
   };
 
   return (
-    <View style={s.overlay}>
-      <View style={s.container}>
-        <View style={s.content}>
-          <View style={s.navRow}>
-            {sections.map((section) => (
-              <Button
-                key={section.id}
-                label={section.label}
-                onPress={() => setActiveSection(section.id)}
-                style={[
-                  s.navButton,
-                  activeSection === section.id && s.navButtonSelected
-                ]}
-                textStyle={s.navButtonText}
-              />
-            ))}
-          </View>
-          
-          <View style={s.contentArea}>
-            <View style={s.sectionContent}>
-              {renderSectionContent()}
-            </View>
-          </View>
-        </View>
-        
-        <View style={s.footer}>
-          <Button 
-            label={t.close}
-            onPress={handleClose}
-            style={s.closeButton}
-          />
-        </View>
-      </View>
-    </View>
+    <Modal
+      visible={visible}
+      onClose={handleClose}
+      sections={sections}
+      activeSection={activeSection}
+      setActiveSection={setActiveSection}
+    >
+      {renderSectionContent()}
+    </Modal>
   );
 }

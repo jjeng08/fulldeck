@@ -10,9 +10,9 @@ const gameConfigs = {
     route: 'Blackjack',
     maxMulti: 5,
     tiers: [
-      [25, 50, 100],
+      [50, 100, 200],
       [100, 200, 500],
-      [500, 1000, 2500]
+      [200, 500, 1000]
     ], 
     maxPlayers: 6,
     variants: ['classic'],

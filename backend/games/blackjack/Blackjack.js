@@ -468,13 +468,15 @@ class Blackjack {
     this.initializeNewGame(betAmount);
     
     // Deal initial cards (deck is already fresh from constructor)
-    // TEST: Force dealer to get low cards (2-5) for easier testing
-    const dealerFaceUp = { suit: 'hearts', value: ['2', '3', '4', '5'][Math.floor(Math.random() * 4)] };
-    const dealerHoleCard = { suit: 'spades', value: ['2', '3', '4', '5'][Math.floor(Math.random() * 4)] };
+    // TODO: RESTORE AFTER DEV
+    // TEST: Force dealer to get cards between 2-8 for easier testing
+    const dealerFaceUp = { suit: 'hearts', value: ['2', '31', '4', '5', '6', '7', '8'][Math.floor(Math.random() * 7)] };
+    const dealerHoleCard = { suit: 'spades', value: ['2', '3', '4', '5', '6', '7', '8'][Math.floor(Math.random() * 7)] };
     const dealerCards = [dealerFaceUp, dealerHoleCard];
     
+    // TODO: RESTORE AFTER DEV
     // const playerCards = [this.dealCard(), this.dealCard()];
-    const playerCards = [{ suit: 'spades', value: '8' }, { suit: 'hearts', value: '8' }];
+    const playerCards = [{ suit: 'spades', value: '9' }, { suit: 'hearts', value: '9' }];
     
     // Store cards in new structure
     this.dealerCards = dealerCards;

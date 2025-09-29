@@ -3,9 +3,10 @@
 // then built/copied to frontend and backend via build process
 
 const GAME_TYPES = {
-  BLACKJACK: { id: 1, name: 'blackjack', displayName: 'Blackjack', prefix: 'bj' },
-  POKER: { id: 2, name: 'poker', displayName: 'Poker', prefix: 'pk' },
-  BACCARAT: { id: 3, name: 'baccarat', displayName: 'Baccarat', prefix: 'bc' }
+  BLACKJACK: { id: 1, name: 'blackjack', displayName: 'BlackJack', prefix: 'bj' }
+  // Future games will be added here with incremental IDs
+  // POKER: { id: 2, name: 'poker', displayName: 'Poker', prefix: 'pk' },
+  // BACCARAT: { id: 3, name: 'baccarat', displayName: 'Baccarat', prefix: 'bc' }
 };
 
 // Helper functions

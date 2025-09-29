@@ -31,8 +31,7 @@ export default function IntroPage() {
   });
 
   // Admin modal state
-  // TODO: RESTORE AFTER DEV
-  const [showAdminModal, setShowAdminModal] = useState(true);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [clickCount, setClickCount] = useState(0);
   const [clickTimer, setClickTimer] = useState(null);
 
@@ -46,12 +45,7 @@ export default function IntroPage() {
       setLoginData({ username: '', password: '' });
       setRegisterData({ username: '', password: '', confirmPassword: '' });
       // TODO: REMOVE AFTER TESTING
-      // navigation.navigate('Lobby')
-      navigation.navigate('Blackjack', {
-        selectedTier: 0,
-        tiers: [[100, 200, 500]],
-        maxMulti: 5
-      });
+      navigation.navigate('Lobby');
     }
   }, [user, navigation]);
 
